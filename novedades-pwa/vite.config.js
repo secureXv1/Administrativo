@@ -9,6 +9,7 @@ export default defineConfig({
       '/auth': 'http://localhost:8080',
       '/me': 'http://localhost:8080',
       '/admin': 'http://localhost:8080',
+      '/my': 'http://localhost:8080',         // <--- AGREGA ESTA LINEA
       '/catalogs': 'http://localhost:8080',
       '/reports': 'http://localhost:8080',
       '/dashboard': 'http://localhost:8080',
@@ -16,3 +17,4 @@ export default defineConfig({
     },
   },
 })
+
