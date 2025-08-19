@@ -1,0 +1,23 @@
+{
+  "name": "novedades-api",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "prisma": "prisma"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "helmet": "latest",
+    "jsonwebtoken": "latest",
+    "mysql2": "^3.14.3",
+    "node-cron": "latest",
+    "web-push": "latest"
+  },
+  "devDependencies": {
+    "nodemon": "latest"
+  }
+}
