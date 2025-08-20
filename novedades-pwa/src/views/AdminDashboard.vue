@@ -14,6 +14,7 @@
           <router-link to="/admin" class="btn-ghost">Dashboard</router-link>
           <router-link to="/admin/groups" class="btn-ghost">Grupos</router-link>
           <router-link to="/admin/users" class="btn-ghost">Usuarios</router-link>
+          <router-link to="/admin/agents" class="btn-ghost">Agentes</router-link>
           <button @click="logout" class="btn-ghost">Cerrar sesión</button>
         </nav>
       </div>

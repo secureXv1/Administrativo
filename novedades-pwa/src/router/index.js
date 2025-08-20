@@ -4,6 +4,7 @@ import LoginView from '../views/LoginView.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
 import AdminGroups from '../views/AdminGroups.vue'
 import AdminUsers from '../views/AdminUsers.vue'
+import AdminAgents from '../views/AdminAgents.vue'
 import { http } from '../lib/http'
 
 const routes = [
@@ -12,8 +13,10 @@ const routes = [
   { path: '/report', component: ReportView },
   { path: '/admin', component: AdminDashboard },
   { path: '/admin/groups', component: AdminGroups },
+  { path: '/admin/agents', component: AdminAgents },
   { path: '/admin/users', component: AdminUsers },
 ]
+
 
 const router = createRouter({ history: createWebHistory(), routes })
 

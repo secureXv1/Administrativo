@@ -400,30 +400,254 @@ app.get('/dashboard/reports', auth, requireAdmin, async (req, res) => {
 });
 
 // ---------- Admin: grupos y usuarios ----------
+// Obtener todos los grupos
 app.get('/admin/groups', auth, requireAdmin, async (req, res) => {
+  const [rows] = await pool.query('SELECT id, code, name FROM `group` ORDER BY code');
+  res.json(rows);
+});
+
+// Crear grupo
+app.post('/admin/groups', auth, requireAdmin, async (req, res) => {
+  const { code, name } = req.body;
+  if (!code) return res.status(422).json({ error: 'Falta código' });
   try {
-    const [rows] = await pool.query('SELECT id, code, name FROM `group` ORDER BY code');
-    res.json(rows);
+    await pool.query('INSERT INTO `group` (code, name) VALUES (?, ?)', [code, name]);
+    res.json({ ok: true });
   } catch (e) {
-    console.error('/admin/groups error', e);
-    res.status(500).json({ error:'GroupListError', detail:e.message });
+    res.status(400).json({ error: 'No se pudo crear', detail: e?.message });
   }
 });
 
+// Editar grupo
+app.put('/admin/groups/:id', auth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { code, name } = req.body;
+  try {
+    await pool.query('UPDATE `group` SET code=?, name=? WHERE id=?', [code, name, id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: 'No se pudo editar', detail: e?.message });
+  }
+});
+
+// Eliminar grupo
+app.delete('/admin/groups/:id', auth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM `group` WHERE id=?', [id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: 'No se pudo eliminar', detail: e?.message });
+  }
+});
+
+// ---------- CRUD Usuarios Admin ----------
+
+// Listar todos los usuarios
 app.get('/admin/users', auth, requireAdmin, async (req, res) => {
   try {
     const [rows] = await pool.query(`
       SELECT u.id, u.email, u.role, u.groupId, g.code AS groupCode
-        FROM \`user\` u
-        LEFT JOIN \`group\` g ON g.id = u.groupId
-       ORDER BY u.email
+      FROM \`user\` u
+      LEFT JOIN \`group\` g ON g.id = u.groupId
+      ORDER BY u.email
     `);
     res.json(rows);
   } catch (e) {
-    console.error('/admin/users error', e);
-    res.status(500).json({ error:'UserListError', detail:e.message });
+    res.status(500).json({ error: 'UserListError', detail: e.message });
   }
 });
+
+// Crear usuario
+app.post('/admin/users', auth, requireAdmin, async (req, res) => {
+  const { email, password, role, groupId } = req.body;
+  if (!email || !password || !role || !groupId) {
+    return res.status(400).json({ error: 'Campos requeridos: email, password, role, groupId' });
+  }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return res.status(400).json({ error: 'Email inválido' });
+  }
+  if (!['admin','leader','viewer'].includes(role)) {
+    return res.status(400).json({ error: 'Rol inválido' });
+  }
+  // Opcional: verifica que el grupo exista
+  const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+  if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+
+  const hash = await bcrypt.hash(password, 10);
+  try {
+    await pool.query(
+      'INSERT INTO `user` (email, passwordHash, role, groupId) VALUES (?, ?, ?, ?)',
+      [email.trim(), hash, role, groupId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') {
+      res.status(409).json({ error: 'El email ya existe' });
+    } else {
+      res.status(500).json({ error: 'No se pudo crear', detail: e.message });
+    }
+  }
+});
+
+// Actualizar usuario
+app.put('/admin/users/:id', auth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { email, role, groupId, password } = req.body;
+  if (!email || !role || !groupId) {
+    return res.status(400).json({ error: 'Campos requeridos: email, role, groupId' });
+  }
+  // Opcional: verifica que el grupo exista
+  const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+  if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+
+  let setFields = 'email=?, role=?, groupId=?';
+  let params = [email.trim(), role, groupId];
+  if (password) {
+    const hash = await bcrypt.hash(password, 10);
+    setFields += ', passwordHash=?';
+    params.push(hash);
+  }
+  params.push(id);
+  try {
+    const [r] = await pool.query(
+      `UPDATE \`user\` SET ${setFields} WHERE id=?`,
+      params
+    );
+    if (r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo actualizar', detail: e.message });
+  }
+});
+
+// Eliminar usuario
+app.delete('/admin/users/:id', auth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [r] = await pool.query('DELETE FROM `user` WHERE id=?', [id]);
+    if (r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Usuario no encontrado' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo eliminar', detail: e.message });
+  }
+});
+
+// ---------- CRUD Agentes Admin ----------
+
+// Listar todos los agentes (puedes agregar filtros con query params)
+app.get('/admin/agents', auth, requireAdmin, async (req, res) => {
+  try {
+    const { q, code, category, groupId, limit = 100 } = req.query;
+    let where = '1=1', params = [];
+    if (code) { where += ' AND a.code=?'; params.push(String(code).toUpperCase().trim()); }
+    else if (q) { where += ' AND a.code LIKE ?'; params.push(String(q).toUpperCase().trim() + '%'); }
+    if (category) { where += ' AND a.category=?'; params.push(category); }
+    if (groupId) { where += ' AND a.groupId=?'; params.push(Number(groupId)); }
+    const [rows] = await pool.query(
+      `SELECT a.id, a.code, a.category, a.status, a.groupId, g.code AS groupCode, a.municipalityId,
+              m.name AS municipalityName, m.dept
+         FROM agent a
+         LEFT JOIN \`group\` g ON g.id = a.groupId
+         LEFT JOIN municipality m ON a.municipalityId = m.id
+        WHERE ${where}
+        ORDER BY a.code
+        LIMIT ?`,
+      [...params, Math.min(parseInt(limit,10)||100, 500)]
+    );
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: 'AgentListError', detail: e.message });
+  }
+});
+
+// Crear agente
+app.post('/admin/agents', auth, requireAdmin, async (req, res) => {
+  const { code, category, groupId, status, municipalityId } = req.body;
+  if (!/^[A-Z][0-9]+$/.test(code)) {
+    return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
+  }
+  if (!['OF','SO','PT'].includes(category)) {
+    return res.status(422).json({ error: 'Categoría inválida' });
+  }
+  // Opcional: verifica que grupo y municipio existan
+  if (groupId) {
+    const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+    if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+  }
+  if (municipalityId) {
+    const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
+    if (!m) return res.status(404).json({ error: 'Municipio no existe' });
+  }
+  try {
+    await pool.query(
+      'INSERT INTO agent (code,category,groupId,status,municipalityId) VALUES (?,?,?,?,?)',
+      [code.trim(), category, groupId || null, status || 'LABORANDO', municipalityId || null]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') {
+      res.status(409).json({ error: 'El código ya existe' });
+    } else {
+      res.status(500).json({ error: 'No se pudo crear', detail: e.message });
+    }
+  }
+});
+
+// Actualizar agente
+app.put('/admin/agents/:id', auth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { code, category, groupId, status, municipalityId } = req.body;
+  if (!code || !category) {
+    return res.status(400).json({ error: 'Campos requeridos: code, category' });
+  }
+  // Validar código y categoría
+  if (!/^[A-Z][0-9]+$/.test(code)) {
+    return res.status(422).json({ error: 'Código inválido' });
+  }
+  if (!['OF','SO','PT'].includes(category)) {
+    return res.status(422).json({ error: 'Categoría inválida' });
+  }
+  if (groupId) {
+    const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+    if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+  }
+  if (municipalityId) {
+    const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
+    if (!m) return res.status(404).json({ error: 'Municipio no existe' });
+  }
+  try {
+    const [r] = await pool.query(
+      `UPDATE agent SET code=?, category=?, groupId=?, status=?, municipalityId=? WHERE id=?`,
+      [code.trim(), category, groupId || null, status || 'LABORANDO', municipalityId || null, id]
+    );
+    if (r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Agente no encontrado' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo actualizar', detail: e.message });
+  }
+});
+
+// Eliminar agente
+app.delete('/admin/agents/:id', auth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [r] = await pool.query('DELETE FROM agent WHERE id=?', [id]);
+    if (r.affectedRows === 0) {
+      return res.status(404).json({ error: 'Agente no encontrado' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo eliminar', detail: e.message });
+  }
+});
+
 
 app.get('/debug/db', async (req, res) => {
   try {
@@ -445,21 +669,23 @@ app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
   // Determina la hora canonical de checkpoint
   const canonical = checkpoint === 'AM' ? '06:30' : '14:30';
 
-  // Busca el reportId correspondiente
-  const [[report]] = await pool.query(
-    `SELECT id FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?) LIMIT 1`,
+  // Busca TODOS los reportes (uno por grupo) para ese día/corte
+  const [reports] = await pool.query(
+    `SELECT id FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?)`,
     [date, canonical]
   );
-  if (!report) return res.json([]); // No hay reporte ese día/corte
+  if (!reports.length) return res.json([]);
 
-  // Devuelve solo los municipios para los agentes de ese reporte
+  const reportIds = reports.map(r => r.id);
+
+  let qMarks = reportIds.map(() => '?').join(','); // (?, ?, ...)
   const [rows] = await pool.query(`
     SELECT m.id, m.name, m.dept, m.lat, m.lon, COUNT(da.agentId) AS agent_count
       FROM dailyreport_agent da
       JOIN municipality m ON m.id = da.municipalityId
-     WHERE da.reportId = ?
-     GROUP BY m.id
-  `, [report.id]);
+    WHERE da.reportId IN (${qMarks})
+    GROUP BY m.id
+  `, reportIds);
 
   res.json(rows);
 });
