@@ -42,7 +42,32 @@
           </div>
         </div>
       </div>
+      <!-- KPIs -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="kpi"><div class="card-body">
+          <h4>FE total (OF/SO/PT)</h4>
+          <div class="value">{{ kpiFE }}</div>
+        </div></div>
+        <div class="kpi"><div class="card-body">
+          <h4>FD total (OF/SO/PT)</h4>
+          <div class="value">{{ kpiFD }}</div>
+        </div></div>
+        <div class="kpi"><div class="card-body">
+          <h4>Novedades totales (OF/SO/PT)</h4>
+          <div class="value">{{ kpiNOV }}</div>
+        </div></div>
+      </div>
 
+      <!-- Mapa de agentes por municipio -->
+      <div class="card">
+        <div class="card-body">
+          <h3 class="font-semibold mb-3 text-slate-700">Mapa de ubicación de agentes</h3>
+          <div id="mapa-agentes"
+            style="height:420px;min-height:350px;width:100%;border-radius:12px;box-shadow:0 2px 8px #0001;background:#eee;"
+            class="relative z-0"
+          ></div>
+        </div>
+      </div>
       <!-- Cumplimiento por corte -->
       <div class="card">
         <div class="card-body space-y-3">
@@ -72,22 +97,6 @@
             </div>
           </div>
         </div>
-      </div>
-
-      <!-- KPIs -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="kpi"><div class="card-body">
-          <h4>FE total (OF/SO/PT)</h4>
-          <div class="value">{{ kpiFE }}</div>
-        </div></div>
-        <div class="kpi"><div class="card-body">
-          <h4>FD total (OF/SO/PT)</h4>
-          <div class="value">{{ kpiFD }}</div>
-        </div></div>
-        <div class="kpi"><div class="card-body">
-          <h4>Novedades totales (OF/SO/PT)</h4>
-          <div class="value">{{ kpiNOV }}</div>
-        </div></div>
       </div>
 
       <!-- Tabla -->
@@ -163,6 +172,52 @@ const rowsDisplay = computed(() =>
     NOV: `${r.OF_nov||0}/${r.SO_nov||0}/${r.PT_nov||0}`
   }))
 )
+
+import L from 'leaflet'
+
+const municipalitiesMap = ref([])
+
+async function loadMapData() {
+  // Consulta tu API de ubicaciones por municipio
+  const { data } = await axios.get('/admin/agent-municipalities', {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  municipalitiesMap.value = data || []
+  setTimeout(drawMap, 120) // Espera a que se renderice el div (mejor que 100ms)
+}
+
+function drawMap() {
+  // Limpia el mapa anterior si existe
+  if (window.myMap) {
+    window.myMap.remove()
+    window.myMap = null
+  }
+
+  window.myMap = L.map('mapa-agentes').setView([6.25, -75.6], 7) // Centra en Antioquia, ajusta si quieres
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 15,
+    attribution: 'Map data © OpenStreetMap contributors'
+  }).addTo(window.myMap)
+
+  municipalitiesMap.value.forEach(m => {
+    if (m.lat && m.lon) {
+      L.marker([m.lat, m.lon], {
+        icon: L.icon({
+          iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+          iconSize: [25, 41],
+          iconAnchor: [12, 41]
+        })
+      })
+      .addTo(window.myMap)
+      .bindPopup(`
+        <b>${m.name}</b> <br>
+        <span style="font-size:13px">${m.dept}</span><br>
+        <span>Agentes: <b>${m.agent_count}</b></span>
+      `)
+    }
+  })
+}
 
 function formatTime(ts) {
   if (!ts) return ''
@@ -245,6 +300,7 @@ function exportCSV(){
 onMounted(async () => {
   await load()
   await loadCompliance()
+  await loadMapData()   // <--- Agrega esta línea
 })
 
 function prettyCorte(hhmm) {

@@ -411,21 +411,40 @@ app.get('/debug/db', async (req, res) => {
   }
 });
 
+// API para el mapa de municipios con agentes
 app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
   const [rows] = await pool.query(`
-    SELECT 
-      m.id, 
-      m.name, 
-      m.dept, 
-      m.lat, 
-      m.lon, 
-      COUNT(a.id) AS agent_count
-    FROM agent a
-    JOIN municipality m ON m.id = a.municipalityId
-    WHERE a.groupId IS NOT NULL
-    GROUP BY m.id
+    SELECT m.id, m.name, m.dept, m.lat, m.lon, COUNT(a.id) AS agent_count
+      FROM agent a
+      JOIN municipality m ON m.id = a.municipalityId
+     WHERE a.groupId IS NOT NULL
+     GROUP BY m.id
   `);
   res.json(rows);
+});
+
+app.get('/dashboard/compliance', auth, requireAdmin, async (req, res) => {
+  const { date, checkpoint } = req.query;
+  if (!date || !checkpoint) return res.status(400).json({ error:'Missing date or checkpoint' });
+
+  const canonical = checkpoint === 'AM' ? '06:30' : '14:30';
+
+  // Todos los grupos
+  const [groups] = await pool.query('SELECT id,code FROM `group` ORDER BY code');
+
+  // Reportes que existen para ese corte
+  const [reports] = await pool.query(
+    'SELECT groupId FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?)',
+    [date, canonical]
+  );
+  const reported = new Set(reports.map(r => r.groupId));
+
+  const done = [];
+  const pending = [];
+  for (const g of groups) {
+    (reported.has(g.id) ? done : pending).push({ groupCode: g.code });
+  }
+  res.json({ date, checkpoint, done, pending });
 });
 
 // ---------- Cron (solo logs) ----------
