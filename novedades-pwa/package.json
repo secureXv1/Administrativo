@@ -11,6 +11,7 @@
   "dependencies": {
     "axios": "latest",
     "leaflet": "^1.9.4",
+    "leaflet.fullscreen": "^4.0.0",
     "localforage": "latest",
     "pinia": "latest",
     "vue": "^3.4.0",

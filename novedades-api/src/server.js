@@ -199,25 +199,34 @@ app.post('/reports', auth, async (req, res) => {
   if (!inWindow) return res.status(422).json({ error:'FueraDeCorte', detail:'Solo AM (06–12:59) y PM (13–23:59).' });
   const checkpointTime = canonical;
 
-  // Sumar FE/FD/NOV solo para dailyreport
-  let feOF=0, feSO=0, fePT=0, fdOF=0, fdSO=0, fdPT=0;
+  // 1. Variables para los KPIs
+  let feOF = 0, feSO = 0, fePT = 0, fdOF = 0, fdSO = 0, fdPT = 0;
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
+    // 2. Consulta previa para obtener categorías de todos los agentes
+    // (Esto es más eficiente si el reporte es grande)
+    const codes = people.map(p => String(p.agentCode || '').toUpperCase().trim());
+    const [agentsBD] = await conn.query(
+      `SELECT id, code, category FROM agent WHERE code IN (${codes.map(_ => '?').join(',')})`,
+      codes
+    );
+    // Crea un mapa {code: {id, category}}
+    const agentMap = {};
+    for (const a of agentsBD) agentMap[a.code] = a;
+
+    // 3. Calcula KPIs y valida agentes
     for (const p of people) {
       const code = String(p.agentCode || '').toUpperCase().trim();
       const state = String(p.state || '').toUpperCase().trim();
       const muniId = p.municipalityId ? Number(p.municipalityId) : null;
 
-      // Traer info de agente
-      const [[ag]] = await conn.query(
-        `SELECT id, code, category FROM agent WHERE code=?`, [code]
-      );
+      const ag = agentMap[code];
       if (!ag) throw new Error(`No existe agente ${code}`);
 
-      // Actualizar FE/FD (estadísticas)
+      // Sumar FE/FD/NOV según categoría
       if (ag.category === 'OF') feOF++;
       if (ag.category === 'SO') feSO++;
       if (ag.category === 'PT') fePT++;
@@ -231,33 +240,20 @@ app.post('/reports', auth, async (req, res) => {
       if (!['LABORANDO','VACACIONES','EXCUSA','PERMISO','SERVICIO'].includes(state)) {
         throw new Error(`Estado inválido: ${state}`);
       }
-      if (state === 'SERVICIO' && !muniId) {
+      if ((state === 'SERVICIO' || state === 'LABORANDO') && !muniId) {
         throw new Error(`Falta municipio para ${code}`);
       }
-
-      // Ubicación
-      let location = 'N/A';
-      if ((state === 'SERVICIO' || state === 'LABORANDO') && muniId) {
-        const [[muni]] = await conn.query(
-          'SELECT CONCAT(dept, " - ", name) AS label FROM municipality WHERE id=?', [muniId]
-        );
-        location = muni?.label || (state === 'LABORANDO' ? 'LABORANDO' : 'SERVICIO');
-      }
-      // Actualiza agent
-      await conn.query(
-        'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
-         [state, muniId, ag.id]
-      );
     }
 
-    // Guarda/actualiza dailyreport solo para KPIs
-    const groupId = req.user.groupId;
-    const leaderUserId = req.user.uid;
+    // 4. Calcula Novedades
     const { OF_nov, SO_nov, PT_nov } = computeNovelties({
       OF_effective: feOF, SO_effective: feSO, PT_effective: fePT,
       OF_available: fdOF, SO_available: fdSO, PT_available: fdPT
     });
 
+    // 5. Guarda/actualiza dailyreport (y obtén el id real)
+    const groupId = req.user.groupId;
+    const leaderUserId = req.user.uid;
     await conn.query(
       `
       INSERT INTO dailyreport
@@ -285,10 +281,40 @@ app.post('/reports', auth, async (req, res) => {
       ]
     );
 
+    const [[daily]] = await conn.query(
+      `SELECT id FROM dailyreport WHERE reportDate=? AND checkpointTime=? AND groupId=? LIMIT 1`,
+      [reportDate, checkpointTime, groupId]
+    );
+    const reportId = daily?.id;
+
+    // 6. Limpia el detalle anterior de agentes para este reporte
+    await conn.query('DELETE FROM dailyreport_agent WHERE reportId=?', [reportId]);
+
+    // 7. Inserta todos los agentes de este reporte en dailyreport_agent + actualiza agent
+    for (const p of people) {
+      const code = String(p.agentCode || '').toUpperCase().trim();
+      const state = String(p.state || '').toUpperCase().trim();
+      const muniId = p.municipalityId ? Number(p.municipalityId) : null;
+
+      const ag = agentMap[code];
+      // Guarda el detalle del agente para el reporte
+      await conn.query(
+        `INSERT INTO dailyreport_agent (reportId, agentId, state, municipalityId) VALUES (?, ?, ?, ?)`,
+        [reportId, ag.id, state, muniId]
+      );
+
+      // Actualiza el estado y municipio del agente también
+      await conn.query(
+        'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
+        [state, muniId, ag.id]
+      );
+    }
+
     await conn.commit();
     res.json({
       action: 'upserted',
       corte: label,
+      reportId,
       totals: { feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov }
     });
   } catch (e) {
@@ -411,15 +437,30 @@ app.get('/debug/db', async (req, res) => {
   }
 });
 
-// API para el mapa de municipios con agentes
+// API para el mapa de municipios con agentes según reporte (date + checkpoint)
 app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
+  const { date, checkpoint } = req.query;
+  if (!date || !checkpoint) return res.status(400).json({ error:'Missing date or checkpoint' });
+
+  // Determina la hora canonical de checkpoint
+  const canonical = checkpoint === 'AM' ? '06:30' : '14:30';
+
+  // Busca el reportId correspondiente
+  const [[report]] = await pool.query(
+    `SELECT id FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?) LIMIT 1`,
+    [date, canonical]
+  );
+  if (!report) return res.json([]); // No hay reporte ese día/corte
+
+  // Devuelve solo los municipios para los agentes de ese reporte
   const [rows] = await pool.query(`
-    SELECT m.id, m.name, m.dept, m.lat, m.lon, COUNT(a.id) AS agent_count
-      FROM agent a
-      JOIN municipality m ON m.id = a.municipalityId
-     WHERE a.groupId IS NOT NULL
+    SELECT m.id, m.name, m.dept, m.lat, m.lon, COUNT(da.agentId) AS agent_count
+      FROM dailyreport_agent da
+      JOIN municipality m ON m.id = da.municipalityId
+     WHERE da.reportId = ?
      GROUP BY m.id
-  `);
+  `, [report.id]);
+
   res.json(rows);
 });
 

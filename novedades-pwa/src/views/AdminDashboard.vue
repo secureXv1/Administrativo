@@ -178,27 +178,29 @@ import L from 'leaflet'
 const municipalitiesMap = ref([])
 
 async function loadMapData() {
-  // Consulta tu API de ubicaciones por municipio
+  // Ahora pasa date y checkpoint al endpoint:
   const { data } = await axios.get('/admin/agent-municipalities', {
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
+  params: { date: date.value, checkpoint: checkpoint.value },
+  headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+});
   municipalitiesMap.value = data || []
-  setTimeout(drawMap, 120) // Espera a que se renderice el div (mejor que 100ms)
+  setTimeout(drawMap, 120) // Espera a que se renderice el div
 }
 
 function drawMap() {
-  // Limpia el mapa anterior si existe
   if (window.myMap) {
-    window.myMap.remove()
-    window.myMap = null
+    window.myMap.remove();
+    window.myMap = null;
   }
 
-  window.myMap = L.map('mapa-agentes').setView([6.25, -75.6], 7) // Centra en Antioquia, ajusta si quieres
+  window.myMap = L.map('mapa-agentes', {
+    fullscreenControl: true
+  }).setView([6.25, -75.6], 7);
 
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 15,
     attribution: 'Map data © OpenStreetMap contributors'
-  }).addTo(window.myMap)
+  }).addTo(window.myMap);
 
   municipalitiesMap.value.forEach(m => {
     if (m.lat && m.lon) {
@@ -269,9 +271,11 @@ async function loadCompliance() {
 
 // Botón "Aplicar"
 async function applyFilters() {
-  await load()
-  await loadCompliance()
+  await load();
+  await loadCompliance();
+  await loadMapData(); 
 }
+
 
 // CSV (con Grupo primero + Hora)
 function exportCSV(){
