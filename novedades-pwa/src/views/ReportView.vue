@@ -13,7 +13,12 @@
           <!-- Fecha -->
           <div>
             <label class="label">Fecha</label>
-            <input type="date" v-model="reportDate" class="input" />
+            <div class="input bg-slate-100 text-slate-600 cursor-not-allowed select-none">
+              {{ reportDate }}
+            </div>
+            <div class="mt-1 text-sm font-semibold text-brand-700">
+              Reporte: {{ corteLabel }}
+            </div>
           </div>
           <!-- Buscar y agregar agente libre -->
           <div class="mb-4 flex gap-2 items-end">
@@ -126,7 +131,9 @@
           </div>
 
           <div class="flex gap-3">
-            <button @click="save" class="btn-primary">Guardar</button>
+            <button @click="save" class="btn-primary">
+              {{ existeReporte ? 'Actualizar' : 'Guardar' }}
+            </button>
             <span v-if="msg" :class="msgClass">{{ msg }}</span>
           </div>
         </div>
@@ -145,6 +152,14 @@ const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : '
 
 const agents = ref([])          // [{id, code, category, status, location, municipalityId}]
 const municipalities = ref([])
+
+// Determina automáticamente AM/PM según la hora
+const now = new Date()
+const hour = now.getHours()
+const corte = ref(hour < 13 ? 'AM' : 'PM')
+const corteLabel = computed(() => corte.value === 'AM' ? 'Mañana (AM)' : 'Tarde (PM)')
+
+const existeReporte = ref(false)
 
 async function loadAgents() {
   try {
@@ -308,8 +323,21 @@ async function addFreeAgent() {
   }
 }
 
+async function checkIfReportExists() {
+  try {
+    const { data } = await axios.get('/reports', {
+      params: { date: reportDate.value },
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    });
+    // Verifica si existe el reporte para el corte actual
+    existeReporte.value = !!(data.find(r => r.checkpointTime.startsWith(corte.value === 'AM' ? '06' : '14')))
+  } catch { existeReporte.value = false }
+}
+
 onMounted(async () => {
-  await loadMunicipalities() // sin query
-  await loadAgents()
-})
+  await loadMunicipalities();
+  await loadAgents();
+  await checkIfReportExists();
+});
+
 </script>
