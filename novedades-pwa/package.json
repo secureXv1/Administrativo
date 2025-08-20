@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "axios": "latest",
+    "leaflet": "^1.9.4",
     "localforage": "latest",
     "pinia": "latest",
     "vue": "^3.4.0",
+    "vue-leaflet": "^0.1.0",
     "vue-router": "^4.3.0"
   },
   "devDependencies": {

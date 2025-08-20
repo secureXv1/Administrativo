@@ -68,10 +68,21 @@ app.get('/catalogs/agents', auth, async (req, res) => {
     else if (q) { where += ' AND code LIKE ?'; params.push(String(q).toUpperCase().trim() + '%'); }
 
     const [rows] = await pool.query(
-      `SELECT id, code, category, groupId, status, location
-         FROM agent
+      `SELECT 
+          a.id, 
+          a.code, 
+          a.category, 
+          a.groupId, 
+          a.status, 
+          a.municipalityId, 
+          m.dept, 
+          m.name, 
+          m.lat, 
+          m.lon
+        FROM agent a
+        LEFT JOIN municipality m ON a.municipalityId = m.id
         WHERE ${where}
-     ORDER BY (groupId = 0) DESC, code
+        ORDER BY a.code
         LIMIT ?`,
       [...params, take]
     );
@@ -88,11 +99,24 @@ app.get('/my/agents', auth, async (req, res) => {
   }
   const groupId = req.user.groupId;
   const [rows] = await pool.query(
-    'SELECT id, code, category, status, location FROM agent WHERE groupId = ? ORDER BY code',
+    `SELECT 
+        a.id, a.code, a.category, a.status, a.municipalityId,
+        m.dept, m.name
+      FROM agent a
+      LEFT JOIN municipality m ON a.municipalityId = m.id
+      WHERE a.groupId = ?
+      ORDER BY a.code`,
     [groupId]
   );
-  res.json(rows);
+  // Opcional: agrega el string completo para el frontend
+  const withFullName = rows.map(r => ({
+    ...r,
+    municipalityName: r.municipalityId ? `${r.name} (${r.dept})` : ""
+  }));
+  res.json(withFullName);
 });
+
+
 
 // Asignar un agente libre (groupId = 0) a mi grupo
 app.post('/my/agents/add', auth, async (req, res) => {
@@ -111,7 +135,7 @@ app.post('/my/agents/add', auth, async (req, res) => {
   res.json({ ok: true });
 });
 
-// Quitar un agente de mi grupo (dejarlo libre => groupId = 0)
+// Quitar un agente de mi grupo (dejarlo libre => )
 app.post('/my/agents/remove', auth, async (req, res) => {
   if (String(req.user.role).toLowerCase() !== 'leader') {
     return res.status(403).json({ error: 'Forbidden' });
@@ -119,7 +143,7 @@ app.post('/my/agents/remove', auth, async (req, res) => {
   const { agentId } = req.body;
   const groupId = req.user.groupId;
   const [r] = await pool.query(
-    'UPDATE agent SET groupId = 0 WHERE id = ? AND groupId = ?',
+    'UPDATE agent SET groupId = NULL WHERE id = ? AND groupId = ?',
     [agentId, groupId]
   );
   if (r.affectedRows === 0) {
@@ -141,13 +165,26 @@ app.post('/adminapi/agents', auth, requireAdmin, async (req, res) => {
 });
 
 app.get('/catalogs/municipalities', auth, async (req, res) => {
-  const { q, limit='100' } = req.query;
-  const take = Math.min(parseInt(limit,10)||100, 200);
+  const { q, limit } = req.query;
   let where = '1=1', params = [];
-  if (q) { where = '(name LIKE ? OR dept LIKE ?)'; params.push(`%${q}%`,`%${q}%`); }
-  const [rows] = await pool.query(`SELECT id,dept,name FROM municipality WHERE ${where} ORDER BY dept,name LIMIT ?`, [...params, take]);
+
+  if (q) {
+    where = '(name LIKE ? OR dept LIKE ?)';
+    params.push(`%${q}%`, `%${q}%`);
+  }
+
+  let sql = `SELECT id, dept, name FROM municipality WHERE ${where} ORDER BY dept, name`;
+
+  // Solo aplica LIMIT si viene en la query (y es numérico positivo)
+  if (limit && !isNaN(limit) && parseInt(limit, 10) > 0) {
+    sql += ' LIMIT ?';
+    params.push(parseInt(limit, 10));
+  }
+
+  const [rows] = await pool.query(sql, params);
   res.json(rows);
 });
+
 
 // ---------- Guardar reporte (actualiza solo agent y dailyreport) ----------
 app.post('/reports', auth, async (req, res) => {
@@ -200,16 +237,16 @@ app.post('/reports', auth, async (req, res) => {
 
       // Ubicación
       let location = 'N/A';
-      if (state === 'SERVICIO' && muniId) {
+      if ((state === 'SERVICIO' || state === 'LABORANDO') && muniId) {
         const [[muni]] = await conn.query(
           'SELECT CONCAT(dept, " - ", name) AS label FROM municipality WHERE id=?', [muniId]
         );
-        location = muni?.label || 'SERVICIO';
+        location = muni?.label || (state === 'LABORANDO' ? 'LABORANDO' : 'SERVICIO');
       }
       // Actualiza agent
       await conn.query(
-        'UPDATE agent SET status=?, location=? WHERE id=?',
-        [state, location, ag.id]
+        'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
+         [state, muniId, ag.id]
       );
     }
 
@@ -372,6 +409,23 @@ app.get('/debug/db', async (req, res) => {
   } catch (e) {
     res.status(500).json({ ok:false, error: e.message });
   }
+});
+
+app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
+  const [rows] = await pool.query(`
+    SELECT 
+      m.id, 
+      m.name, 
+      m.dept, 
+      m.lat, 
+      m.lon, 
+      COUNT(a.id) AS agent_count
+    FROM agent a
+    JOIN municipality m ON m.id = a.municipalityId
+    WHERE a.groupId IS NOT NULL
+    GROUP BY m.id
+  `);
+  res.json(rows);
 });
 
 // ---------- Cron (solo logs) ----------
