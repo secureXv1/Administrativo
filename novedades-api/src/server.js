@@ -98,15 +98,31 @@ app.get('/my/agents', auth, async (req, res) => {
     return res.status(403).json({ error: 'Forbidden' });
   }
   const groupId = req.user.groupId;
+
+  // Saca la fecha de hoy y corte actual (AM/PM)
+  const now = new Date();
+  const { canonical } = getCorte(now); // Ejemplo: "06:30" o "14:30"
+  const reportDate = now.toISOString().slice(0, 10);
+
+  // Busca el reporte actual de ese grupo
+  const [[report]] = await pool.query(
+    `SELECT id FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?) AND groupId=? LIMIT 1`,
+    [reportDate, canonical, groupId]
+  );
+  const reportId = report?.id || null;
+
+  // Consulta los agentes + fechas de novedad del dailyreport_agent
   const [rows] = await pool.query(
     `SELECT 
         a.id, a.code, a.category, a.status, a.municipalityId,
-        m.dept, m.name
+        m.dept, m.name,
+        da.novelty_start, da.novelty_end
       FROM agent a
       LEFT JOIN municipality m ON a.municipalityId = m.id
+      LEFT JOIN dailyreport_agent da ON da.agentId = a.id AND da.reportId = ?
       WHERE a.groupId = ?
       ORDER BY a.code`,
-    [groupId]
+    [reportId, groupId]
   );
   // Opcional: agrega el string completo para el frontend
   const withFullName = rows.map(r => ({
@@ -115,6 +131,7 @@ app.get('/my/agents', auth, async (req, res) => {
   }));
   res.json(withFullName);
 });
+
 
 
 
@@ -299,9 +316,18 @@ app.post('/reports', auth, async (req, res) => {
       const ag = agentMap[code];
       // Guarda el detalle del agente para el reporte
       await conn.query(
-        `INSERT INTO dailyreport_agent (reportId, agentId, state, municipalityId) VALUES (?, ?, ?, ?)`,
-        [reportId, ag.id, state, muniId]
+        `INSERT INTO dailyreport_agent (reportId, agentId, state, municipalityId, novelty_start, novelty_end) VALUES (?, ?, ?, ?, ?, ?)`,
+        [
+          reportId,
+          ag.id,
+          state,
+          muniId,
+          // Si no es LABORANDO ni SERVICIO, guarda fechas, si no, null
+          (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_start || null) : null,
+          (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_end || null) : null
+        ]
       );
+
 
       // Actualiza el estado y municipio del agente también
       await conn.query(

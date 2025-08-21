@@ -75,31 +75,52 @@
                         </select>
                       </td>
                       <td>
-                        <template v-if="a.status === 'SERVICIO' || a.status === 'LABORANDO'">
-                          <input
-                            class="input"
-                            :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}"
-                            list="municipios-list"
-                            v-model="a.municipalityName"
-                            @input="onMuniInput(a)"
-                            @blur="onMuniInput(a)"
-                            placeholder="Buscar municipio..."
-                            autocomplete="off"
+                      <!-- LABORANDO/SERVICIO: municipio -->
+                      <template v-if="a.status === 'SERVICIO' || a.status === 'LABORANDO'">
+                        <input
+                          class="input"
+                          :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}"
+                          list="municipios-list"
+                          v-model="a.municipalityName"
+                          @input="onMuniInput(a)"
+                          @blur="onMuniInput(a)"
+                          placeholder="Buscar municipio..."
+                          autocomplete="off"
+                        />
+                        <datalist id="municipios-list">
+                          <option
+                            v-for="m in municipalities"
+                            :key="m.id"
+                            :value="m.dept + ' - ' + m.name"
                           />
-                          <datalist id="municipios-list">
-                            <option
-                              v-for="m in municipalities"
-                              :key="m.id"
-                              :value="m.dept + ' - ' + m.name"
-                            />
-                          </datalist>
-                          <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">Debe seleccionar un municipio válido</span>
+                        </datalist>
+                        <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
+                          Debe seleccionar un municipio válido
+                        </span>
+                      </template>
 
-                        </template>
-                        <template v-else>
-                          <span class="text-slate-500">N/A</span>
-                        </template>
-                      </td>
+                      <!-- NOVEDAD: fechas inicio/fin -->
+                      <template v-else>
+                        <div class="flex flex-col gap-1">
+                          <span class="text-slate-500">Novedad</span>
+                          <div class="flex gap-1">
+                            <input
+                              class="input"
+                              type="date"
+                              v-model="a.novelty_start"
+                              placeholder="Inicio"
+                            />
+                            <input
+                              class="input"
+                              type="date"
+                              v-model="a.novelty_end"
+                              placeholder="Fin"
+                            />
+                          </div>
+                        </div>
+                      </template>
+                    </td>
+
                       <td>
                         <button class="btn-ghost" @click="removeAgent(a.id)">Quitar</button>
                       </td>
@@ -175,8 +196,14 @@ async function loadAgents() {
           municipalityName = `${m.dept} - ${m.name}`;
         }
       }
-      return { ...a, municipalityName };
+      return {
+        ...a,
+        municipalityName,
+        novelty_start: a.novelty_start ? a.novelty_start.slice(0, 10) : '', // YYYY-MM-DD
+        novelty_end: a.novelty_end ? a.novelty_end.slice(0, 10) : ''
+      };
     });
+
   } catch (e) {
     msg.value = e.response?.data?.error || 'Error al cargar agentes'
     agents.value = []
@@ -219,8 +246,11 @@ async function save() {
       people: agents.value.map(a => ({
         agentCode: a.code,
         state: a.status,
-        municipalityId: (a.status === 'SERVICIO' || a.status === 'LABORANDO') ? a.municipalityId : null
+        municipalityId: (a.status === 'SERVICIO' || a.status === 'LABORANDO') ? a.municipalityId : null,
+        novelty_start: (a.status !== 'LABORANDO' && a.status !== 'SERVICIO') ? a.novelty_start : null,
+        novelty_end: (a.status !== 'LABORANDO' && a.status !== 'SERVICIO') ? a.novelty_end : null
       }))
+
     }, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     })
