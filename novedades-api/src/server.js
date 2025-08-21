@@ -746,4 +746,32 @@ cron.schedule('45 6 * * *', () => console.log('⏳ Cierre ventana 06:45'));
 cron.schedule('15 14 * * *', () => console.log('⏰ Recordatorio 14:15'));
 cron.schedule('45 14 * * *', () => console.log('⏳ Cierre ventana 14:45'));
 
+
+// Endpoint: Detalle de agentes por reporte
+app.get('/admin/report-agents/:id', auth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: 'Missing reportId' });
+
+  const [rows] = await pool.query(`
+    SELECT 
+      a.code, a.category,
+      da.state,
+      m.name AS municipalityName, m.dept,
+      da.novelty_start, da.novelty_end
+    FROM dailyreport_agent da
+    JOIN agent a ON a.id = da.agentId
+    LEFT JOIN municipality m ON m.id = da.municipalityId
+    WHERE da.reportId = ?
+    ORDER BY a.code
+  `, [id]);
+
+  res.json(rows);
+});
+
+
+
 app.listen(process.env.PORT || 8080, () => console.log('API on', process.env.PORT || 8080));
+
+
+
+

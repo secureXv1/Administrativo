@@ -6,6 +6,8 @@ import AdminGroups from '../views/AdminGroups.vue'
 import AdminUsers from '../views/AdminUsers.vue'
 import AdminAgents from '../views/AdminAgents.vue'
 import { http } from '../lib/http'
+import AdminReportDetail from '../views/AdminReportDetail.vue'
+
 
 const routes = [
   { path: '/', redirect: '/login' },
@@ -15,6 +17,7 @@ const routes = [
   { path: '/admin/groups', component: AdminGroups },
   { path: '/admin/agents', component: AdminAgents },
   { path: '/admin/users', component: AdminUsers },
+  { path: '/admin/report/:id', component: AdminReportDetail },
 ]
 
 

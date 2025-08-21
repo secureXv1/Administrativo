@@ -119,10 +119,14 @@
               <tbody>
                 <tr v-for="r in rowsDisplay" :key="r.id" class="hover:bg-slate-50">
                   <td>
-                    <span class="inline-flex items-center gap-2">
-                      <span class="h-2 w-2 rounded-full bg-brand-600"></span>{{ r.groupCode }}
-                    </span>
-                  </td>
+                <span
+                  class="inline-flex items-center gap-2 cursor-pointer hover:underline text-brand-700"
+                  @click="goToGroupDetail(r)"
+                >
+                  <span class="h-2 w-2 rounded-full bg-brand-600"></span>{{ r.groupCode }}
+                </span>
+              </td>
+
                   <td>{{ r.date }}</td>
                   <td>{{ formatTime(r.updatedAt) }}</td>
                   <td>{{ prettyCorte(r.checkpoint) }}</td>
@@ -242,6 +246,13 @@ function recalcTotals() {
     tot.value.PT_N  += r.PT_nov||0
   }
 }
+
+import { useRouter } from 'vue-router'
+const router = useRouter()
+function goToGroupDetail(r) {
+  router.push(`/admin/report/${r.id}`)
+}
+
 
 async function load(){
   const { data } = await axios.get('/dashboard/reports', {
