@@ -114,8 +114,7 @@
                   <th>FE (OF/SO/PT)</th>
                   <th>FD (OF/SO/PT)</th>
                   <th>Novedades (OF/SO/PT)</th>
-                  <th>Notas</th>
-                </tr>
+                  </tr>
               </thead>
               <tbody>
                 <tr v-for="r in rowsDisplay" :key="r.id" class="hover:bg-slate-50">
@@ -130,8 +129,7 @@
                   <td class="font-medium text-slate-900">{{ r.FE }}</td>
                   <td class="font-medium text-slate-900">{{ r.FD }}</td>
                   <td class="font-medium text-slate-900">{{ r.NOV }}</td>
-                  <td class="text-slate-600">{{ r.notes }}</td>
-                </tr>
+                  </tr>
                 <tr v-if="rowsDisplay.length===0">
                   <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
                 </tr>
@@ -280,7 +278,7 @@ async function applyFilters() {
 
 // CSV (con Grupo primero + Hora)
 function exportCSV(){
-  const header = ['Grupo','Fecha','Hora','Corte','FE (OF/SO/PT)','FD (OF/SO/PT)','Novedades (OF/SO/PT)','Notas']
+  const header = ['Grupo','Fecha','Hora','Corte','FE (OF/SO/PT)','FD (OF/SO/PT)','Novedades (OF/SO/PT)']
   const lines = rowsDisplay.value.map(r => [
     r.groupCode,
     r.date,
@@ -288,9 +286,9 @@ function exportCSV(){
     prettyCorte(r.checkpoint),
     r.FE,
     r.FD,
-    r.NOV,
-    (r.notes||'').replace(/\n/g,' ')
+    r.NOV
   ])
+
   const csv = [header, ...lines]
     .map(x => x.map(v => `"${(v??'').toString().replace(/"/g,'""')}"`).join(','))
     .join('\n')
