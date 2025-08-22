@@ -8,16 +8,12 @@
           <router-link to="/admin/groups" class="btn-ghost">Grupos</router-link>
           <router-link to="/admin/users" class="btn-ghost">Usuarios</router-link>
           <router-link to="/admin/agents" class="btn-ghost">Agentes</router-link>
-
           <router-link to="/perfil" class="btn-ghost flex items-center gap-1">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A10.97 10.97 0 0112 15c2.21 0 4.266.714 5.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
             Perfil
           </router-link>
-          
-
-
           <button @click="logout" class="btn-ghost">Cerrar sesión</button>
         </nav>
       </div>
@@ -28,13 +24,16 @@
         <div class="card-body">
           <div class="flex items-center justify-between">
             <h2 class="font-semibold text-slate-800">Listado de usuarios</h2>
-            <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
           </div>
         </div>
       </div>
 
       <div class="card">
         <div class="card-body">
+          <!-- Bloque de mensaje -->
+          <div v-if="msg" :class="[msgClass, 'mb-4', 'text-base', 'font-semibold']">
+            {{ msg }}
+          </div>
           <!-- Formulario crear/editar -->
           <form class="mb-6 flex flex-wrap gap-2 items-end" @submit.prevent="onSubmit">
             <input class="input" v-model="form.email" type="email" placeholder="Email" required style="width:190px" />
@@ -48,7 +47,15 @@
               <option value="" disabled>Grupo</option>
               <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.code }} ({{ g.name }})</option>
             </select>
-            <input v-if="!form.id" class="input" type="password" v-model="form.password" placeholder="Contraseña" required style="width:160px" />
+            <input
+              class="input"
+              type="password"
+              v-model="form.password"
+              :placeholder="form.id ? 'Nueva contraseña (deja vacío para no cambiarla)' : 'Contraseña'"
+              :required="!form.id"
+              style="width:160px"
+            />
+
             <button class="btn-primary" type="submit">
               {{ form.id ? 'Actualizar' : 'Crear usuario' }}
             </button>
@@ -107,6 +114,11 @@ const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : '
 // Formulario reactivo
 const form = ref({ id: null, email: '', role: '', groupId: '', password: '' })
 
+// Limpia el mensaje después de un delay
+function clearMsgAfterDelay() {
+  setTimeout(() => { msg.value = '' }, 2500)
+}
+
 // Cargar grupos y usuarios
 async function loadAll() {
   msg.value = ''
@@ -122,6 +134,7 @@ async function loadAll() {
     groups.value = Array.isArray(groupsData) ? groupsData : []
   } catch (e) {
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'Error al cargar datos'
+    clearMsgAfterDelay()
   }
 }
 
@@ -132,10 +145,10 @@ function resetForm() {
 
 // Crear o actualizar usuario
 async function onSubmit() {
-  if (!form.value.email.trim()) { msg.value = 'El email es requerido'; return }
-  if (!form.value.role) { msg.value = 'Selecciona el rol'; return }
-  if (!form.value.groupId) { msg.value = 'Selecciona un grupo'; return }
-  if (!form.value.id && !form.value.password) { msg.value = 'Contraseña requerida'; return }
+  if (!form.value.email.trim()) { msg.value = 'El email es requerido'; clearMsgAfterDelay(); return }
+  if (!form.value.role) { msg.value = 'Selecciona el rol'; clearMsgAfterDelay(); return }
+  if (!form.value.groupId) { msg.value = 'Selecciona un grupo'; clearMsgAfterDelay(); return }
+  if (!form.value.id && !form.value.password) { msg.value = 'Contraseña requerida'; clearMsgAfterDelay(); return }
   try {
     if (!form.value.id) {
       // Crear
@@ -163,8 +176,10 @@ async function onSubmit() {
     }
     await loadAll()
     resetForm()
+    clearMsgAfterDelay()
   } catch (e) {
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'Error al guardar'
+    clearMsgAfterDelay()
   }
 }
 
@@ -181,8 +196,10 @@ async function deleteUser(u) {
     msg.value = 'Usuario eliminado ✅'
     await loadAll()
     resetForm()
+    clearMsgAfterDelay()
   } catch (e) {
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo eliminar'
+    clearMsgAfterDelay()
   }
 }
 
