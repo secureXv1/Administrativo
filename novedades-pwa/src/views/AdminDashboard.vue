@@ -59,6 +59,12 @@
         </div></div>
       </div>
 
+      <div class="kpi bg-white"><div class="card-body">
+        <h4>Agentes sin grupo</h4>
+        <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
+      </div></div>
+
+
       <!-- Mapa de agentes por municipio -->
       <div class="card">
         <div class="card-body">
@@ -154,7 +160,7 @@ import axios from 'axios'
 const today = new Date().toISOString().slice(0,10)
 const date = ref(today)        // un solo día
 const checkpoint = ref('AM')   // solo AM/PM
-
+const agentesLibres = ref(0)
 const rows = ref([])
 
 const tot = ref({
@@ -181,13 +187,12 @@ import L from 'leaflet'
 const municipalitiesMap = ref([])
 
 async function loadMapData() {
-  // Ahora pasa date y checkpoint al endpoint:
   const { data } = await axios.get('/admin/agent-municipalities', {
-  params: { date: date.value, checkpoint: checkpoint.value },
-  headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-});
+    params: { date: date.value, checkpoint: checkpoint.value },
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  });
   municipalitiesMap.value = data || []
-  setTimeout(drawMap, 120) // Espera a que se renderice el div
+  setTimeout(drawMap, 120)
 }
 
 function drawMap() {
@@ -224,10 +229,20 @@ function drawMap() {
   })
 }
 
+// === CARGAR AGENTES LIBRES ===
+async function loadAgentesLibres() {
+  const { data } = await axios.get('/admin/agents', {
+    params: { limit: 9999 }, // Quita cualquier filtro por groupId
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  // Filtra todos los agentes donde groupId sea null o 0
+  agentesLibres.value = (data || []).filter(a => a.groupId == null || a.groupId === 0).length
+}
+
 function formatTime(ts) {
   if (!ts) return ''
   const d = new Date(ts)
-  return d.toISOString().substring(11, 16) // HH:mm
+  return d.toISOString().substring(11, 16)
 }
 
 function recalcTotals() {
@@ -253,13 +268,12 @@ function goToGroupDetail(r) {
   router.push(`/admin/report/${r.id}`)
 }
 
-
 async function load(){
   const { data } = await axios.get('/dashboard/reports', {
     params: {
-      date_from: date.value,      // mismo día
-      date_to: date.value,        // mismo día
-      checkpoint: checkpoint.value // AM|PM
+      date_from: date.value,
+      date_to: date.value,
+      checkpoint: checkpoint.value
     },
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
@@ -283,38 +297,16 @@ async function loadCompliance() {
 async function applyFilters() {
   await load();
   await loadCompliance();
-  await loadMapData(); 
-}
-
-
-// CSV (con Grupo primero + Hora)
-function exportCSV(){
-  const header = ['Grupo','Fecha','Hora','Corte','FE (OF/SO/PT)','FD (OF/SO/PT)','Novedades (OF/SO/PT)']
-  const lines = rowsDisplay.value.map(r => [
-    r.groupCode,
-    r.date,
-    formatTime(r.updatedAt),
-    prettyCorte(r.checkpoint),
-    r.FE,
-    r.FD,
-    r.NOV
-  ])
-
-  const csv = [header, ...lines]
-    .map(x => x.map(v => `"${(v??'').toString().replace(/"/g,'""')}"`).join(','))
-    .join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = `dashboard_${date.value}_${checkpoint.value}.csv`
-  a.click(); URL.revokeObjectURL(url)
+  await loadMapData();
+  await loadAgentesLibres();
 }
 
 // Cargar al montar
 onMounted(async () => {
   await load()
   await loadCompliance()
-  await loadMapData()   // <--- Agrega esta línea
+  await loadMapData()
+  await loadAgentesLibres()
 })
 
 function prettyCorte(hhmm) {
