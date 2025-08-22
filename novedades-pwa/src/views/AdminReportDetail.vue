@@ -93,15 +93,20 @@ function prettyCorte(hhmm) {
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
+  // Si viene como YYYY-MM-DD, solo reorganiza
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [y, m, d] = dateStr.split('-')
+    return `${d}/${m}/${y}`
+  }
+  // Si viene con hora, parsea y ajusta a local
   const d = new Date(dateStr)
-  // Asegura que d es válido
   if (isNaN(d)) return ''
-  // Pad con ceros
   const day = String(d.getDate()).padStart(2, '0')
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const year = d.getFullYear()
   return `${day}/${month}/${year}`
 }
+
 
 
 onMounted(async () => {

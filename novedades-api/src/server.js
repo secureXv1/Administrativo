@@ -204,6 +204,7 @@ app.get('/catalogs/municipalities', auth, async (req, res) => {
 
 
 // ---------- Guardar reporte (actualiza solo agent y dailyreport) ----------
+// ---------- Guardar reporte (actualiza solo agent y dailyreport) ----------
 app.post('/reports', auth, async (req, res) => {
   const { reportDate, people = [] } = req.body;
   if (!reportDate) return res.status(422).json({ error:'FechaRequerida' });
@@ -233,6 +234,43 @@ app.post('/reports', auth, async (req, res) => {
     // Crea un mapa {code: {id, category}}
     const agentMap = {};
     for (const a of agentsBD) agentMap[a.code] = a;
+
+    // ----------- BLOQUE PARA COPIAR NOVEDADES DEL REPORTE ANTERIOR -----------
+    const groupId = req.user.groupId;
+    // Busca el último reporte anterior (no el actual)
+    const [[prevReport]] = await conn.query(
+      `SELECT id FROM dailyreport 
+        WHERE groupId=? AND reportDate<=? 
+          AND NOT (reportDate=? AND checkpointTime=TIME(?))
+        ORDER BY reportDate DESC, checkpointTime DESC 
+        LIMIT 1`,
+      [groupId, reportDate, reportDate, checkpointTime]
+    );
+    // Trae novedades activas del anterior reporte (si existe)
+    let prevNovedades = {};
+    if (prevReport) {
+      const [prevRows] = await conn.query(
+        `SELECT agentId, state, novelty_start, novelty_end 
+           FROM dailyreport_agent 
+          WHERE reportId=?`,
+        [prevReport.id]
+      );
+      const today = new Date(reportDate);
+      for (const r of prevRows) {
+        if (
+          r.novelty_start &&
+          (!r.novelty_end || new Date(r.novelty_end) >= today) &&
+          ['VACACIONES','EXCUSA','PERMISO'].includes(r.state)
+        ) {
+          prevNovedades[r.agentId] = {
+            novelty_start: r.novelty_start,
+            novelty_end: r.novelty_end,
+            state: r.state
+          };
+        }
+      }
+    }
+    // ----------- FIN BLOQUE COPIAR NOVEDADES -----------
 
     // 3. Calcula KPIs y valida agentes
     for (const p of people) {
@@ -269,7 +307,6 @@ app.post('/reports', auth, async (req, res) => {
     });
 
     // 5. Guarda/actualiza dailyreport (y obtén el id real)
-    const groupId = req.user.groupId;
     const leaderUserId = req.user.uid;
     await conn.query(
       `
@@ -314,6 +351,16 @@ app.post('/reports', auth, async (req, res) => {
       const muniId = p.municipalityId ? Number(p.municipalityId) : null;
 
       const ag = agentMap[code];
+
+      // --- Nuevo: copiar novedad activa si no se mandó nada ---
+      let novelty_start = (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_start || null) : null;
+      let novelty_end = (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_end || null) : null;
+      // Si no se mandó ninguna novedad pero la hay en el anterior, la arrastramos (si el estado coincide)
+      if (!novelty_start && !novelty_end && prevNovedades[ag.id] && (state === prevNovedades[ag.id].state)) {
+        novelty_start = prevNovedades[ag.id].novelty_start;
+        novelty_end = prevNovedades[ag.id].novelty_end;
+      }
+
       // Guarda el detalle del agente para el reporte
       await conn.query(
         `INSERT INTO dailyreport_agent (reportId, agentId, state, municipalityId, novelty_start, novelty_end) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -322,12 +369,10 @@ app.post('/reports', auth, async (req, res) => {
           ag.id,
           state,
           muniId,
-          // Si no es LABORANDO ni SERVICIO, guarda fechas, si no, null
-          (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_start || null) : null,
-          (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_end || null) : null
+          novelty_start,
+          novelty_end
         ]
       );
-
 
       // Actualiza el estado y municipio del agente también
       await conn.query(
@@ -351,6 +396,7 @@ app.post('/reports', auth, async (req, res) => {
     conn.release();
   }
 });
+
 
 // ---------- Obtener reporte resumen por día ----------
 app.get('/reports', auth, async (req, res) => {
@@ -757,7 +803,8 @@ app.get('/admin/report-agents/:id', auth, requireAdmin, async (req, res) => {
       a.code, a.category,
       da.state,
       m.name AS municipalityName, m.dept,
-      da.novelty_start, da.novelty_end
+      DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
+      DATE_FORMAT(da.novelty_end, '%Y-%m-%d') AS novelty_end
     FROM dailyreport_agent da
     JOIN agent a ON a.id = da.agentId
     LEFT JOIN municipality m ON m.id = da.municipalityId
@@ -767,6 +814,7 @@ app.get('/admin/report-agents/:id', auth, requireAdmin, async (req, res) => {
 
   res.json(rows);
 });
+
 
 
 
