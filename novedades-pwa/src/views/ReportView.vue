@@ -3,7 +3,10 @@
     <header class="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-slate-200">
       <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
         <h1 class="text-slate-900 font-semibold">Reporte del día</h1>
-        <button @click="logout" class="btn-ghost">Cerrar sesión</button>
+        <div class="flex gap-3 items-center">
+          <router-link to="/perfil" class="btn-ghost">Perfil</router-link>
+          <button @click="logout" class="btn-ghost">Cerrar sesión</button>
+        </div>
       </div>
     </header>
 

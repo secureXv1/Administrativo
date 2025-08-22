@@ -7,6 +7,7 @@ import AdminUsers from '../views/AdminUsers.vue'
 import AdminAgents from '../views/AdminAgents.vue'
 import { http } from '../lib/http'
 import AdminReportDetail from '../views/AdminReportDetail.vue'
+import Perfil from '../views/Perfil.vue'
 
 
 const routes = [
@@ -18,8 +19,13 @@ const routes = [
   { path: '/admin/agents', component: AdminAgents },
   { path: '/admin/users', component: AdminUsers },
   { path: '/admin/report/:id', component: AdminReportDetail },
+  {
+    path: '/perfil',
+    name: 'Perfil',
+    component: Perfil,
+    meta: { requiresAuth: true }
+  }
 ]
-
 
 const router = createRouter({ history: createWebHistory(), routes })
 
@@ -35,6 +41,7 @@ async function getMe() {
 router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
 
+  // Permitir acceso libre solo al login
   if (!token && to.path !== '/login') return next('/login')
   if (to.path === '/login') return next()
 
@@ -43,14 +50,22 @@ router.beforeEach(async (to, from, next) => {
 
   const role = String(me.role || '').toLowerCase()
 
+  // Permitir acceso a /perfil y /report para todos autenticados
+  if (to.path === '/perfil' || to.path === '/report') return next()
+
+  // Admin: puede navegar en /admin/* 
   if (role === 'admin') {
     if (!to.path.startsWith('/admin')) return next('/admin')
     return next()
   }
+
+  // Leader: NO puede navegar en /admin/*
   if (role === 'leader') {
     if (to.path.startsWith('/admin')) return next('/report')
     return next()
   }
+
+  // Cualquier otro caso, fuera
   return next('/login')
 })
 

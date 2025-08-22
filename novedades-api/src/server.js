@@ -815,6 +815,40 @@ app.get('/admin/report-agents/:id', auth, requireAdmin, async (req, res) => {
   res.json(rows);
 });
 
+app.get('/me/profile', auth, async (req, res) => {
+  const [[user]] = await pool.query(
+    `SELECT u.id, u.email, u.role, u.groupId, u.createdAt, g.code AS groupCode
+       FROM user u
+       LEFT JOIN \`group\` g ON g.id = u.groupId
+      WHERE u.id=? LIMIT 1`,
+    [req.user.uid]
+  );
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  res.json(user);
+});
+
+
+app.post('/me/change-password', auth, async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Campos requeridos' });
+
+  const [[user]] = await pool.query(
+    'SELECT passwordHash FROM user WHERE id=? LIMIT 1', [req.user.uid]
+  );
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  const ok = await bcrypt.compare(oldPassword, user.passwordHash);
+  if (!ok) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  await pool.query(
+    'UPDATE user SET passwordHash=? WHERE id=?',
+    [hash, req.user.uid]
+  );
+  res.json({ ok: true });
+});
+
+
 
 
 
