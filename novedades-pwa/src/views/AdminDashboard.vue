@@ -66,10 +66,39 @@
         </div></div>
       </div>
 
-      <div class="kpi bg-white"><div class="card-body">
-        <h4>Agentes sin grupo</h4>
-        <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
-      </div></div>
+      
+
+
+                <div class="flex gap-6 items-center mb-2">
+            <div class="kpi bg-white">
+              <div class="card-body">
+                <h4>Agentes sin grupo</h4>
+                <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
+              </div>
+            </div>
+
+            <div>
+              <label class="label block mb-1">Filtrar grupos en mapa</label>
+              <Multiselect
+                v-model="gruposSeleccionados"
+                :options="grupos"
+                :multiple="true"
+                :close-on-select="false"
+                :clear-on-select="false"
+                :preserve-search="true"
+                placeholder="Selecciona grupos..."
+                label="name"
+                track-by="id"
+                :preselect-first="false"
+                :custom-label="groupLabel"
+                @input="onChangeGrupos"
+                class="w-full"
+              />
+              <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
+            </div>
+
+          </div>
+
 
 
       <!-- Mapa de agentes por municipio -->
@@ -163,6 +192,17 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.css'
+
+
+function groupLabel(option) {
+  // Para mostrar código y nombre
+  return `${option.code} - ${option.name}`
+}
+
+
+
 
 const today = new Date().toISOString().slice(0,10)
 const date = ref(today)        // un solo día
@@ -193,14 +233,25 @@ import L from 'leaflet'
 
 const municipalitiesMap = ref([])
 
+const grupos = ref([]) // Todos los grupos cargados del backend
+const gruposSeleccionados = ref([]) // Ids seleccionados para el filtro
+
 async function loadMapData() {
+  const groupsParam = gruposSeleccionados.value.length
+    ? gruposSeleccionados.value.map(g => g.id).join(',')
+    : ''
   const { data } = await axios.get('/admin/agent-municipalities', {
-    params: { date: date.value, checkpoint: checkpoint.value },
+    params: { 
+      date: date.value, 
+      checkpoint: checkpoint.value,
+      groups: groupsParam
+    },
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   });
   municipalitiesMap.value = data || []
   setTimeout(drawMap, 120)
 }
+
 
 function drawMap() {
   if (window.myMap) {
@@ -308,13 +359,29 @@ async function applyFilters() {
   await loadAgentesLibres();
 }
 
+function onChangeGrupos() {
+  loadMapData()
+}
+
+
+
+
 // Cargar al montar
 onMounted(async () => {
+  // Cargar grupos para el filtro del mapa
+  const { data: gruposData } = await axios.get('/admin/groups', {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  grupos.value = Array.isArray(gruposData) ? gruposData : []
+  gruposSeleccionados.value = grupos.value.slice() // <-- OBJETOS (BIEN)
+ // Todos seleccionados por defecto
+
   await load()
   await loadCompliance()
   await loadMapData()
   await loadAgentesLibres()
 })
+
 
 function prettyCorte(hhmm) {
   const h = parseInt((hhmm || '00:00').slice(0, 2), 10)

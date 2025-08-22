@@ -849,6 +849,66 @@ app.post('/me/change-password', auth, async (req, res) => {
 });
 
 
+//mapa por grupos
+
+
+// Endpoint para el mapa con filtro de grupos
+app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
+  const { date, checkpoint, groups } = req.query;
+  if (!date || !checkpoint) return res.status(400).json({ error:'Missing date or checkpoint' });
+
+  // Determina la hora canonical de checkpoint
+  const canonical = checkpoint === 'AM' ? '06:30' : '14:30';
+
+  // Busca TODOS los reportes (uno por grupo) para ese día/corte
+  let reportWhere = `reportDate=? AND checkpointTime=TIME(?)`;
+  let reportParams = [date, canonical];
+
+  // Filtrar por grupos si vienen en la query
+  let groupFilter = null;
+  if (groups) {
+    const groupIds = String(groups)
+      .split(',')
+      .map(x => parseInt(x))
+      .filter(x => !isNaN(x));
+    if (groupIds.length) {
+      reportWhere += ` AND groupId IN (${groupIds.map(_ => '?').join(',')})`;
+      reportParams = [...reportParams, ...groupIds];
+      groupFilter = groupIds;
+    }
+  }
+
+  const [reports] = await pool.query(
+    `SELECT id, groupId FROM dailyreport WHERE ${reportWhere}`,
+    reportParams
+  );
+  if (!reports.length) return res.json([]);
+
+  const reportIds = reports.map(r => r.id);
+
+  // JOIN con dailyreport para traer groupId y con group para code
+  let qMarks = reportIds.map(() => '?').join(',');
+  const [rows] = await pool.query(`
+    SELECT 
+      m.id, m.name, m.dept, m.lat, m.lon, 
+      COUNT(da.agentId) AS agent_count,
+      dr.groupId,
+      g.code AS groupCode
+    FROM dailyreport_agent da
+    JOIN dailyreport dr ON dr.id = da.reportId
+    JOIN \`group\` g ON g.id = dr.groupId
+    JOIN municipality m ON m.id = da.municipalityId
+    WHERE da.reportId IN (${qMarks})
+    GROUP BY m.id, dr.groupId
+  `, reportIds);
+
+  res.json(rows);
+});
+
+
+
+
+
 
 
 
