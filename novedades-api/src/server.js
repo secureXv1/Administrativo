@@ -362,17 +362,20 @@ app.post('/reports', auth, async (req, res) => {
       }
 
       // Guarda el detalle del agente para el reporte
+      // Ahora incluye groupId
       await conn.query(
-        `INSERT INTO dailyreport_agent (reportId, agentId, state, municipalityId, novelty_start, novelty_end) VALUES (?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO dailyreport_agent (reportId, agentId, groupId, state, municipalityId, novelty_start, novelty_end) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           reportId,
           ag.id,
+          groupId, // <-- Nuevo campo
           state,
           muniId,
           novelty_start,
           novelty_end
         ]
       );
+
 
       // Actualiza el estado y municipio del agente también
       await conn.query(
@@ -733,9 +736,10 @@ app.get('/debug/db', async (req, res) => {
   }
 });
 
-// API para el mapa de municipios con agentes según reporte (date + checkpoint)
+
+// API para el mapa de municipios con agentes según reporte (date + checkpoint + groups)
 app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
-  const { date, checkpoint } = req.query;
+  const { date, checkpoint, groups } = req.query;
   if (!date || !checkpoint) return res.status(400).json({ error:'Missing date or checkpoint' });
 
   // Determina la hora canonical de checkpoint
@@ -743,24 +747,45 @@ app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
 
   // Busca TODOS los reportes (uno por grupo) para ese día/corte
   const [reports] = await pool.query(
-    `SELECT id FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?)`,
+    `SELECT id, groupId FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?)`,
     [date, canonical]
   );
   if (!reports.length) return res.json([]);
 
   const reportIds = reports.map(r => r.id);
+  const groupIds = reports.map(r => r.groupId);
 
-  let qMarks = reportIds.map(() => '?').join(','); // (?, ?, ...)
+  let groupFilter = null;
+  if (groups) {
+    groupFilter = String(groups).split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
+  }
+
+  let qMarks = reportIds.map(() => '?').join(',');
+
+  let whereGroups = '';
+  let params = [...reportIds];
+  if (groupFilter && groupFilter.length) {
+    whereGroups = ` AND da.groupId IN (${groupFilter.map(_ => '?').join(',')})`;
+    params = [...params, ...groupFilter];
+  }
+
   const [rows] = await pool.query(`
-    SELECT m.id, m.name, m.dept, m.lat, m.lon, COUNT(da.agentId) AS agent_count
-      FROM dailyreport_agent da
-      JOIN municipality m ON m.id = da.municipalityId
+    SELECT 
+      m.id, m.name, m.dept, m.lat, m.lon, 
+      da.groupId,
+      g.code AS groupCode,
+      COUNT(da.agentId) AS agent_count
+    FROM dailyreport_agent da
+    JOIN municipality m ON m.id = da.municipalityId
+    JOIN \`group\` g ON g.id = da.groupId
     WHERE da.reportId IN (${qMarks})
-    GROUP BY m.id
-  `, reportIds);
+    ${whereGroups}
+    GROUP BY m.id, da.groupId
+  `, params);
 
   res.json(rows);
 });
+
 
 app.get('/dashboard/compliance', auth, requireAdmin, async (req, res) => {
   const { date, checkpoint } = req.query;

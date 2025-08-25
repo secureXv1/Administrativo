@@ -46,3 +46,5 @@
 .kpi { @apply bg-white shadow-sm rounded-2xl border border-slate-200; }
 .kpi h4 { @apply text-slate-500 text-sm; }
 .kpi .value { @apply text-2xl font-semibold text-slate-900; }
+
+
