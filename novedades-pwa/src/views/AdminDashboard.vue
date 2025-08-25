@@ -78,53 +78,52 @@
             </div>
 
            <div>
-              <label class="label block mb-1">Filtrar grupos en mapa</label>
+            <label class="label block mb-1">Filtrar grupos en mapa</label>
 
-              <div class="flex gap-2 mb-1">
-                <button
-                  type="button"
-                  class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
-                  @click="seleccionarTodosGrupos"
-                  v-if="gruposSeleccionados.length !== grupos.length"
-                >Seleccionar todo</button>
-                <button
-                  type="button"
-                  class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
-                  @click="deseleccionarTodosGrupos"
-                  v-if="gruposSeleccionados.length"
-                >Quitar todo</button>
-              </div>
-              <Multiselect
-                v-model="gruposSeleccionados"
-                :options="grupos"
-                :multiple="true"
-                :close-on-select="false"
-                :clear-on-select="false"
-                :preserve-search="false"
-                :searchable="false"
-                :show-labels="false"
-                placeholder="Selecciona grupos..."
-                label="name"
-                track-by="id"
-                :preselect-first="false"
-                @input="onChangeGrupos"
-                class="w-full"
-              >
-                <!-- Option slot: checkboxes por grupo -->
-                <template #option="{ option, isSelected }">
-                  <input type="checkbox" :checked="isSelected" style="margin-right:8px" />
-                  {{ groupLabel(option) }}
-                </template>
-                <!-- Custom selected: muestra solo el conteo, no los chips -->
-                <template #singleLabel="{ value }">
-                  <span>{{ groupLabel(value) }}</span>
-                </template>
-                <template #selection="{ values, search, isOpen }">
-                  <span class="text-brand-700 font-medium">{{ values.length }} grupos seleccionados</span>
-                </template>
-              </Multiselect>
-              <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
+            <div class="flex gap-2 mb-1">
+              <button
+                type="button"
+                class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
+                @click="seleccionarTodosGrupos"
+                v-if="cargado && gruposSeleccionados.length !== grupos.length"
+              >Seleccionar todo</button>
+              <button
+                type="button"
+                class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
+                @click="deseleccionarTodosGrupos"
+                v-if="cargado && gruposSeleccionados.length"
+              >Quitar todo</button>
             </div>
+            <Multiselect
+              v-model="gruposSeleccionados"
+              :options="grupos"
+              :multiple="true"
+              :close-on-select="false"
+              :clear-on-select="false"
+              :preserve-search="false"
+              :searchable="false"
+              :show-labels="false"
+              placeholder="Selecciona grupos..."
+              label="name"
+              track-by="id"
+              :preselect-first="false"
+              @input="onChangeGrupos"
+              class="w-full"
+            >
+              <template #option="{ option, isSelected }">
+                <input type="checkbox" :checked="isSelected" style="margin-right:8px" />
+                {{ groupLabel(option) }}
+              </template>
+              <template #singleLabel="{ value }">
+                <span>{{ groupLabel(value) }}</span>
+              </template>
+              <template #selection="{ values }">
+                <span class="text-brand-700 font-medium">{{ values.length }} grupos seleccionados</span>
+              </template>
+            </Multiselect>
+
+            <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
+          </div>
 
 
           </div>
@@ -242,6 +241,7 @@ function deseleccionarTodosGrupos() {
 
 
 
+
 const today = new Date().toISOString().slice(0,10)
 const date = ref(today)        // un solo día
 const checkpoint = ref('AM')   // solo AM/PM
@@ -273,17 +273,16 @@ const municipalitiesMap = ref([])
 
 const grupos = ref([]) // Todos los grupos cargados del backend
 const gruposSeleccionados = ref([]) // Ids seleccionados para el filtro
+const cargado = ref(false)
 
 async function loadMapData() {
-  // Si NO hay grupos seleccionados, no muestres nada en el mapa
+  // Si NO hay grupos seleccionados, vacía el mapa
   if (!gruposSeleccionados.value.length) {
     municipalitiesMap.value = []
     setTimeout(drawMap, 120)
     return
   }
-  const groupsParam = gruposSeleccionados.value.length
-    ? gruposSeleccionados.value.map(g => g.id).join(',')
-    : ''
+  const groupsParam = gruposSeleccionados.value.map(g => g.id).join(',')
   const { data } = await axios.get('/admin/agent-municipalities', {
     params: { 
       date: date.value, 
@@ -291,10 +290,11 @@ async function loadMapData() {
       groups: groupsParam
     },
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  });
+  })
   municipalitiesMap.value = data || []
   setTimeout(drawMap, 120)
 }
+
 
 
 
@@ -398,19 +398,14 @@ async function loadCompliance() {
 
 // Botón "Aplicar"
 async function applyFilters() {
-  // 1. Recargar grupos y seleccionarlos todos
-  const { data: gruposData } = await axios.get('/admin/groups', {
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  grupos.value = Array.isArray(gruposData) ? gruposData : []
-  gruposSeleccionados.value = grupos.value.slice() // Todos seleccionados
-  
-  // 2. Cargar todo lo demás (el mapa se filtrará al cambiar 'gruposSeleccionados')
   await load()
   await loadCompliance()
+  // Selecciona todos los grupos SIEMPRE al filtrar:
+  gruposSeleccionados.value = grupos.value.slice()
   await loadMapData()
   await loadAgentesLibres()
 }
+
 
 
 function onChangeGrupos() {
@@ -422,17 +417,25 @@ function onChangeGrupos() {
 
 // Cargar al montar
 onMounted(async () => {
-  const { data: gruposData } = await axios.get('/admin/groups', {
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  grupos.value = Array.isArray(gruposData) ? gruposData : []
-  gruposSeleccionados.value = grupos.value.slice() // Selecciona todos por defecto
+  await loadGrupos()
+  gruposSeleccionados.value = grupos.value.slice() // Todos seleccionados por defecto
+  cargado.value = true
 
   await load()
   await loadCompliance()
   await loadMapData()
   await loadAgentesLibres()
 })
+
+// Nueva función:
+async function loadGrupos() {
+  const { data: gruposData } = await axios.get('/admin/groups', {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  grupos.value = Array.isArray(gruposData) ? gruposData : []
+}
+
+
 
 
 
