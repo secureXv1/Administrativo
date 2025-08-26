@@ -6,9 +6,16 @@
         <div class="flex items-center gap-3">
           <div class="h-9 w-9 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold">N</div>
           <div>
-            <h1 class="text-slate-900 font-semibold leading-tight">Dashboard de Novedades</h1>
-            <p class="text-slate-500 text-xs">Administrador</p>
-          </div>
+            <h1 class="text-slate-900 font-semibold leading-tight">
+                Dashboard de Novedades
+                <template v-if="me && me.role === 'leader_group'">- Grupo</template>
+              </h1>
+              <p class="text-slate-500 text-xs">
+                <template v-if="me && me.role === 'superadmin'">Administrador</template>
+                <template v-else-if="me && me.role === 'supervision'">Supervisión</template>
+                <template v-else-if="me && me.role === 'leader_group'">Líder de Grupo</template>
+              </p>
+                      </div>
         </div>
         <nav class="flex items-center gap-3">
           <router-link to="/admin" class="btn-ghost">Dashboard</router-link>
@@ -70,53 +77,71 @@
               </div>
             </div>
 
-           <div>
-            <label class="label block mb-1">Filtrar grupos en mapa</label>
+           <!-- ...filtro en el mapa... -->
 
-            <div class="flex gap-2 mb-1">
-              <button
-                type="button"
-                class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
-                @click="seleccionarTodosGrupos"
-                v-if="cargado && gruposSeleccionados.length !== grupos.length"
-              >Seleccionar todo</button>
-              <button
-                type="button"
-                class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
-                @click="deseleccionarTodosGrupos"
-                v-if="cargado && gruposSeleccionados.length"
-              >Quitar todo</button>
-            </div>
-            <Multiselect
-              v-model="gruposSeleccionados"
-              :options="grupos"
-              :multiple="true"
-              :close-on-select="false"
-              :clear-on-select="false"
-              :preserve-search="false"
-              :searchable="false"
-              :show-labels="false"
-              placeholder="Selecciona grupos..."
-              label="name"
-              track-by="id"
-              :preselect-first="false"
-              @input="onChangeGrupos"
-              class="w-full"
-            >
-              <template #option="{ option, isSelected }">
-                <input type="checkbox" :checked="isSelected" style="margin-right:8px" />
-                {{ groupLabel(option) }}
-              </template>
-              <template #singleLabel="{ value }">
-                <span>{{ groupLabel(value) }}</span>
-              </template>
-              <template #selection="{ values }">
-                <span class="text-brand-700 font-medium">{{ values.length }} grupos seleccionados</span>
-              </template>
-            </Multiselect>
+              <div class="flex gap-6 items-center mb-2">
+                <div class="kpi bg-white">
+                  <div class="card-body">
+                    <h4>Agentes sin grupo</h4>
+                    <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
+                  </div>
+                </div>
 
-            <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
-          </div>
+                <!-- Filtro de grupos, ADAPTATIVO -->
+                <div>
+                  <div v-if="!me || me.role === 'superadmin' || me.role === 'supervision'">
+                    <label class="label block mb-1">Filtrar grupos en mapa</label>
+                    <div class="flex gap-2 mb-1">
+                      <button
+                        type="button"
+                        class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
+                        @click="seleccionarTodosGrupos"
+                        v-if="cargado && gruposSeleccionados.length !== grupos.length"
+                      >Seleccionar todo</button>
+                      <button
+                        type="button"
+                        class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
+                        @click="deseleccionarTodosGrupos"
+                        v-if="cargado && gruposSeleccionados.length"
+                      >Quitar todo</button>
+                    </div>
+                    <Multiselect
+                      v-model="gruposSeleccionados"
+                      :options="grupos"
+                      :multiple="true"
+                      :close-on-select="false"
+                      :clear-on-select="false"
+                      :preserve-search="false"
+                      :searchable="false"
+                      :show-labels="false"
+                      placeholder="Selecciona grupos..."
+                      label="name"
+                      track-by="id"
+                      :preselect-first="false"
+                      @input="onChangeGrupos"
+                      class="w-full"
+                    >
+                      <template #option="{ option, isSelected }">
+                        <input type="checkbox" :checked="isSelected" style="margin-right:8px" />
+                        {{ groupLabel(option) }}
+                      </template>
+                      <template #singleLabel="{ value }">
+                        <span>{{ groupLabel(value) }}</span>
+                      </template>
+                      <template #selection="{ values }">
+                        <span class="text-brand-700 font-medium">{{ values.length }} grupos seleccionados</span>
+                      </template>
+                    </Multiselect>
+                    <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
+                  </div>
+                  <div v-else>
+                    <div class="text-sm text-slate-600">
+                      Grupo: <span class="font-semibold text-brand-700">{{ gruposSeleccionados[0]?.code }} - {{ gruposSeleccionados[0]?.name }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
 
 
           </div>
@@ -215,6 +240,18 @@ import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
 
+const me = ref(null)
+
+async function loadMe() {
+  try {
+    const { data } = await axios.get('/me', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    me.value = data
+  } catch { me.value = null }
+}
+
+
 
 function groupLabel(option) {
   // Para mostrar código y nombre
@@ -266,23 +303,43 @@ const gruposSeleccionados = ref([]) // Ids seleccionados para el filtro
 const cargado = ref(false)
 
 async function loadMapData() {
-  // Si NO hay grupos seleccionados, vacía el mapa
+  // Si el usuario es líder de grupo, forzar grupo fijo
+  if (me.value && me.value.role === 'leader_group') {
+    if (!me.value.groupId) {
+      municipalitiesMap.value = []
+      setTimeout(drawMap, 120)
+      return
+    }
+    const groupsParam = me.value.groupId
+    const { data } = await axios.get('/admin/agent-municipalities', {
+      params: {
+        date: date.value,
+        groups: groupsParam
+      },
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    municipalitiesMap.value = data || []
+    setTimeout(drawMap, 120)
+    return
+  }
+  // Para admin/supervision: multiselección normal
   if (!gruposSeleccionados.value.length) {
     municipalitiesMap.value = []
     setTimeout(drawMap, 120)
     return
   }
-      const groupsParam = gruposSeleccionados.value.map(g => g.id).join(',')
-    const { data } = await axios.get('/admin/agent-municipalities', {
-      params: { 
-        date: date.value, 
-        groups: groupsParam
-      },
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
+  const groupsParam = gruposSeleccionados.value.map(g => g.id).join(',')
+  const { data } = await axios.get('/admin/agent-municipalities', {
+    params: {
+      date: date.value,
+      groups: groupsParam
+    },
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
   municipalitiesMap.value = data || []
   setTimeout(drawMap, 120)
 }
+
 
 
 
@@ -323,13 +380,27 @@ function drawMap() {
 
 // === CARGAR AGENTES LIBRES ===
 async function loadAgentesLibres() {
+  let params = { limit: 9999 }
+
+  // Si es líder de grupo, filtra por su grupo y SIN unidad
+  if (me.value && me.value.role === 'leader_group' && me.value.groupId) {
+    params.groupId = me.value.groupId
+  }
+
   const { data } = await axios.get('/admin/agents', {
-    params: { limit: 9999 }, // Quita cualquier filtro por groupId
+    params,
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
-  // Filtra todos los agentes donde groupId sea null o 0
-  agentesLibres.value = (data || []).filter(a => a.groupId == null || a.groupId === 0).length
+
+  if (me.value && me.value.role === 'leader_group') {
+    // Solo agentes de SU grupo sin unidad
+    agentesLibres.value = (data || []).filter(a => !a.unitId).length
+  } else {
+    // Admin/supervision: todos los agentes sin grupo
+    agentesLibres.value = (data || []).filter(a => a.groupId == null || a.groupId === 0).length
+  }
 }
+
 
 function formatTime(ts) {
   if (!ts) return ''
@@ -360,30 +431,47 @@ function goToGroupDetail(r) {
   router.push(`/admin/report/${r.id}`)
 }
 
-async function load(){
+async function load() {
+  let params = {
+    date_from: date.value,
+    date_to: date.value,
+  }
+
+  // Si es líder de grupo, filtra por su groupId
+  if (me.value && me.value.role === 'leader_group' && me.value.groupId) {
+    params.groupId = me.value.groupId
+  }
+
   const { data } = await axios.get('/dashboard/reports', {
-    params: {
-      date_from: date.value,
-      date_to: date.value,
-      
-    },
+    params,
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
   rows.value = data.items || []
   recalcTotals()
 }
 
+
 // Cumplimiento
 const compliance = ref({ done: [], pending: [] })
 
 
 async function loadCompliance() {
-      const { data } = await axios.get('/dashboard/compliance', {
-      params: { date: date.value },
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
-    compliance.value = { done: data.done || [], pending: data.pending || [] }
+  let url = '/dashboard/compliance'
+  let params = { date: date.value }
+
+  // Si es líder de grupo, consulta cumplimiento de unidades de su grupo
+  if (me.value && me.value.role === 'leader_group' && me.value.groupId) {
+    url = '/dashboard/compliance-units'
+    params.groupId = me.value.groupId
+  }
+
+  const { data } = await axios.get(url, {
+    params,
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  compliance.value = { done: data.done || [], pending: data.pending || [] }
 }
+
 
 // Botón "Aplicar"
 async function applyFilters() {
@@ -406,8 +494,15 @@ function onChangeGrupos() {
 
 // Cargar al montar
 onMounted(async () => {
+  await loadMe()
   await loadGrupos()
-  gruposSeleccionados.value = grupos.value.slice() // Todos seleccionados por defecto
+
+  // Si es líder de grupo, selecciona SOLO su grupo
+  if (me.value && me.value.role === 'leader_group') {
+    gruposSeleccionados.value = grupos.value.filter(g => g.id === me.value.groupId)
+  } else {
+    gruposSeleccionados.value = grupos.value.slice() // Todos seleccionados por defecto
+  }
   cargado.value = true
 
   await load()
@@ -415,6 +510,7 @@ onMounted(async () => {
   await loadMapData()
   await loadAgentesLibres()
 })
+
 
 // Nueva función:
 async function loadGrupos() {
