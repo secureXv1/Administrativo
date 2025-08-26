@@ -10,6 +10,8 @@ import AdminReportDetail from '../views/AdminReportDetail.vue'
 import Perfil from '../views/Perfil.vue'
 
 
+
+
 const routes = [
   { path: '/', redirect: '/login' },
   { path: '/login', component: LoginView },
@@ -19,6 +21,9 @@ const routes = [
   { path: '/admin/agents', component: AdminAgents },
   { path: '/admin/users', component: AdminUsers },
   { path: '/admin/report/:id', component: AdminReportDetail },
+  
+
+  
   {
     path: '/perfil',
     name: 'Perfil',
@@ -53,20 +58,22 @@ router.beforeEach(async (to, from, next) => {
   // Permitir acceso a /perfil y /report para todos autenticados
   if (to.path === '/perfil' || to.path === '/report') return next()
 
-  // Admin: puede navegar en /admin/* 
-  if (role === 'admin') {
+  // SUPERADMIN o SUPERVISION o LEADER_GROUP: acceso total a /admin/*
+  if (role === 'superadmin' || role === 'supervision' || role === 'leader_group') {
     if (!to.path.startsWith('/admin')) return next('/admin')
     return next()
   }
 
-  // Leader: NO puede navegar en /admin/*
-  if (role === 'leader') {
-    if (to.path.startsWith('/admin')) return next('/report')
+  
+  // LEADER_UNIT: acceso solo a /report
+  if (role === 'leader_unit') {
+    if (to.path !== '/report' && to.path !== '/perfil') return next('/report')
     return next()
   }
 
   // Cualquier otro caso, fuera
   return next('/login')
 })
+
 
 export default router

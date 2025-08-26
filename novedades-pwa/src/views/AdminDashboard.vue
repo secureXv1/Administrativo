@@ -234,7 +234,7 @@ function deseleccionarTodosGrupos() {
 
 
 const today = new Date().toISOString().slice(0,10)
-const date = ref(today)
+const date = ref(today)        // un solo día
 const agentesLibres = ref(0)
 const rows = ref([])
 
@@ -256,7 +256,6 @@ const rowsDisplay = computed(() =>
     NOV: `${r.OF_nov||0}/${r.SO_nov||0}/${r.PT_nov||0}`
   }))
 )
-
 
 import L from 'leaflet'
 
