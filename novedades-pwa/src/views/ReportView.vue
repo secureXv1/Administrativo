@@ -11,6 +11,12 @@
     </header>
 
     <main class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      <div v-if="me" class="mb-4 text-sm text-slate-700">
+        Unidad: <b>{{ me.unitName || '—' }}</b>
+        &nbsp; | &nbsp;
+        Grupo: <b>{{ me.groupCode || '—' }}</b>
+      </div>
+
       <div class="card">
         <div class="card-body space-y-6">
           <!-- Fecha -->
@@ -19,8 +25,8 @@
             <div class="input bg-slate-100 text-slate-600 cursor-not-allowed select-none">
               {{ reportDate }}
             </div>
-           
           </div>
+
           <!-- Buscar y agregar agente libre -->
           <div class="mb-4 flex gap-2 items-end">
             <div>
@@ -46,7 +52,6 @@
             </div>
             <button class="btn-primary" @click="addFreeAgent" :disabled="!selectedAgentToAdd">Agregar</button>
           </div>
-
 
           <!-- Tabla de agentes editables -->
           <div class="card">
@@ -76,51 +81,51 @@
                         </select>
                       </td>
                       <td>
-                      <!-- LABORANDO/SERVICIO: municipio -->
-                      <template v-if="a.status === 'SERVICIO' || a.status === 'LABORANDO'">
-                        <input
-                          class="input"
-                          :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}"
-                          list="municipios-list"
-                          v-model="a.municipalityName"
-                          @input="onMuniInput(a)"
-                          @blur="onMuniInput(a)"
-                          placeholder="Buscar municipio..."
-                          autocomplete="off"
-                        />
-                        <datalist id="municipios-list">
-                          <option
-                            v-for="m in municipalities"
-                            :key="m.id"
-                            :value="m.dept + ' - ' + m.name"
+                        <!-- LABORANDO/SERVICIO: municipio -->
+                        <template v-if="a.status === 'SERVICIO' || a.status === 'LABORANDO'">
+                          <input
+                            class="input"
+                            :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}"
+                            list="municipios-list"
+                            v-model="a.municipalityName"
+                            @input="onMuniInput(a)"
+                            @blur="onMuniInput(a)"
+                            placeholder="Buscar municipio..."
+                            autocomplete="off"
                           />
-                        </datalist>
-                        <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
-                          Debe seleccionar un municipio válido
-                        </span>
-                      </template>
+                          <datalist id="municipios-list">
+                            <option
+                              v-for="m in municipalities"
+                              :key="m.id"
+                              :value="m.dept + ' - ' + m.name"
+                            />
+                          </datalist>
+                          <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
+                            Debe seleccionar un municipio válido
+                          </span>
+                        </template>
 
-                      <!-- NOVEDAD: fechas inicio/fin -->
-                      <template v-else>
-                        <div class="flex flex-col gap-1">
-                          <span class="text-slate-500">Novedad</span>
-                          <div class="flex gap-1">
-                            <input
-                              class="input"
-                              type="date"
-                              v-model="a.novelty_start"
-                              placeholder="Inicio"
-                            />
-                            <input
-                              class="input"
-                              type="date"
-                              v-model="a.novelty_end"
-                              placeholder="Fin"
-                            />
+                        <!-- NOVEDAD: fechas inicio/fin -->
+                        <template v-else>
+                          <div class="flex flex-col gap-1">
+                            <span class="text-slate-500">Novedad</span>
+                            <div class="flex gap-1">
+                              <input
+                                class="input"
+                                type="date"
+                                v-model="a.novelty_start"
+                                placeholder="Inicio"
+                              />
+                              <input
+                                class="input"
+                                type="date"
+                                v-model="a.novelty_end"
+                                placeholder="Fin"
+                              />
+                            </div>
                           </div>
-                        </div>
-                      </template>
-                    </td>
+                        </template>
+                      </td>
 
                       <td>
                         <button class="btn-ghost" @click="removeAgent(a.id)">Quitar</button>
@@ -130,7 +135,6 @@
                       <td colspan="5" class="text-center text-slate-500 py-4">Sin agentes en tu grupo.</td>
                     </tr>
                   </tbody>
-
                 </table>
               </div>
             </div>
@@ -174,18 +178,23 @@ const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : '
 
 const agents = ref([])          // [{id, code, category, status, location, municipalityId}]
 const municipalities = ref([])
-
-// Determina automáticamente AM/PM según la hora
-
+const me = ref(null) // 👈 Para info usuario
 
 const existeReporte = ref(false)
+
+async function loadMe() {
+  try {
+    me.value = await axios.get('/me', {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    }).then(r => r.data)
+  } catch { me.value = null }
+}
 
 async function loadAgents() {
   try {
     const { data } = await axios.get('/my/agents', {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     });
-    // Asegura que municipalityName SIEMPRE se asigne desde municipios si hay ID
     agents.value = data.map(a => {
       let municipalityName = a.municipalityName || '';
       if ((!municipalityName || municipalityName === '') && a.municipalityId && municipalities.value.length) {
@@ -224,7 +233,6 @@ async function loadMunicipalities(q = '') {
   municipalities.value = data || [];
 }
 
-// Limpia municipio si se cambia el estado a uno distinto de SERVICIO
 function onStateChange(agent) {
   if (agent.status !== 'SERVICIO' && agent.status !== 'LABORANDO') {
     agent.municipalityId = null
@@ -291,13 +299,11 @@ function logout() {
 
 function onMuniInput(agent) {
   const query = agent.municipalityName || '';
-  // Ya no cargues municipios aquí si ya los cargaste al inicio
   const value = query.trim().toLowerCase();
   const m = municipalities.value.find(
     m => (`${m.dept} - ${m.name}`.toLowerCase().trim() === value)
   );
   agent.municipalityId = m ? m.id : null;
-  // Ya NO limpies el campo, solo muestra advertencia visual
 }
 
 const agentSearch = ref('')
@@ -315,14 +321,11 @@ async function onAgentSearchInput() {
     params: { q, limit: 20 },
     headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
   })
-  // Solo agentes sin grupo (groupId == null)
   agentSearchResults.value = (data || []).filter(a => a.groupId == null)
-  // Si coincide exacto, selecciona el id
   const match = agentSearchResults.value.find(a => a.code === q)
   selectedAgentToAdd.value = match ? match.id : null
 }
 
-// Permitir seleccionar un agente haciendo clic (opcional)
 function onSelectAgent(code) {
   agentSearch.value = code
   const agent = agentSearchResults.value.find(a => a.code === code)
@@ -330,7 +333,6 @@ function onSelectAgent(code) {
 }
 
 async function addFreeAgent() {
-  // Buscar el agente seleccionado, aunque no esté seleccionado exactamente por el datalist
   const q = agentSearch.value.trim().toUpperCase()
   const agent = agentSearchResults.value.find(a => a.code === q)
   if (!agent) {
@@ -345,7 +347,7 @@ async function addFreeAgent() {
     agentSearch.value = ''
     agentSearchResults.value = []
     selectedAgentToAdd.value = null
-    await loadAgents() // Refresca la tabla
+    await loadAgents()
   } catch (e) {
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo agregar'
   }
@@ -361,11 +363,10 @@ async function checkIfReportExists() {
   } catch { existeReporte.value = false }
 }
 
-
 onMounted(async () => {
+  await loadMe() // <--- Carga el usuario y unidad
   await loadMunicipalities();
   await loadAgents();
   await checkIfReportExists();
 });
-
 </script>

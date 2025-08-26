@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import jwt from 'jsonwebtoken';
 import cron from 'node-cron';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
 import { getCorte, computeNovelties } from './utils.js';
 
@@ -15,19 +15,21 @@ app.use(express.json());
 
 // ---------- Auth ----------
 app.post('/auth/login', async (req, res) => {
-  const { email, password } = req.body;
+  console.log('BODY:', req.body); // <-- Solo prueba
+  const { username, password } = req.body;
   const [rows] = await pool.query(
-    'SELECT id, email, passwordHash, role, groupId FROM `user` WHERE email=? LIMIT 1',
-    [email]
+    'SELECT id, username, passwordHash, role, groupId, unitId FROM `user` WHERE username=? LIMIT 1',
+    [username]
   );
   const user = rows[0];
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
 
   const ok = await bcrypt.compare(password, user.passwordHash).catch(() => false);
+  console.log('COMPARE:', password, user.passwordHash, ok); // <-- PRUEBA
   if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
 
   const token = jwt.sign(
-    { uid: user.id, role: user.role, groupId: user.groupId },
+    { uid: user.id, username: user.username, role: user.role, groupId: user.groupId, unitId: user.unitId },
     process.env.JWT_SECRET,
     { expiresIn: '8h' }
   );
@@ -45,34 +47,49 @@ function auth(req, res, next) {
   }
 }
 
-function requireAdmin(req, res, next) {
-  const role = String(req.user?.role || '').toLowerCase();
-  if (role !== 'admin') return res.status(403).json({ error: 'Forbidden' });
-  next();
+function requireRole(...roles) {
+  return (req, res, next) => {
+    const userRole = String(req.user?.role || '').toLowerCase();
+    if (!roles.map(r => r.toLowerCase()).includes(userRole)) {
+      return res.status(403).json({ error: 'Forbidden', detail: 'No tiene permisos suficientes.' });
+    }
+    next();
+  };
 }
 
 app.get('/me', auth, (req, res) => {
-  res.json({ uid: req.user.uid, role: req.user.role, groupId: req.user.groupId });
+  res.json({
+    uid: req.user.uid,
+    username: req.user.username,
+    role: req.user.role,
+    groupId: req.user.groupId,
+    unitId: req.user.unitId
+  });
 });
+
+
 
 // ---------- Catálogos ----------
 app.get('/catalogs/agents', auth, async (req, res) => {
   try {
-    const { q, code, category, limit = 50 } = req.query;
+    const { q, code, category, groupId, unitId, limit = 50 } = req.query;
     const take = Math.min(Number(limit) || 50, 200);
     const params = [];
     let where = '1=1';
 
-    if (category) { where += ' AND category=?'; params.push(String(category)); }
-    if (code) { where += ' AND code=?'; params.push(String(code).toUpperCase().trim()); }
-    else if (q) { where += ' AND code LIKE ?'; params.push(String(q).toUpperCase().trim() + '%'); }
+    if (category) { where += ' AND a.category=?'; params.push(String(category)); }
+    if (groupId) { where += ' AND a.groupId=?'; params.push(Number(groupId)); }
+    if (unitId) { where += ' AND a.unitId=?'; params.push(Number(unitId)); }
+    if (code) { where += ' AND a.code=?'; params.push(String(code).toUpperCase().trim()); }
+    else if (q) { where += ' AND a.code LIKE ?'; params.push(String(q).toUpperCase().trim() + '%'); }
 
     const [rows] = await pool.query(
       `SELECT 
           a.id, 
           a.code, 
           a.category, 
-          a.groupId, 
+          a.groupId,
+          a.unitId,
           a.status, 
           a.municipalityId, 
           m.dept, 
@@ -92,21 +109,18 @@ app.get('/catalogs/agents', auth, async (req, res) => {
   }
 });
 
-// ===== Mis agentes (del líder) =====
-app.get('/my/agents', auth, async (req, res) => {
-  if (String(req.user.role).toLowerCase() !== 'leader') {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-  const groupId = req.user.groupId;
+// ===== Mis agentes (del líder de unidad) =====
+app.get('/my/agents', auth, requireRole('leader_unit'), async (req, res) => {
+  const unitId = req.user.unitId;
 
-  // Saca la fecha de hoy y corte actual (AM/PM)
+  // Saca la fecha de hoy
   const now = new Date();
   const reportDate = now.toISOString().slice(0, 10);
 
-  // Busca el reporte actual de ese grupo
+  // Busca el reporte actual de esa unidad
   const [[report]] = await pool.query(
-  `SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? LIMIT 1`,
-    [reportDate, groupId]
+    `SELECT id FROM dailyreport WHERE reportDate=? AND unitId=? LIMIT 1`,
+    [reportDate, unitId]
   );
   const reportId = report?.id || null;
 
@@ -119,11 +133,10 @@ app.get('/my/agents', auth, async (req, res) => {
       FROM agent a
       LEFT JOIN municipality m ON a.municipalityId = m.id
       LEFT JOIN dailyreport_agent da ON da.agentId = a.id AND da.reportId = ?
-      WHERE a.groupId = ?
+      WHERE a.unitId = ?
       ORDER BY a.code`,
-    [reportId, groupId]
+    [reportId, unitId]
   );
-  // Opcional: agrega el string completo para el frontend
   const withFullName = rows.map(r => ({
     ...r,
     municipalityName: r.municipalityId ? `${r.name} (${r.dept})` : ""
@@ -134,46 +147,44 @@ app.get('/my/agents', auth, async (req, res) => {
 
 
 
-// Asignar un agente libre (groupId = 0) a mi grupo
-app.post('/my/agents/add', auth, async (req, res) => {
-  if (String(req.user.role).toLowerCase() !== 'leader') {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+
+// Asignar un agente libre (sin grupo ni unidad) a mi unidad y grupo
+app.post('/my/agents/add', auth, requireRole('leader_unit'), async (req, res) => {
   const { agentId } = req.body;
   const groupId = req.user.groupId;
+  const unitId = req.user.unitId;
   const [r] = await pool.query(
-    'UPDATE agent SET groupId = ? WHERE id = ? AND (groupId = 0 OR groupId IS NULL)',
-    [groupId, agentId]
+    'UPDATE agent SET groupId = ?, unitId = ? WHERE id = ? AND (groupId IS NULL OR groupId = 0) AND (unitId IS NULL OR unitId = 0)',
+    [groupId, unitId, agentId]
   );
   if (r.affectedRows === 0) {
-    return res.status(409).json({ error: 'AgenteNoDisponible', detail: 'El agente no está libre (groupId ≠ 0)' });
+    return res.status(409).json({ error: 'AgenteNoDisponible', detail: 'El agente no está libre (groupId/unitId ≠ 0)' });
   }
   res.json({ ok: true });
 });
 
-// Quitar un agente de mi grupo (dejarlo libre => )
-app.post('/my/agents/remove', auth, async (req, res) => {
-  if (String(req.user.role).toLowerCase() !== 'leader') {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+// Quitar un agente de mi unidad y grupo (dejarlo libre)
+app.post('/my/agents/remove', auth, requireRole('leader_unit'), async (req, res) => {
   const { agentId } = req.body;
   const groupId = req.user.groupId;
+  const unitId = req.user.unitId;
   const [r] = await pool.query(
-    'UPDATE agent SET groupId = NULL WHERE id = ? AND groupId = ?',
-    [agentId, groupId]
+    'UPDATE agent SET groupId = NULL, unitId = NULL WHERE id = ? AND groupId = ? AND unitId = ?',
+    [agentId, groupId, unitId]
   );
   if (r.affectedRows === 0) {
-    return res.status(404).json({ error: 'NoPertenece', detail: 'El agente no pertenece a tu grupo' });
+    return res.status(404).json({ error: 'NoPertenece', detail: 'El agente no pertenece a tu unidad/grupo' });
   }
   res.json({ ok: true });
 });
 
-app.post('/adminapi/agents', auth, requireAdmin, async (req, res) => {
-  const { code, category, groupId } = req.body;
+// Crear agente (incluye unitId)
+app.post('/adminapi/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+  const { code, category, groupId, unitId } = req.body;
   if (!/^[A-Z][0-9]+$/.test(code)) return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
   if (!['OF','SO','PT'].includes(category)) return res.status(422).json({ error: 'Categoría inválida' });
   try {
-    await pool.query('INSERT INTO agent (code,category,groupId) VALUES (?,?,?)', [code, category, groupId ?? null]);
+    await pool.query('INSERT INTO agent (code,category,groupId,unitId) VALUES (?,?,?,?)', [code, category, groupId ?? null, unitId ?? null]);
     res.json({ ok:true });
   } catch (e) {
     res.status(400).json({ error: 'No se pudo crear', detail: e?.message });
@@ -191,7 +202,6 @@ app.get('/catalogs/municipalities', auth, async (req, res) => {
 
   let sql = `SELECT id, dept, name FROM municipality WHERE ${where} ORDER BY dept, name`;
 
-  // Solo aplica LIMIT si viene en la query (y es numérico positivo)
   if (limit && !isNaN(limit) && parseInt(limit, 10) > 0) {
     sql += ' LIMIT ?';
     params.push(parseInt(limit, 10));
@@ -202,17 +212,24 @@ app.get('/catalogs/municipalities', auth, async (req, res) => {
 });
 
 
+
+
 // ---------- Guardar reporte (actualiza solo agent y dailyreport) ----------
-// ---------- Guardar reporte (actualiza solo agent y dailyreport) ----------
-app.post('/reports', auth, async (req, res) => {
+app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmin', 'supervision'), async (req, res) => {
   const { reportDate, people = [] } = req.body;
   if (!reportDate) return res.status(422).json({ error:'FechaRequerida' });
   if (!Array.isArray(people) || !people.length) {
     return res.status(422).json({ error:'SinPersonas', detail:'Envía al menos un agente.' });
   }
 
-  const now = new Date();
-  
+  let groupId = req.user.groupId;
+  let unitId = req.user.unitId;
+
+  // Permitir que superadmin/supervision usen lo que viene en el body (si se envía)
+  if (['superadmin','supervision'].includes(String(req.user.role))) {
+    groupId = req.body.groupId || groupId;
+    unitId = req.body.unitId || unitId;
+  }
 
   // 1. Variables para los KPIs
   let feOF = 0, feSO = 0, fePT = 0, fdOF = 0, fdSO = 0, fdPT = 0;
@@ -221,34 +238,30 @@ app.post('/reports', auth, async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // 2. Consulta previa para obtener categorías de todos los agentes
-    // (Esto es más eficiente si el reporte es grande)
+    // 2. Consulta previa para obtener categorías y unidad de todos los agentes
     const codes = people.map(p => String(p.agentCode || '').toUpperCase().trim());
     const [agentsBD] = await conn.query(
-      `SELECT id, code, category FROM agent WHERE code IN (${codes.map(_ => '?').join(',')})`,
+      `SELECT id, code, category, unitId FROM agent WHERE code IN (${codes.map(_ => '?').join(',')})`,
       codes
     );
-    // Crea un mapa {code: {id, category}}
     const agentMap = {};
     for (const a of agentsBD) agentMap[a.code] = a;
 
     // ----------- BLOQUE PARA COPIAR NOVEDADES DEL REPORTE ANTERIOR -----------
-    const groupId = req.user.groupId;
     // Busca el último reporte anterior (no el actual)
     const [[prevReport]] = await conn.query(
-        `SELECT id FROM dailyreport 
-          WHERE groupId=? AND reportDate<? 
-          ORDER BY reportDate DESC 
-          LIMIT 1`,
-        [groupId, reportDate]
-      );
-    // Trae novedades activas del anterior reporte (si existe)
+      `SELECT id FROM dailyreport 
+        WHERE groupId=? AND unitId=? AND reportDate<? 
+        ORDER BY reportDate DESC 
+        LIMIT 1`,
+      [groupId, unitId, reportDate]
+    );
     let prevNovedades = {};
     if (prevReport) {
       const [prevRows] = await conn.query(
         `SELECT agentId, state, novelty_start, novelty_end 
-           FROM dailyreport_agent 
-          WHERE reportId=?`,
+         FROM dailyreport_agent 
+         WHERE reportId=?`,
         [prevReport.id]
       );
       const today = new Date(reportDate);
@@ -268,140 +281,133 @@ app.post('/reports', auth, async (req, res) => {
     }
     // ----------- FIN BLOQUE COPIAR NOVEDADES -----------
 
+
     // 3. Calcula KPIs y valida agentes
-    for (const p of people) {
-      const code = String(p.agentCode || '').toUpperCase().trim();
-      const state = String(p.state || '').toUpperCase().trim();
-      const muniId = p.municipalityId ? Number(p.municipalityId) : null;
+for (const p of people) {
+  const code = String(p.agentCode || '').toUpperCase().trim();
+  const state = String(p.state || '').toUpperCase().trim();
+  const muniId = p.municipalityId ? Number(p.municipalityId) : null;
 
-      const ag = agentMap[code];
-      if (!ag) throw new Error(`No existe agente ${code}`);
+  const ag = agentMap[code];
+  if (!ag) throw new Error(`No existe agente ${code}`);
 
-      // Sumar FE/FD/NOV según categoría
-      if (ag.category === 'OF') feOF++;
-      if (ag.category === 'SO') feSO++;
-      if (ag.category === 'PT') fePT++;
-      if (state === 'LABORANDO') {
-        if (ag.category === 'OF') fdOF++;
-        if (ag.category === 'SO') fdSO++;
-        if (ag.category === 'PT') fdPT++;
-      }
-
-      // Validar estado
-      if (!['LABORANDO','VACACIONES','EXCUSA','PERMISO','SERVICIO'].includes(state)) {
-        throw new Error(`Estado inválido: ${state}`);
-      }
-      if ((state === 'SERVICIO' || state === 'LABORANDO') && !muniId) {
-        throw new Error(`Falta municipio para ${code}`);
-      }
-    }
-
-    // 4. Calcula Novedades
-    const { OF_nov, SO_nov, PT_nov } = computeNovelties({
-      OF_effective: feOF, SO_effective: feSO, PT_effective: fePT,
-      OF_available: fdOF, SO_available: fdSO, PT_available: fdPT
-    });
-
-    // 5. Guarda/actualiza dailyreport (y obtén el id real)
-    const leaderUserId = req.user.uid;
-    await conn.query(
-      `
-      INSERT INTO dailyreport
-        (reportDate, groupId, leaderUserId,
-        OF_effective, SO_effective, PT_effective,
-        OF_available, SO_available, PT_available,
-        OF_nov, SO_nov, PT_nov)
-      VALUES
-        (?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?,
-        ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        leaderUserId=VALUES(leaderUserId),
-        OF_effective=VALUES(OF_effective), SO_effective=VALUES(SO_effective), PT_effective=VALUES(PT_effective),
-        OF_available=VALUES(OF_available), SO_available=VALUES(SO_available), PT_available=VALUES(PT_available),
-        OF_nov=VALUES(OF_nov), SO_nov=VALUES(SO_nov), PT_nov=VALUES(PT_nov),
-        updatedAt=CURRENT_TIMESTAMP(3)
-      `,
-      [
-        reportDate, groupId, leaderUserId,
-        feOF, feSO, fePT,
-        fdOF, fdSO, fdPT,
-        OF_nov, SO_nov, PT_nov
-      ]
-    );
-    const [[daily]] = await conn.query(
-      `SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? LIMIT 1`,
-      [reportDate, groupId]
-    );
-    const reportId = daily?.id;
-
-    // 6. Limpia el detalle anterior de agentes para este reporte
-    await conn.query('DELETE FROM dailyreport_agent WHERE reportId=?', [reportId]);
-
-    // 7. Inserta todos los agentes de este reporte en dailyreport_agent + actualiza agent
-    for (const p of people) {
-      const code = String(p.agentCode || '').toUpperCase().trim();
-      const state = String(p.state || '').toUpperCase().trim();
-      const muniId = p.municipalityId ? Number(p.municipalityId) : null;
-
-      const ag = agentMap[code];
-
-      // --- Nuevo: copiar novedad activa si no se mandó nada ---
-      let novelty_start = (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_start || null) : null;
-      let novelty_end = (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_end || null) : null;
-      // Si no se mandó ninguna novedad pero la hay en el anterior, la arrastramos (si el estado coincide)
-      if (!novelty_start && !novelty_end && prevNovedades[ag.id] && (state === prevNovedades[ag.id].state)) {
-        novelty_start = prevNovedades[ag.id].novelty_start;
-        novelty_end = prevNovedades[ag.id].novelty_end;
-      }
-
-      // Guarda el detalle del agente para el reporte
-      // Ahora incluye groupId
-      await conn.query(
-        `INSERT INTO dailyreport_agent (reportId, agentId, groupId, state, municipalityId, novelty_start, novelty_end) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          reportId,
-          ag.id,
-          groupId, // <-- Nuevo campo
-          state,
-          muniId,
-          novelty_start,
-          novelty_end
-        ]
-      );
-
-
-      // Actualiza el estado y municipio del agente también
-      await conn.query(
-        'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
-        [state, muniId, ag.id]
-      );
-    }
-
-    await conn.commit();
-    res.json({
-      action: 'upserted',
-      reportId,
-      totals: { feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov }
-    });
-
-  } catch (e) {
-    await conn.rollback();
-    console.error('POST /reports error', e);
-    res.status(400).json({ error:'Cannot save report', detail: e?.message });
-  } finally {
-    conn.release();
+  if (ag.category === 'OF') feOF++;
+  if (ag.category === 'SO') feSO++;
+  if (ag.category === 'PT') fePT++;
+  if (state === 'LABORANDO') {
+    if (ag.category === 'OF') fdOF++;
+    if (ag.category === 'SO') fdSO++;
+    if (ag.category === 'PT') fdPT++;
   }
+
+  if (!['LABORANDO','VACACIONES','EXCUSA','PERMISO','SERVICIO'].includes(state)) {
+    throw new Error(`Estado inválido: ${state}`);
+  }
+  if ((state === 'SERVICIO' || state === 'LABORANDO') && !muniId) {
+    throw new Error(`Falta municipio para ${code}`);
+  }
+}
+
+const { OF_nov, SO_nov, PT_nov } = computeNovelties({
+  OF_effective: feOF, SO_effective: feSO, PT_effective: fePT,
+  OF_available: fdOF, SO_available: fdSO, PT_available: fdPT
 });
 
+const leaderUserId = req.user.uid;
+await conn.query(
+  `
+  INSERT INTO dailyreport
+    (reportDate, groupId, unitId, leaderUserId,
+    OF_effective, SO_effective, PT_effective,
+    OF_available, SO_available, PT_available,
+    OF_nov, SO_nov, PT_nov)
+  VALUES
+    (?, ?, ?, ?,
+    ?, ?, ?,
+    ?, ?, ?,
+    ?, ?, ?)
+  ON DUPLICATE KEY UPDATE
+    leaderUserId=VALUES(leaderUserId),
+    unitId=VALUES(unitId),
+    OF_effective=VALUES(OF_effective), SO_effective=VALUES(SO_effective), PT_effective=VALUES(PT_effective),
+    OF_available=VALUES(OF_available), SO_available=VALUES(SO_available), PT_available=VALUES(PT_available),
+    OF_nov=VALUES(OF_nov), SO_nov=VALUES(SO_nov), PT_nov=VALUES(PT_nov),
+    updatedAt=CURRENT_TIMESTAMP(3)
+  `,
+  [
+    reportDate, groupId, unitId, leaderUserId,
+    feOF, feSO, fePT,
+    fdOF, fdSO, fdPT,
+    OF_nov, SO_nov, PT_nov
+  ]
+);
+
+const [[daily]] = await conn.query(
+  `SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1`,
+  [reportDate, groupId, unitId]
+);
+const reportId = daily?.id;
+
+await conn.query('DELETE FROM dailyreport_agent WHERE reportId=?', [reportId]);
+
+for (const p of people) {
+  const code = String(p.agentCode || '').toUpperCase().trim();
+  const state = String(p.state || '').toUpperCase().trim();
+  const muniId = p.municipalityId ? Number(p.municipalityId) : null;
+
+  const ag = agentMap[code];
+
+  let novelty_start = (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_start || null) : null;
+  let novelty_end = (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_end || null) : null;
+  if (!novelty_start && !novelty_end && prevNovedades[ag.id] && (state === prevNovedades[ag.id].state)) {
+    novelty_start = prevNovedades[ag.id].novelty_start;
+    novelty_end = prevNovedades[ag.id].novelty_end;
+  }
+
+  await conn.query(
+    `INSERT INTO dailyreport_agent (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      reportId,
+      ag.id,
+      groupId,
+      ag.unitId,
+      state,
+      muniId,
+      novelty_start,
+      novelty_end
+    ]
+  );
+
+  await conn.query(
+    'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
+    [state, muniId, ag.id]
+  );
+}
+
+
+   await conn.commit();
+res.json({
+  action: 'upserted',
+  reportId,
+  totals: { feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov }
+});
+
+} catch (e) {
+  await conn.rollback();
+  console.error('POST /reports error', e);
+  res.status(400).json({ error:'Cannot save report', detail: e?.message });
+} finally {
+  conn.release();
+}
+});
 
 // ---------- Obtener reporte resumen por día ----------
 app.get('/reports', auth, async (req, res) => {
-  const { date } = req.query;
+  const { date, groupId, unitId } = req.query;
   let where = 'reportDate=?';
   const params = [date];
-  if (req.user.role === 'leader') { where += ' AND groupId=?'; params.push(req.user.groupId); }
+  if (groupId) { where += ' AND groupId=?'; params.push(groupId); }
+  if (unitId) { where += ' AND unitId=?'; params.push(unitId); }
   const [rows] = await pool.query(
     `SELECT * FROM dailyreport WHERE ${where} ORDER BY reportDate`,
     params
@@ -409,68 +415,81 @@ app.get('/reports', auth, async (req, res) => {
   res.json(rows);
 });
 
-// ---------- Listar agentes de mi grupo (con status/location actual) ----------
-app.get('/group/agents', auth, async (req, res) => {
-  if (!req.user.groupId) return res.status(400).json({ error: 'Sin grupo asignado' });
+// ---------- Listar agentes de mi grupo/unidad (con status/location actual) ----------
+app.get('/group/agents', auth, requireRole('leader_group', 'leader_unit'), async (req, res) => {
+  let where = '', params = [];
+  if (req.user.role === 'leader_group') {
+    where = 'groupId = ?';
+    params = [req.user.groupId];
+  } else if (req.user.role === 'leader_unit') {
+    where = 'unitId = ?';
+    params = [req.user.unitId];
+  } else {
+    return res.status(403).json({ error: 'No autorizado' });
+  }
   const [rows] = await pool.query(
-    'SELECT id, code, category, status, location FROM agent WHERE groupId = ? ORDER BY code',
-    [req.user.groupId]
+    `SELECT id, code, category, status, location FROM agent WHERE ${where} ORDER BY code`,
+    params
   );
   res.json(rows);
 });
 
 // ---------- Dashboard y admin ----------
-app.get('/dashboard/reports', auth, requireAdmin, async (req, res) => {
-  const { date_from, date_to, checkpoint } = req.query;
+app.get('/dashboard/reports', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+  const { date_from, date_to, groupId, unitId } = req.query;
   const params = [];
   const where = [];
 
   if (date_from) { where.push('r.reportDate>=?'); params.push(date_from); }
   if (date_to)   { where.push('r.reportDate<=?'); params.push(date_to); }
-  
+  if (groupId)   { where.push('r.groupId=?'); params.push(groupId); }
+  if (unitId)    { where.push('r.unitId=?'); params.push(unitId); }
 
- const sql = `
-    SELECT r.*, g.code AS groupCode
+  const sql = `
+    SELECT r.*, g.code AS groupCode, u.name AS unitName
       FROM dailyreport r
       JOIN \`group\` g ON g.id = r.groupId
+      LEFT JOIN unit u ON u.id = r.unitId
      ${where.length ? 'WHERE '+where.join(' AND ') : ''}
      ORDER BY r.reportDate DESC
   `;
-const [rows] = await pool.query(sql, params);
+  const [rows] = await pool.query(sql, params);
 
-const items = rows.map(r => {
-  const dateStr = (r.reportDate instanceof Date)
-    ? r.reportDate.toISOString().slice(0,10)
-    : String(r.reportDate).slice(0,10);
+  const items = rows.map(r => {
+    const dateStr = (r.reportDate instanceof Date)
+      ? r.reportDate.toISOString().slice(0,10)
+      : String(r.reportDate).slice(0,10);
 
-  const updated = (r.updatedAt instanceof Date)
-    ? r.updatedAt.toISOString()
-    : new Date(r.updatedAt).toISOString();
+    const updated = (r.updatedAt instanceof Date)
+      ? r.updatedAt.toISOString()
+      : new Date(r.updatedAt).toISOString();
 
-  return {
-    id: r.id,
-    date: dateStr,
-    groupCode: r.groupCode,
-    OF_effective: r.OF_effective, SO_effective: r.SO_effective, PT_effective: r.PT_effective,
-    OF_available: r.OF_available, SO_available: r.SO_available, PT_available: r.PT_available,
-    OF_nov: r.OF_nov, SO_nov: r.SO_nov, PT_nov: r.PT_nov,
-    updatedAt: updated,
-    notes: r.notes || ''
-  };
-});
+    return {
+      id: r.id,
+      date: dateStr,
+      groupCode: r.groupCode,
+      unitName: r.unitName || '',
+      OF_effective: r.OF_effective, SO_effective: r.SO_effective, PT_effective: r.PT_effective,
+      OF_available: r.OF_available, SO_available: r.SO_available, PT_available: r.PT_available,
+      OF_nov: r.OF_nov, SO_nov: r.SO_nov, PT_nov: r.PT_nov,
+      updatedAt: updated,
+      notes: r.notes || ''
+    };
+  });
 
   res.json({ items });
 });
 
+
 // ---------- Admin: grupos y usuarios ----------
 // Obtener todos los grupos
-app.get('/admin/groups', auth, requireAdmin, async (req, res) => {
+app.get('/admin/groups', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const [rows] = await pool.query('SELECT id, code, name FROM `group` ORDER BY code');
   res.json(rows);
 });
 
 // Crear grupo
-app.post('/admin/groups', auth, requireAdmin, async (req, res) => {
+app.post('/admin/groups', auth, requireRole('superadmin'), async (req, res) => {
   const { code, name } = req.body;
   if (!code) return res.status(422).json({ error: 'Falta código' });
   try {
@@ -482,7 +501,7 @@ app.post('/admin/groups', auth, requireAdmin, async (req, res) => {
 });
 
 // Editar grupo
-app.put('/admin/groups/:id', auth, requireAdmin, async (req, res) => {
+app.put('/admin/groups/:id', auth, requireRole('superadmin'), async (req, res) => {
   const { id } = req.params;
   const { code, name } = req.body;
   try {
@@ -494,7 +513,7 @@ app.put('/admin/groups/:id', auth, requireAdmin, async (req, res) => {
 });
 
 // Eliminar grupo
-app.delete('/admin/groups/:id', auth, requireAdmin, async (req, res) => {
+app.delete('/admin/groups/:id', auth, requireRole('superadmin'), async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query('DELETE FROM `group` WHERE id=?', [id]);
@@ -507,46 +526,43 @@ app.delete('/admin/groups/:id', auth, requireAdmin, async (req, res) => {
 // ---------- CRUD Usuarios Admin ----------
 
 // Listar todos los usuarios
-app.get('/admin/users', auth, requireAdmin, async (req, res) => {
-  try {
-    const [rows] = await pool.query(`
-      SELECT u.id, u.email, u.role, u.groupId, g.code AS groupCode
-      FROM \`user\` u
-      LEFT JOIN \`group\` g ON g.id = u.groupId
-      ORDER BY u.email
-    `);
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ error: 'UserListError', detail: e.message });
-  }
+app.get('/admin/users', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+  const [rows] = await pool.query(`
+    SELECT u.id, u.username, u.role, u.groupId, u.unitId, g.code AS groupCode, un.name AS unitName
+    FROM user u
+    LEFT JOIN \`group\` g ON g.id = u.groupId
+    LEFT JOIN unit un ON un.id = u.unitId
+    ORDER BY u.username
+  `);
+  res.json(rows);
 });
 
 // Crear usuario
-app.post('/admin/users', auth, requireAdmin, async (req, res) => {
-  const { email, password, role, groupId } = req.body;
-  if (!email || !password || !role || !groupId) {
-    return res.status(400).json({ error: 'Campos requeridos: email, password, role, groupId' });
-  }
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return res.status(400).json({ error: 'Email inválido' });
-  }
-  if (!['admin','leader','viewer'].includes(role)) {
-    return res.status(400).json({ error: 'Rol inválido' });
+app.post('/admin/users', auth, requireRole('superadmin'), async (req, res) => {
+  const { username, password, role, groupId, unitId } = req.body;
+  if (!username || !password || !role) {
+    return res.status(400).json({ error: 'Campos requeridos: username, password, role' });
   }
   // Opcional: verifica que el grupo exista
-  const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
-  if (!g) return res.status(404).json({ error: 'Grupo no existe' });
-
+  if (groupId) {
+    const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+    if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+  }
+  // Opcional: verifica que la unidad exista
+  if (unitId) {
+    const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
+    if (!u) return res.status(404).json({ error: 'Unidad no existe' });
+  }
   const hash = await bcrypt.hash(password, 10);
   try {
     await pool.query(
-      'INSERT INTO `user` (email, passwordHash, role, groupId) VALUES (?, ?, ?, ?)',
-      [email.trim(), hash, role, groupId]
+      'INSERT INTO `user` (username, passwordHash, role, groupId, unitId) VALUES (?, ?, ?, ?, ?)',
+      [username.trim(), hash, role, groupId || null, unitId || null]
     );
     res.json({ ok: true });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
-      res.status(409).json({ error: 'El email ya existe' });
+      res.status(409).json({ error: 'El usuario ya existe' });
     } else {
       res.status(500).json({ error: 'No se pudo crear', detail: e.message });
     }
@@ -554,18 +570,24 @@ app.post('/admin/users', auth, requireAdmin, async (req, res) => {
 });
 
 // Actualizar usuario
-app.put('/admin/users/:id', auth, requireAdmin, async (req, res) => {
+app.put('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) => {
   const { id } = req.params;
-  const { email, role, groupId, password } = req.body;
-  if (!email || !role || !groupId) {
-    return res.status(400).json({ error: 'Campos requeridos: email, role, groupId' });
+  const { username, role, groupId, unitId, password } = req.body;
+  if (!username || !role) {
+    return res.status(400).json({ error: 'Campos requeridos: username, role' });
   }
   // Opcional: verifica que el grupo exista
-  const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
-  if (!g) return res.status(404).json({ error: 'Grupo no existe' });
-
-  let setFields = 'email=?, role=?, groupId=?';
-  let params = [email.trim(), role, groupId];
+  if (groupId) {
+    const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+    if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+  }
+  // Opcional: verifica que la unidad exista
+  if (unitId) {
+    const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
+    if (!u) return res.status(404).json({ error: 'Unidad no existe' });
+  }
+  let setFields = 'username=?, role=?, groupId=?, unitId=?';
+  let params = [username.trim(), role, groupId || null, unitId || null];
   if (password) {
     const hash = await bcrypt.hash(password, 10);
     setFields += ', passwordHash=?';
@@ -587,7 +609,7 @@ app.put('/admin/users/:id', auth, requireAdmin, async (req, res) => {
 });
 
 // Eliminar usuario
-app.delete('/admin/users/:id', auth, requireAdmin, async (req, res) => {
+app.delete('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) => {
   const { id } = req.params;
   try {
     const [r] = await pool.query('DELETE FROM `user` WHERE id=?', [id]);
@@ -603,19 +625,21 @@ app.delete('/admin/users/:id', auth, requireAdmin, async (req, res) => {
 // ---------- CRUD Agentes Admin ----------
 
 // Listar todos los agentes (puedes agregar filtros con query params)
-app.get('/admin/agents', auth, requireAdmin, async (req, res) => {
+app.get('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   try {
-    const { q, code, category, groupId, limit = 100 } = req.query;
+    const { q, code, category, groupId, unitId, limit = 100 } = req.query;
     let where = '1=1', params = [];
     if (code) { where += ' AND a.code=?'; params.push(String(code).toUpperCase().trim()); }
     else if (q) { where += ' AND a.code LIKE ?'; params.push(String(q).toUpperCase().trim() + '%'); }
     if (category) { where += ' AND a.category=?'; params.push(category); }
     if (groupId) { where += ' AND a.groupId=?'; params.push(Number(groupId)); }
+    if (unitId) { where += ' AND a.unitId=?'; params.push(Number(unitId)); }
     const [rows] = await pool.query(
-      `SELECT a.id, a.code, a.category, a.status, a.groupId, g.code AS groupCode, a.municipalityId,
+      `SELECT a.id, a.code, a.category, a.status, a.groupId, a.unitId, g.code AS groupCode, u.name AS unitName, a.municipalityId,
               m.name AS municipalityName, m.dept
          FROM agent a
          LEFT JOIN \`group\` g ON g.id = a.groupId
+         LEFT JOIN unit u ON u.id = a.unitId
          LEFT JOIN municipality m ON a.municipalityId = m.id
         WHERE ${where}
         ORDER BY a.code
@@ -629,18 +653,21 @@ app.get('/admin/agents', auth, requireAdmin, async (req, res) => {
 });
 
 // Crear agente
-app.post('/admin/agents', auth, requireAdmin, async (req, res) => {
-  const { code, category, groupId, status, municipalityId } = req.body;
+app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+  const { code, category, groupId, unitId, status, municipalityId } = req.body;
   if (!/^[A-Z][0-9]+$/.test(code)) {
     return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
   }
   if (!['OF','SO','PT'].includes(category)) {
     return res.status(422).json({ error: 'Categoría inválida' });
   }
-  // Opcional: verifica que grupo y municipio existan
   if (groupId) {
     const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
     if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+  }
+  if (unitId) {
+    const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
+    if (!u) return res.status(404).json({ error: 'Unidad no existe' });
   }
   if (municipalityId) {
     const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
@@ -648,10 +675,11 @@ app.post('/admin/agents', auth, requireAdmin, async (req, res) => {
   }
   try {
     await pool.query(
-      'INSERT INTO agent (code,category,groupId,status,municipalityId) VALUES (?,?,?,?,?)',
-      [code.trim(), category, groupId || null, status || 'LABORANDO', municipalityId || null]
+      'INSERT INTO agent (code,category,groupId,unitId,status,municipalityId) VALUES (?,?,?,?,?,?)',
+      [code.trim(), category, groupId || null, unitId || null, status || 'LABORANDO', municipalityId || null]
     );
     res.json({ ok: true });
+
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
       res.status(409).json({ error: 'El código ya existe' });
@@ -662,13 +690,12 @@ app.post('/admin/agents', auth, requireAdmin, async (req, res) => {
 });
 
 // Actualizar agente
-app.put('/admin/agents/:id', auth, requireAdmin, async (req, res) => {
+app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { id } = req.params;
-  const { code, category, groupId, status, municipalityId } = req.body;
+  const { code, category, groupId, unitId, status, municipalityId } = req.body;
   if (!code || !category) {
     return res.status(400).json({ error: 'Campos requeridos: code, category' });
   }
-  // Validar código y categoría
   if (!/^[A-Z][0-9]+$/.test(code)) {
     return res.status(422).json({ error: 'Código inválido' });
   }
@@ -679,14 +706,18 @@ app.put('/admin/agents/:id', auth, requireAdmin, async (req, res) => {
     const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
     if (!g) return res.status(404).json({ error: 'Grupo no existe' });
   }
+  if (unitId) {
+    const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
+    if (!u) return res.status(404).json({ error: 'Unidad no existe' });
+  }
   if (municipalityId) {
     const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
     if (!m) return res.status(404).json({ error: 'Municipio no existe' });
   }
   try {
     const [r] = await pool.query(
-      `UPDATE agent SET code=?, category=?, groupId=?, status=?, municipalityId=? WHERE id=?`,
-      [code.trim(), category, groupId || null, status || 'LABORANDO', municipalityId || null, id]
+      `UPDATE agent SET code=?, category=?, groupId=?, unitId=?, status=?, municipalityId=? WHERE id=?`,
+      [code.trim(), category, groupId || null, unitId || null, status || 'LABORANDO', municipalityId || null, id]
     );
     if (r.affectedRows === 0) {
       return res.status(404).json({ error: 'Agente no encontrado' });
@@ -698,7 +729,7 @@ app.put('/admin/agents/:id', auth, requireAdmin, async (req, res) => {
 });
 
 // Eliminar agente
-app.delete('/admin/agents/:id', auth, requireAdmin, async (req, res) => {
+app.delete('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { id } = req.params;
   try {
     const [r] = await pool.query('DELETE FROM agent WHERE id=?', [id]);
@@ -712,67 +743,71 @@ app.delete('/admin/agents/:id', auth, requireAdmin, async (req, res) => {
 });
 
 
+
 app.get('/debug/db', async (req, res) => {
   try {
     const [[g]] = await pool.query('SELECT COUNT(*) AS n FROM `group`');
     const [[u]] = await pool.query('SELECT COUNT(*) AS n FROM `user`');
     const [[a]] = await pool.query('SELECT COUNT(*) AS n FROM agent');
     const [[m]] = await pool.query('SELECT COUNT(*) AS n FROM municipality');
-    res.json({ ok:true, counts: { groups:g.n, users:u.n, agents:a.n, municipalities:m.n } });
+    const [[un]] = await pool.query('SELECT COUNT(*) AS n FROM unit');
+    res.json({ ok:true, counts: { groups:g.n, users:u.n, agents:a.n, municipalities:m.n, units:un.n } });
   } catch (e) {
     res.status(500).json({ ok:false, error: e.message });
   }
 });
 
+// API para el mapa de municipios con agentes según reporte (date + checkpoint + groups/units)
+app.get('/admin/agent-municipalities', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+  const { date, groups, units } = req.query;
+  if (!date) return res.status(400).json({ error:'Missing date' });
 
-// API para el mapa de municipios con agentes según reporte (date + checkpoint + groups)
-app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
-  const { date, groups } = req.query;
-if (!date) return res.status(400).json({ error:'Missing date' });
+  let reportWhere = `reportDate=?`;
+  let reportParams = [date];
 
-const [reports] = await pool.query(
-  `SELECT id, groupId FROM dailyreport WHERE reportDate=?`,
-  [date]
-);
+  if (groups) {
+    const groupIds = String(groups).split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
+    if (groupIds.length) {
+      reportWhere += ` AND groupId IN (${groupIds.map(_ => '?').join(',')})`;
+      reportParams = [...reportParams, ...groupIds];
+    }
+  }
+  if (units) {
+    const unitIds = String(units).split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
+    if (unitIds.length) {
+      reportWhere += ` AND unitId IN (${unitIds.map(_ => '?').join(',')})`;
+      reportParams = [...reportParams, ...unitIds];
+    }
+  }
 
+  const [reports] = await pool.query(
+    `SELECT id, groupId, unitId FROM dailyreport WHERE ${reportWhere}`,
+    reportParams
+  );
   if (!reports.length) return res.json([]);
 
   const reportIds = reports.map(r => r.id);
-  const groupIds = reports.map(r => r.groupId);
-
-  let groupFilter = null;
-  if (groups) {
-    groupFilter = String(groups).split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
-  }
-
   let qMarks = reportIds.map(() => '?').join(',');
-
-  let whereGroups = '';
-  let params = [...reportIds];
-  if (groupFilter && groupFilter.length) {
-    whereGroups = ` AND da.groupId IN (${groupFilter.map(_ => '?').join(',')})`;
-    params = [...params, ...groupFilter];
-  }
-
   const [rows] = await pool.query(`
     SELECT 
       m.id, m.name, m.dept, m.lat, m.lon, 
       da.groupId,
+      da.unitId,
       g.code AS groupCode,
+      u.name AS unitName,
       COUNT(da.agentId) AS agent_count
     FROM dailyreport_agent da
     JOIN municipality m ON m.id = da.municipalityId
     JOIN \`group\` g ON g.id = da.groupId
+    LEFT JOIN unit u ON u.id = da.unitId
     WHERE da.reportId IN (${qMarks})
-    ${whereGroups}
-    GROUP BY m.id, da.groupId
-  `, params);
+    GROUP BY m.id, da.groupId, da.unitId
+  `, reportIds);
 
   res.json(rows);
 });
 
-
-app.get('/dashboard/compliance', auth, requireAdmin, async (req, res) => {
+app.get('/dashboard/compliance', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { date } = req.query;
   if (!date) return res.status(400).json({ error:'Missing date' });
 
@@ -797,9 +832,8 @@ cron.schedule('45 6 * * *', () => console.log('⏳ Cierre ventana 06:45'));
 cron.schedule('15 14 * * *', () => console.log('⏰ Recordatorio 14:15'));
 cron.schedule('45 14 * * *', () => console.log('⏳ Cierre ventana 14:45'));
 
-
 // Endpoint: Detalle de agentes por reporte
-app.get('/admin/report-agents/:id', auth, requireAdmin, async (req, res) => {
+app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { id } = req.params;
   if (!id) return res.status(400).json({ error: 'Missing reportId' });
 
@@ -807,11 +841,15 @@ app.get('/admin/report-agents/:id', auth, requireAdmin, async (req, res) => {
     SELECT 
       a.code, a.category,
       da.state,
+      da.groupId, g.code AS groupCode,
+      da.unitId, u.name AS unitName,
       m.name AS municipalityName, m.dept,
       DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
       DATE_FORMAT(da.novelty_end, '%Y-%m-%d') AS novelty_end
     FROM dailyreport_agent da
     JOIN agent a ON a.id = da.agentId
+    LEFT JOIN \`group\` g ON g.id = da.groupId
+    LEFT JOIN unit u ON u.id = da.unitId
     LEFT JOIN municipality m ON m.id = da.municipalityId
     WHERE da.reportId = ?
     ORDER BY a.code
@@ -822,16 +860,18 @@ app.get('/admin/report-agents/:id', auth, requireAdmin, async (req, res) => {
 
 app.get('/me/profile', auth, async (req, res) => {
   const [[user]] = await pool.query(
-    `SELECT u.id, u.email, u.role, u.groupId, u.createdAt, g.code AS groupCode
+    `SELECT u.id, u.username, u.role, u.groupId, u.unitId, u.createdAt, g.code AS groupCode, un.name AS unitName
        FROM user u
        LEFT JOIN \`group\` g ON g.id = u.groupId
+       LEFT JOIN unit un ON un.id = u.unitId
       WHERE u.id=? LIMIT 1`,
     [req.user.uid]
   );
+
+
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
   res.json(user);
 });
-
 
 app.post('/me/change-password', auth, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
@@ -854,15 +894,11 @@ app.post('/me/change-password', auth, async (req, res) => {
 });
 
 
-//mapa por grupos
-
-
-// Endpoint para el mapa con filtro de grupos
-app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
-  const { date, groups } = req.query;
+// Endpoint para el mapa con filtro de grupos y unidades
+app.get('/admin/agent-municipalities', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+  const { date, groups, units } = req.query;
   if (!date) return res.status(400).json({ error:'Missing date' });
 
-  // Trae los reportes para la fecha (puedes filtrar por grupos si quieres)
   let reportWhere = `reportDate=?`;
   let reportParams = [date];
 
@@ -876,9 +912,19 @@ app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
       reportParams = [...reportParams, ...groupIds];
     }
   }
+  if (units) {
+    const unitIds = String(units)
+      .split(',')
+      .map(x => parseInt(x))
+      .filter(x => !isNaN(x));
+    if (unitIds.length) {
+      reportWhere += ` AND unitId IN (${unitIds.map(_ => '?').join(',')})`;
+      reportParams = [...reportParams, ...unitIds];
+    }
+  }
 
   const [reports] = await pool.query(
-    `SELECT id, groupId FROM dailyreport WHERE ${reportWhere}`,
+    `SELECT id, groupId, unitId FROM dailyreport WHERE ${reportWhere}`,
     reportParams
   );
   if (!reports.length) return res.json([]);
@@ -888,27 +934,21 @@ app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
   const [rows] = await pool.query(`
     SELECT 
       m.id, m.name, m.dept, m.lat, m.lon, 
-      COUNT(da.agentId) AS agent_count,
       da.groupId,
-      g.code AS groupCode
+      g.code AS groupCode,
+      da.unitId,
+      u.name AS unitName,
+      COUNT(da.agentId) AS agent_count
     FROM dailyreport_agent da
     JOIN municipality m ON m.id = da.municipalityId
     JOIN \`group\` g ON g.id = da.groupId
+    LEFT JOIN unit u ON u.id = da.unitId
     WHERE da.reportId IN (${qMarks})
-    GROUP BY m.id, da.groupId
+    GROUP BY m.id, da.groupId, da.unitId
   `, reportIds);
 
   res.json(rows);
 });
-
-
-
-
-
-
-
-
-
 
 app.listen(process.env.PORT || 8080, () => console.log('API on', process.env.PORT || 8080));
 
