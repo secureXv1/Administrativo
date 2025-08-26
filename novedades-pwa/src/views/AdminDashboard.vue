@@ -36,13 +36,6 @@
               <label class="label">Fecha</label>
               <input type="date" v-model="date" class="input" />
             </div>
-            <div>
-              <label class="label">Corte</label>
-              <select v-model="checkpoint" class="input">
-                <option value="AM">Mañana (AM)</option>
-                <option value="PM">Tarde (PM)</option>
-              </select>
-            </div>
             <div class="flex gap-2 md:col-span-2">
               <button @click="applyFilters" class="btn-primary w-full md:w-auto">Aplicar</button>
               <button @click="exportCSV" class="btn-ghost w-full md:w-auto">CSV</button>
@@ -181,7 +174,6 @@
                   <th>Grupo</th> <!-- Grupo primero -->
                   <th>Fecha</th>
                   <th>Hora</th>
-                  <th>Corte</th>
                   <th>FE (OF/SO/PT)</th>
                   <th>FD (OF/SO/PT)</th>
                   <th>Novedades (OF/SO/PT)</th>
@@ -200,7 +192,6 @@
 
                   <td>{{ r.date }}</td>
                   <td>{{ formatTime(r.updatedAt) }}</td>
-                  <td>{{ prettyCorte(r.checkpoint) }}</td>
                   <td class="font-medium text-slate-900">{{ r.FE }}</td>
                   <td class="font-medium text-slate-900">{{ r.FD }}</td>
                   <td class="font-medium text-slate-900">{{ r.NOV }}</td>
@@ -243,8 +234,7 @@ function deseleccionarTodosGrupos() {
 
 
 const today = new Date().toISOString().slice(0,10)
-const date = ref(today)        // un solo día
-const checkpoint = ref('AM')   // solo AM/PM
+const date = ref(today)
 const agentesLibres = ref(0)
 const rows = ref([])
 
@@ -267,6 +257,7 @@ const rowsDisplay = computed(() =>
   }))
 )
 
+
 import L from 'leaflet'
 
 const municipalitiesMap = ref([])
@@ -282,15 +273,14 @@ async function loadMapData() {
     setTimeout(drawMap, 120)
     return
   }
-  const groupsParam = gruposSeleccionados.value.map(g => g.id).join(',')
-  const { data } = await axios.get('/admin/agent-municipalities', {
-    params: { 
-      date: date.value, 
-      checkpoint: checkpoint.value,
-      groups: groupsParam
-    },
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
+      const groupsParam = gruposSeleccionados.value.map(g => g.id).join(',')
+    const { data } = await axios.get('/admin/agent-municipalities', {
+      params: { 
+        date: date.value, 
+        groups: groupsParam
+      },
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
   municipalitiesMap.value = data || []
   setTimeout(drawMap, 120)
 }
@@ -376,7 +366,7 @@ async function load(){
     params: {
       date_from: date.value,
       date_to: date.value,
-      checkpoint: checkpoint.value
+      
     },
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
@@ -386,14 +376,14 @@ async function load(){
 
 // Cumplimiento
 const compliance = ref({ done: [], pending: [] })
-const checkpointLabel = computed(() => checkpoint.value === 'AM' ? 'Mañana' : 'Tarde')
+
 
 async function loadCompliance() {
-  const { data } = await axios.get('/dashboard/compliance', {
-    params: { date: date.value, checkpoint: checkpoint.value },
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  compliance.value = { done: data.done || [], pending: data.pending || [] }
+      const { data } = await axios.get('/dashboard/compliance', {
+      params: { date: date.value },
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    compliance.value = { done: data.done || [], pending: data.pending || [] }
 }
 
 // Botón "Aplicar"
@@ -436,15 +426,6 @@ async function loadGrupos() {
 }
 
 
-
-
-
-function prettyCorte(hhmm) {
-  const h = parseInt((hhmm || '00:00').slice(0, 2), 10)
-  if (h >= 6 && h <= 12) return 'Mañana (AM)'
-  if (h >= 13 && h <= 23) return 'Tarde (PM)'
-  return hhmm
-}
 
 // Logout
 function logout(){

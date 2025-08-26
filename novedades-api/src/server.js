@@ -101,13 +101,12 @@ app.get('/my/agents', auth, async (req, res) => {
 
   // Saca la fecha de hoy y corte actual (AM/PM)
   const now = new Date();
-  const { canonical } = getCorte(now); // Ejemplo: "06:30" o "14:30"
   const reportDate = now.toISOString().slice(0, 10);
 
   // Busca el reporte actual de ese grupo
   const [[report]] = await pool.query(
-    `SELECT id FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?) AND groupId=? LIMIT 1`,
-    [reportDate, canonical, groupId]
+  `SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? LIMIT 1`,
+    [reportDate, groupId]
   );
   const reportId = report?.id || null;
 
@@ -213,9 +212,7 @@ app.post('/reports', auth, async (req, res) => {
   }
 
   const now = new Date();
-  const { label, canonical, inWindow } = getCorte(now);
-  if (!inWindow) return res.status(422).json({ error:'FueraDeCorte', detail:'Solo AM (06–12:59) y PM (13–23:59).' });
-  const checkpointTime = canonical;
+  
 
   // 1. Variables para los KPIs
   let feOF = 0, feSO = 0, fePT = 0, fdOF = 0, fdSO = 0, fdPT = 0;
@@ -239,13 +236,12 @@ app.post('/reports', auth, async (req, res) => {
     const groupId = req.user.groupId;
     // Busca el último reporte anterior (no el actual)
     const [[prevReport]] = await conn.query(
-      `SELECT id FROM dailyreport 
-        WHERE groupId=? AND reportDate<=? 
-          AND NOT (reportDate=? AND checkpointTime=TIME(?))
-        ORDER BY reportDate DESC, checkpointTime DESC 
-        LIMIT 1`,
-      [groupId, reportDate, reportDate, checkpointTime]
-    );
+        `SELECT id FROM dailyreport 
+          WHERE groupId=? AND reportDate<? 
+          ORDER BY reportDate DESC 
+          LIMIT 1`,
+        [groupId, reportDate]
+      );
     // Trae novedades activas del anterior reporte (si existe)
     let prevNovedades = {};
     if (prevReport) {
@@ -311,15 +307,15 @@ app.post('/reports', auth, async (req, res) => {
     await conn.query(
       `
       INSERT INTO dailyreport
-        (reportDate, checkpointTime, groupId, leaderUserId,
-         OF_effective, SO_effective, PT_effective,
-         OF_available, SO_available, PT_available,
-         OF_nov, SO_nov, PT_nov)
+        (reportDate, groupId, leaderUserId,
+        OF_effective, SO_effective, PT_effective,
+        OF_available, SO_available, PT_available,
+        OF_nov, SO_nov, PT_nov)
       VALUES
-        (?, TIME(?), ?, ?,
-         ?, ?, ?,
-         ?, ?, ?,
-         ?, ?, ?)
+        (?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?,
+        ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         leaderUserId=VALUES(leaderUserId),
         OF_effective=VALUES(OF_effective), SO_effective=VALUES(SO_effective), PT_effective=VALUES(PT_effective),
@@ -328,16 +324,15 @@ app.post('/reports', auth, async (req, res) => {
         updatedAt=CURRENT_TIMESTAMP(3)
       `,
       [
-        reportDate, checkpointTime, groupId, leaderUserId,
+        reportDate, groupId, leaderUserId,
         feOF, feSO, fePT,
         fdOF, fdSO, fdPT,
         OF_nov, SO_nov, PT_nov
       ]
     );
-
     const [[daily]] = await conn.query(
-      `SELECT id FROM dailyreport WHERE reportDate=? AND checkpointTime=? AND groupId=? LIMIT 1`,
-      [reportDate, checkpointTime, groupId]
+      `SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? LIMIT 1`,
+      [reportDate, groupId]
     );
     const reportId = daily?.id;
 
@@ -387,10 +382,10 @@ app.post('/reports', auth, async (req, res) => {
     await conn.commit();
     res.json({
       action: 'upserted',
-      corte: label,
       reportId,
       totals: { feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov }
     });
+
   } catch (e) {
     await conn.rollback();
     console.error('POST /reports error', e);
@@ -408,7 +403,7 @@ app.get('/reports', auth, async (req, res) => {
   const params = [date];
   if (req.user.role === 'leader') { where += ' AND groupId=?'; params.push(req.user.groupId); }
   const [rows] = await pool.query(
-    `SELECT * FROM dailyreport WHERE ${where} ORDER BY checkpointTime`,
+    `SELECT * FROM dailyreport WHERE ${where} ORDER BY reportDate`,
     params
   );
   res.json(rows);
@@ -432,44 +427,37 @@ app.get('/dashboard/reports', auth, requireAdmin, async (req, res) => {
 
   if (date_from) { where.push('r.reportDate>=?'); params.push(date_from); }
   if (date_to)   { where.push('r.reportDate<=?'); params.push(date_to); }
-  if (checkpoint === 'AM') where.push('r.checkpointTime BETWEEN TIME("06:00") AND TIME("12:59:59")');
-  if (checkpoint === 'PM') where.push('r.checkpointTime BETWEEN TIME("13:00") AND TIME("23:59:59")');
+  
 
-  const sql = `
+ const sql = `
     SELECT r.*, g.code AS groupCode
       FROM dailyreport r
       JOIN \`group\` g ON g.id = r.groupId
      ${where.length ? 'WHERE '+where.join(' AND ') : ''}
-     ORDER BY r.reportDate DESC, r.checkpointTime DESC
+     ORDER BY r.reportDate DESC
   `;
-  const [rows] = await pool.query(sql, params);
+const [rows] = await pool.query(sql, params);
 
-  const items = rows.map(r => {
-    const dateStr = (r.reportDate instanceof Date)
-      ? r.reportDate.toISOString().slice(0,10)
-      : String(r.reportDate).slice(0,10);
+const items = rows.map(r => {
+  const dateStr = (r.reportDate instanceof Date)
+    ? r.reportDate.toISOString().slice(0,10)
+    : String(r.reportDate).slice(0,10);
 
-    let cp = r.checkpointTime;
-    const hhmm = (typeof cp === 'string')
-      ? cp.slice(0,5)
-      : (cp instanceof Date ? cp.toISOString().slice(11,16) : String(cp).slice(0,5));
+  const updated = (r.updatedAt instanceof Date)
+    ? r.updatedAt.toISOString()
+    : new Date(r.updatedAt).toISOString();
 
-    const updated = (r.updatedAt instanceof Date)
-      ? r.updatedAt.toISOString()
-      : new Date(r.updatedAt).toISOString();
-
-    return {
-      id: r.id,
-      date: dateStr,
-      checkpoint: hhmm,
-      groupCode: r.groupCode,
-      OF_effective: r.OF_effective, SO_effective: r.SO_effective, PT_effective: r.PT_effective,
-      OF_available: r.OF_available, SO_available: r.SO_available, PT_available: r.PT_available,
-      OF_nov: r.OF_nov, SO_nov: r.SO_nov, PT_nov: r.PT_nov,
-      updatedAt: updated,
-      notes: r.notes || ''
-    };
-  });
+  return {
+    id: r.id,
+    date: dateStr,
+    groupCode: r.groupCode,
+    OF_effective: r.OF_effective, SO_effective: r.SO_effective, PT_effective: r.PT_effective,
+    OF_available: r.OF_available, SO_available: r.SO_available, PT_available: r.PT_available,
+    OF_nov: r.OF_nov, SO_nov: r.SO_nov, PT_nov: r.PT_nov,
+    updatedAt: updated,
+    notes: r.notes || ''
+  };
+});
 
   res.json({ items });
 });
@@ -739,17 +727,14 @@ app.get('/debug/db', async (req, res) => {
 
 // API para el mapa de municipios con agentes según reporte (date + checkpoint + groups)
 app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
-  const { date, checkpoint, groups } = req.query;
-  if (!date || !checkpoint) return res.status(400).json({ error:'Missing date or checkpoint' });
+  const { date, groups } = req.query;
+if (!date) return res.status(400).json({ error:'Missing date' });
 
-  // Determina la hora canonical de checkpoint
-  const canonical = checkpoint === 'AM' ? '06:30' : '14:30';
+const [reports] = await pool.query(
+  `SELECT id, groupId FROM dailyreport WHERE reportDate=?`,
+  [date]
+);
 
-  // Busca TODOS los reportes (uno por grupo) para ese día/corte
-  const [reports] = await pool.query(
-    `SELECT id, groupId FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?)`,
-    [date, canonical]
-  );
   if (!reports.length) return res.json([]);
 
   const reportIds = reports.map(r => r.id);
@@ -788,28 +773,23 @@ app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
 
 
 app.get('/dashboard/compliance', auth, requireAdmin, async (req, res) => {
-  const { date, checkpoint } = req.query;
-  if (!date || !checkpoint) return res.status(400).json({ error:'Missing date or checkpoint' });
+  const { date } = req.query;
+  if (!date) return res.status(400).json({ error:'Missing date' });
 
-  const canonical = checkpoint === 'AM' ? '06:30' : '14:30';
-
-  // Todos los grupos
   const [groups] = await pool.query('SELECT id,code FROM `group` ORDER BY code');
-
-  // Reportes que existen para ese corte
   const [reports] = await pool.query(
-    'SELECT groupId FROM dailyreport WHERE reportDate=? AND checkpointTime=TIME(?)',
-    [date, canonical]
+    'SELECT groupId FROM dailyreport WHERE reportDate=?',
+    [date]
   );
   const reported = new Set(reports.map(r => r.groupId));
-
   const done = [];
   const pending = [];
   for (const g of groups) {
     (reported.has(g.id) ? done : pending).push({ groupCode: g.code });
   }
-  res.json({ date, checkpoint, done, pending });
+  res.json({ date, done, pending });
 });
+
 
 // ---------- Cron (solo logs) ----------
 cron.schedule('16 6 * * *', () => console.log('⏰ Recordatorio 06:16'));
@@ -879,18 +859,13 @@ app.post('/me/change-password', auth, async (req, res) => {
 
 // Endpoint para el mapa con filtro de grupos
 app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
-  const { date, checkpoint, groups } = req.query;
-  if (!date || !checkpoint) return res.status(400).json({ error:'Missing date or checkpoint' });
+  const { date, groups } = req.query;
+  if (!date) return res.status(400).json({ error:'Missing date' });
 
-  // Determina la hora canonical de checkpoint
-  const canonical = checkpoint === 'AM' ? '06:30' : '14:30';
+  // Trae los reportes para la fecha (puedes filtrar por grupos si quieres)
+  let reportWhere = `reportDate=?`;
+  let reportParams = [date];
 
-  // Busca TODOS los reportes (uno por grupo) para ese día/corte
-  let reportWhere = `reportDate=? AND checkpointTime=TIME(?)`;
-  let reportParams = [date, canonical];
-
-  // Filtrar por grupos si vienen en la query
-  let groupFilter = null;
   if (groups) {
     const groupIds = String(groups)
       .split(',')
@@ -899,7 +874,6 @@ app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
     if (groupIds.length) {
       reportWhere += ` AND groupId IN (${groupIds.map(_ => '?').join(',')})`;
       reportParams = [...reportParams, ...groupIds];
-      groupFilter = groupIds;
     }
   }
 
@@ -910,25 +884,23 @@ app.get('/admin/agent-municipalities', auth, requireAdmin, async (req, res) => {
   if (!reports.length) return res.json([]);
 
   const reportIds = reports.map(r => r.id);
-
-  // JOIN con dailyreport para traer groupId y con group para code
   let qMarks = reportIds.map(() => '?').join(',');
   const [rows] = await pool.query(`
     SELECT 
       m.id, m.name, m.dept, m.lat, m.lon, 
       COUNT(da.agentId) AS agent_count,
-      dr.groupId,
+      da.groupId,
       g.code AS groupCode
     FROM dailyreport_agent da
-    JOIN dailyreport dr ON dr.id = da.reportId
-    JOIN \`group\` g ON g.id = dr.groupId
     JOIN municipality m ON m.id = da.municipalityId
+    JOIN \`group\` g ON g.id = da.groupId
     WHERE da.reportId IN (${qMarks})
-    GROUP BY m.id, dr.groupId
+    GROUP BY m.id, da.groupId
   `, reportIds);
 
   res.json(rows);
 });
+
 
 
 
