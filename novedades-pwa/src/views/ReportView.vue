@@ -67,74 +67,96 @@
                       <th></th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr v-for="(a, i) in agents" :key="a.id">
-                      <td>{{ a.code }}</td>
-                      <td>{{ a.category }}</td>
-                      <td>
-                        <select class="input" v-model="a.status" @change="onStateChange(a)">
-                          <option value="LABORANDO">LABORANDO</option>
-                          <option value="VACACIONES">VACACIONES</option>
-                          <option value="EXCUSA">EXCUSA</option>
-                          <option value="PERMISO">PERMISO</option>
-                          <option value="SERVICIO">SERVICIO</option>
-                        </select>
-                      </td>
-                      <td>
-                        <!-- LABORANDO/SERVICIO: municipio -->
-                        <template v-if="a.status === 'SERVICIO' || a.status === 'LABORANDO'">
-                          <input
-                            class="input"
-                            :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}"
-                            list="municipios-list"
-                            v-model="a.municipalityName"
-                            @input="onMuniInput(a)"
-                            @blur="onMuniInput(a)"
-                            placeholder="Buscar municipio..."
-                            autocomplete="off"
-                          />
-                          <datalist id="municipios-list">
-                            <option
-                              v-for="m in municipalities"
-                              :key="m.id"
-                              :value="m.dept + ' - ' + m.name"
-                            />
-                          </datalist>
-                          <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
-                            Debe seleccionar un municipio válido
-                          </span>
-                        </template>
+                 <tbody>
+                  <tr v-for="(a, i) in agents" :key="a.id">
+                    <td>{{ a.code }}</td>
+                    <td>{{ a.category }}</td>
+                    <td>
+                      <select class="input" v-model="a.status" @change="onStateChange(a)">
+                        <option value="SIN NOVEDAD">SIN NOVEDAD</option>
+                        <option value="COMISIÓN DEL SERVICIO">COMISIÓN DEL SERVICIO</option>
+                        <option value="FRANCO FRANCO">FRANCO FRANCO</option>
+                        <option value="SERVICIO">SERVICIO</option>
+                        <option value="VACACIONES">VACACIONES</option>
+                        <option value="LICENCIA DE MATERNIDAD">LICENCIA DE MATERNIDAD</option>
+                        <option value="LICENCIA DE LUTO">LICENCIA DE LUTO</option>
+                        <option value="LICENCIA REMUNERADA">LICENCIA REMUNERADA</option>
+                        <option value="LICENCIA NO REMUNERADA">LICENCIA NO REMUNERADA</option>
+                        <option value="EXCUSA DEL SERVICIO">EXCUSA DEL SERVICIO</option>
+                        <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
+                      </select>
+                    </td>
+                    <td>
+                      <!-- SIN NOVEDAD: solo muestra Bogotá, solo lectura -->
+                      <template v-if="a.status === 'SIN NOVEDAD'">
+                        <input
+                          class="input bg-slate-100 cursor-not-allowed"
+                          :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'"
+                          readonly
+                          tabindex="-1"
+                        />
+                      </template>
 
-                        <!-- NOVEDAD: fechas inicio/fin -->
-                        <template v-else>
-                          <div class="flex flex-col gap-1">
-                            <span class="text-slate-500">Novedad</span>
-                            <div class="flex gap-1">
-                              <input
-                                class="input"
-                                type="date"
-                                v-model="a.novelty_start"
-                                placeholder="Inicio"
-                              />
-                              <input
-                                class="input"
-                                type="date"
-                                v-model="a.novelty_end"
-                                placeholder="Fin"
-                              />
-                            </div>
-                          </div>
-                        </template>
-                      </td>
+                      <!-- SERVICIO: Bogotá fijo (lectura) + fecha inicio/fin + descripción -->
+                      <template v-else-if="a.status === 'SERVICIO'">
+                        <input
+                          class="input mb-1 bg-slate-100 cursor-not-allowed"
+                          :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'"
+                          readonly
+                          tabindex="-1"
+                        />
+                        <div class="flex gap-1 mb-1">
+                          <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                          <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                        </div>
+                        <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                      </template>
 
-                      <td>
-                        <button class="btn-ghost" @click="removeAgent(a.id)">Quitar</button>
-                      </td>
-                    </tr>
-                    <tr v-if="agents.length === 0">
-                      <td colspan="5" class="text-center text-slate-500 py-4">Sin agentes en tu grupo.</td>
-                    </tr>
-                  </tbody>
+                      <!-- COMISIÓN DEL SERVICIO: municipio editable -->
+                      <template v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
+                        <input
+                          class="input"
+                          :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}"
+                          list="municipios-list"
+                          v-model="a.municipalityName"
+                          @input="onMuniInput(a)"
+                          @blur="onMuniInput(a)"
+                          placeholder="Buscar municipio..."
+                          autocomplete="off"
+                        />
+                        <datalist id="municipios-list">
+                          <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
+                        </datalist>
+                        <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
+                          Debe seleccionar un municipio válido
+                        </span>
+                      </template>
+
+                      <!-- FRANCO FRANCO: no muestra nada -->
+                      <template v-else-if="a.status === 'FRANCO FRANCO'">
+                        <span class="text-xs text-slate-400">Sin datos adicionales</span>
+                      </template>
+
+                      <!-- Otros estados: fecha inicio/fin y descripción -->
+                      <template v-else>
+                        <div class="flex gap-1 mb-1">
+                          <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                          <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                        </div>
+                        <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                      </template>
+                    </td>
+
+
+                    <td>
+                      <button class="btn-ghost" @click="removeAgent(a.id)">Quitar</button>
+                    </td>
+                  </tr>
+                  <tr v-if="agents.length === 0">
+                    <td colspan="5" class="text-center text-slate-500 py-4">Sin agentes en tu grupo.</td>
+                  </tr>
+                </tbody>
+
                 </table>
               </div>
             </div>
@@ -234,28 +256,103 @@ async function loadMunicipalities(q = '') {
 }
 
 function onStateChange(agent) {
-  if (agent.status !== 'SERVICIO' && agent.status !== 'LABORANDO') {
-    agent.municipalityId = null
+  // SIN NOVEDAD: Bogotá fijo, limpia lo demás
+  if (agent.status === 'SIN NOVEDAD') {
+    agent.municipalityId = 11001
+    const bogota = municipalities.value.find(m => m.id === 11001)
+    agent.municipalityName = bogota ? `${bogota.dept} - ${bogota.name}` : 'CUNDINAMARCA - Bogotá'
+    agent.novelty_start = ''
+    agent.novelty_end = ''
+    agent.novelty_description = ''
+    return
   }
+
+  // SERVICIO: Bogotá fijo, pero permite editar fechas y descripción
+  if (agent.status === 'SERVICIO') {
+    agent.municipalityId = 11001
+    const bogota = municipalities.value.find(m => m.id === 11001)
+    agent.municipalityName = bogota ? `${bogota.dept} - ${bogota.name}` : 'CUNDINAMARCA - Bogotá'
+    // No limpia fechas ni descripción, el usuario las edita
+    return
+  }
+
+  // COMISIÓN DEL SERVICIO: limpia municipio (el usuario debe seleccionarlo)
+  if (agent.status === 'COMISIÓN DEL SERVICIO') {
+    agent.municipalityId = null
+    agent.municipalityName = ''
+    agent.novelty_start = ''
+    agent.novelty_end = ''
+    agent.novelty_description = ''
+    return
+  }
+
+  // FRANCO FRANCO: limpia todo
+  if (agent.status === 'FRANCO FRANCO') {
+    agent.municipalityId = null
+    agent.municipalityName = ''
+    agent.novelty_start = ''
+    agent.novelty_end = ''
+    agent.novelty_description = ''
+    return
+  }
+
+  // Otros estados: limpia municipio y pide fechas/desc
+  agent.municipalityId = null
+  agent.municipalityName = ''
+  agent.novelty_start = ''
+  agent.novelty_end = ''
+  agent.novelty_description = ''
 }
+
+
 
 async function save() {
   for (const a of agents.value) {
-    if ((a.status === 'SERVICIO' || a.status === 'LABORANDO') && !a.municipalityId) {
-      msg.value = `Falta municipio para ${a.code}`
-      return
+    if (a.status === 'SIN NOVEDAD') {
+      if (a.municipalityId !== 11001) {
+        msg.value = `El agente ${a.code} debe estar en Bogotá (SIN NOVEDAD)`
+        return
+      }
+    } else if (a.status === 'SERVICIO') {
+      if (a.municipalityId !== 11001) {
+        msg.value = `El agente ${a.code} debe estar en Bogotá (SERVICIO)`
+        return
+      }
+      if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (SERVICIO)`; return }
+      if (!a.novelty_end) { msg.value = `Falta fecha fin para ${a.code} (SERVICIO)`; return }
+      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SERVICIO)`; return }
+    } else if (a.status === 'COMISIÓN DEL SERVICIO') {
+      if (!a.municipalityId) { msg.value = `Falta municipio para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
+      // No requiere fechas ni descripción
+    } else if (a.status === 'FRANCO FRANCO') {
+      // Nada requerido
+    } else {
+      // Resto de novedades: fecha inicio, fecha fin, descripción
+      if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (${a.status})`; return }
+      if (!a.novelty_end) { msg.value = `Falta fecha fin para ${a.code} (${a.status})`; return }
+      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (${a.status})`; return }
     }
   }
+
   try {
     await axios.post('/reports', {
       reportDate: reportDate.value,
-      people: agents.value.map(a => ({
-        agentCode: a.code,
-        state: a.status,
-        municipalityId: (a.status === 'SERVICIO' || a.status === 'LABORANDO') ? a.municipalityId : null,
-        novelty_start: (a.status !== 'LABORANDO' && a.status !== 'SERVICIO') ? a.novelty_start : null,
-        novelty_end: (a.status !== 'LABORANDO' && a.status !== 'SERVICIO') ? a.novelty_end : null
-      }))
+     people: agents.value.map(a => ({
+          agentCode: a.code,
+          state: a.status,
+          municipalityId:
+            (a.status === 'SIN NOVEDAD' || a.status === 'SERVICIO') ? 11001 :
+            (a.status === 'COMISIÓN DEL SERVICIO' ? a.municipalityId : null),
+          novelty_start:
+            (a.status === 'SERVICIO' || !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
+              ? a.novelty_start : null,
+          novelty_end:
+            (a.status === 'SERVICIO' || !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
+              ? a.novelty_end : null,
+          novelty_description:
+            (a.status === 'SERVICIO' || !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
+              ? a.novelty_description : null,
+        }))
 
     }, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
@@ -266,6 +363,9 @@ async function save() {
     msg.value = e.response?.data?.error || 'Error al guardar'
   }
 }
+
+
+
 
 async function removeAgent(agentId) {
   if (!confirm('¿Quitar este agente de tu grupo?')) return

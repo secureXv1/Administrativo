@@ -148,6 +148,7 @@ app.get('/my/agents', auth, requireRole('leader_unit'), async (req, res) => {
 
 
 
+
 // Asignar un agente libre (sin grupo ni unidad) a mi unidad y grupo
 app.post('/my/agents/add', auth, requireRole('leader_unit'), async (req, res) => {
   const { agentId } = req.body;
@@ -282,29 +283,67 @@ app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmi
     // ----------- FIN BLOQUE COPIAR NOVEDADES -----------
 
 
-    // 3. Calcula KPIs y valida agentes
+    const estadosValidos = [
+  "COMISIÓN DE ESTUDIOS",
+  "COMISIÓN DEL SERVICIO",
+  "FRANCO FRANCO",
+  "SERVICIO",
+  "SIN NOVEDAD",
+  "VACACIONES",
+  "LICENCIA DE MATERNIDAD",
+  "LICENCIA DE LUTO",
+  "LICENCIA REMUNERADA",
+  "LICENCIA NO REMUNERADA",
+  "EXCUSA DEL SERVICIO",
+  "LICENCIA PATERNIDAD"
+];
+
+// 3. Calcula KPIs y valida agentes
 for (const p of people) {
   const code = String(p.agentCode || '').toUpperCase().trim();
   const state = String(p.state || '').toUpperCase().trim();
   const muniId = p.municipalityId ? Number(p.municipalityId) : null;
+  const novelty_start = p.novelty_start || null;
+  const novelty_end = p.novelty_end || null;
+  const novelty_description = p.novelty_description || null;
 
   const ag = agentMap[code];
   if (!ag) throw new Error(`No existe agente ${code}`);
 
+  // KPIs (ajusta a tus categorías reales si no son OF/SO/PT)
   if (ag.category === 'OF') feOF++;
   if (ag.category === 'SO') feSO++;
   if (ag.category === 'PT') fePT++;
-  if (state === 'LABORANDO') {
+  if (state === 'SIN NOVEDAD') {
     if (ag.category === 'OF') fdOF++;
     if (ag.category === 'SO') fdSO++;
     if (ag.category === 'PT') fdPT++;
   }
 
-  if (!['LABORANDO','VACACIONES','EXCUSA','PERMISO','SERVICIO'].includes(state)) {
+  // --- VALIDACIÓN SEGÚN ESTADO ---
+  if (!estadosValidos.includes(state)) {
     throw new Error(`Estado inválido: ${state}`);
   }
-  if ((state === 'SERVICIO' || state === 'LABORANDO') && !muniId) {
-    throw new Error(`Falta municipio para ${code}`);
+
+  // 1) Sin Novedad o Comisión del servicio → municipio requerido
+  if (["SIN NOVEDAD", "COMISIÓN DEL SERVICIO"].includes(state)) {
+    if (!muniId) throw new Error(`Falta municipio para ${code} (${state})`);
+    // No requiere fechas ni descripción
+  }
+  // 2) Servicio → requiere municipio, fecha y descripción
+  else if (state === "SERVICIO") {
+    if (!muniId) throw new Error(`Falta municipio para ${code} (SERVICIO)`);
+    if (!novelty_start) throw new Error(`Falta fecha para ${code} (SERVICIO)`);
+    if (!novelty_description) throw new Error(`Falta descripción para ${code} (SERVICIO)`);
+  }
+  // 3) Franco Franco → no pide nada más
+  else if (state === "FRANCO FRANCO") {
+    // Ningún campo obligatorio extra
+  }
+  // 4) Otros estados → fecha y descripción requeridas
+  else {
+    if (!novelty_start) throw new Error(`Falta fecha para ${code} (${state})`);
+    if (!novelty_description) throw new Error(`Falta descripción para ${code} (${state})`);
   }
 }
 
@@ -374,7 +413,8 @@ for (const p of people) {
       state,
       muniId,
       novelty_start,
-      novelty_end
+      novelty_end,
+      p.novelty_description
     ]
   );
 
@@ -949,6 +989,33 @@ app.get('/admin/agent-municipalities', auth, requireRole('superadmin', 'supervis
 
   res.json(rows);
 });
+
+// Listar agentes de un grupo que NO tienen unidad asignada
+app.get('/admin/agents-no-unit', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
+  let groupId = req.query.groupId;
+
+  // Si es líder de grupo, forzar groupId por su sesión
+  if (req.user.role === 'leader_group') {
+    groupId = req.user.groupId;
+  }
+  if (!groupId) return res.status(400).json({ error: 'Falta groupId' });
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, code, category, status FROM agent WHERE groupId = ? AND (unitId IS NULL OR unitId = 0) ORDER BY code`,
+      [groupId]
+    );
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: 'AgentListNoUnitError', detail: e.message });
+  }
+});
+
+
+
+
+
+
 
 app.listen(process.env.PORT || 8080, () => console.log('API on', process.env.PORT || 8080));
 
