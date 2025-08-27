@@ -229,7 +229,8 @@ async function loadAgents() {
         ...a,
         municipalityName,
         novelty_start: a.novelty_start ? a.novelty_start.slice(0, 10) : '', // YYYY-MM-DD
-        novelty_end: a.novelty_end ? a.novelty_end.slice(0, 10) : ''
+        novelty_end: a.novelty_end ? a.novelty_end.slice(0, 10) : '',
+        novelty_description: a.novelty_description || '',
       };
     });
 
@@ -380,17 +381,23 @@ async function removeAgent(agentId) {
 }
 
 // KPIs calculados en frontend
-const feOF = computed(() => agents.value.filter(p => p.category === 'OF').length)
-const feSO = computed(() => agents.value.filter(p => p.category === 'SO').length)
-const fePT = computed(() => agents.value.filter(p => p.category === 'PT').length)
+// FD = todos los OF/SO/PT con status "SIN NOVEDAD"
+const fdOF = computed(() => agents.value.filter(a => a.category === 'OF' && a.status === 'SIN NOVEDAD').length)
+const fdSO = computed(() => agents.value.filter(a => a.category === 'SO' && a.status === 'SIN NOVEDAD').length)
+const fdPT = computed(() => agents.value.filter(a => a.category === 'PT' && a.status === 'SIN NOVEDAD').length)
 
-const fdOF = computed(() => agents.value.filter(p => p.category === 'OF' && p.status === 'LABORANDO').length)
-const fdSO = computed(() => agents.value.filter(p => p.category === 'SO' && p.status === 'LABORANDO').length)
-const fdPT = computed(() => agents.value.filter(p => p.category === 'PT' && p.status === 'LABORANDO').length)
+// FE (efectivo total)
+const feOF = computed(() => agents.value.filter(a => a.category === 'OF').length)
+const feSO = computed(() => agents.value.filter(a => a.category === 'SO').length)
+const fePT = computed(() => agents.value.filter(a => a.category === 'PT').length)
 
+// Novedades = total - FD
 const kpiFE = computed(() => `${feOF.value}/${feSO.value}/${fePT.value}`)
 const kpiFD = computed(() => `${fdOF.value}/${fdSO.value}/${fdPT.value}`)
-const kpiNOV = computed(() => `${Math.max(feOF.value - fdOF.value, 0)}/${Math.max(feSO.value - fdSO.value, 0)}/${Math.max(fePT.value - fdPT.value, 0)}`)
+const kpiNOV = computed(() =>
+  `${feOF.value - fdOF.value}/${feSO.value - fdSO.value}/${fePT.value - fdPT.value}`
+)
+
 
 function logout() {
   localStorage.removeItem('token')

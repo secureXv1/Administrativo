@@ -6,7 +6,8 @@ import jwt from 'jsonwebtoken';
 import cron from 'node-cron';
 import bcrypt from 'bcryptjs';
 import { pool } from './db.js';
-import { getCorte, computeNovelties } from './utils.js';
+import { computeNovelties } from './utils.js'
+
 
 const app = express();
 app.use(cors());
@@ -129,7 +130,8 @@ app.get('/my/agents', auth, requireRole('leader_unit'), async (req, res) => {
     `SELECT 
         a.id, a.code, a.category, a.status, a.municipalityId,
         m.dept, m.name,
-        da.novelty_start, da.novelty_end
+        da.novelty_start, da.novelty_end,
+        da.novelty_description  
       FROM agent a
       LEFT JOIN municipality m ON a.municipalityId = m.id
       LEFT JOIN dailyreport_agent da ON da.agentId = a.id AND da.reportId = ?
@@ -251,44 +253,47 @@ app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmi
     // ----------- BLOQUE PARA COPIAR NOVEDADES DEL REPORTE ANTERIOR -----------
     // Busca el último reporte anterior (no el actual)
     const [[prevReport]] = await conn.query(
-      `SELECT id FROM dailyreport 
-        WHERE groupId=? AND unitId=? AND reportDate<? 
-        ORDER BY reportDate DESC 
-        LIMIT 1`,
-      [groupId, unitId, reportDate]
-    );
-    let prevNovedades = {};
-    if (prevReport) {
-      const [prevRows] = await conn.query(
-        `SELECT agentId, state, novelty_start, novelty_end 
-         FROM dailyreport_agent 
-         WHERE reportId=?`,
-        [prevReport.id]
-      );
-      const today = new Date(reportDate);
-      for (const r of prevRows) {
-        if (
-          r.novelty_start &&
-          (!r.novelty_end || new Date(r.novelty_end) >= today) &&
-          ['VACACIONES','EXCUSA','PERMISO'].includes(r.state)
-        ) {
-          prevNovedades[r.agentId] = {
-            novelty_start: r.novelty_start,
-            novelty_end: r.novelty_end,
-            state: r.state
-          };
-        }
-      }
+  `SELECT id FROM dailyreport 
+    WHERE groupId=? AND unitId=? AND reportDate<? 
+    ORDER BY reportDate DESC 
+    LIMIT 1`,
+  [groupId, unitId, reportDate]
+);
+
+let prevNovedades = {};
+if (prevReport) {
+  // 👇 Nota: ahora traemos también 'novelty_description'
+  const [prevRows] = await conn.query(
+    `SELECT agentId, state, novelty_start, novelty_end, novelty_description
+     FROM dailyreport_agent 
+     WHERE reportId=?`,
+    [prevReport.id]
+  );
+  const today = new Date(reportDate);
+  for (const r of prevRows) {
+    if (
+      r.novelty_start &&
+      (!r.novelty_end || new Date(r.novelty_end) >= today) &&
+      ['VACACIONES','EXCUSA','PERMISO'].includes(r.state)
+    ) {
+      prevNovedades[r.agentId] = {
+        novelty_start: r.novelty_start,
+        novelty_end: r.novelty_end,
+        state: r.state,
+        novelty_description: r.novelty_description // <<--- nuevo campo
+      };
     }
+  }
+}
+
     // ----------- FIN BLOQUE COPIAR NOVEDADES -----------
 
 
-    const estadosValidos = [
-  "COMISIÓN DE ESTUDIOS",
+const estadosValidos = [
+  "SIN NOVEDAD",
+  "SERVICIO",
   "COMISIÓN DEL SERVICIO",
   "FRANCO FRANCO",
-  "SERVICIO",
-  "SIN NOVEDAD",
   "VACACIONES",
   "LICENCIA DE MATERNIDAD",
   "LICENCIA DE LUTO",
@@ -298,19 +303,18 @@ app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmi
   "LICENCIA PATERNIDAD"
 ];
 
-// 3. Calcula KPIs y valida agentes
 for (const p of people) {
   const code = String(p.agentCode || '').toUpperCase().trim();
   const state = String(p.state || '').toUpperCase().trim();
-  const muniId = p.municipalityId ? Number(p.municipalityId) : null;
-  const novelty_start = p.novelty_start || null;
-  const novelty_end = p.novelty_end || null;
-  const novelty_description = p.novelty_description || null;
+  let muniId = p.municipalityId ? Number(p.municipalityId) : null;
+  let novelty_start = p.novelty_start || null;
+  let novelty_end = p.novelty_end || null;
+  let novelty_description = p.novelty_description || null;
 
   const ag = agentMap[code];
   if (!ag) throw new Error(`No existe agente ${code}`);
 
-  // KPIs (ajusta a tus categorías reales si no son OF/SO/PT)
+  // FD solo si "SIN NOVEDAD"
   if (ag.category === 'OF') feOF++;
   if (ag.category === 'SO') feSO++;
   if (ag.category === 'PT') fePT++;
@@ -320,36 +324,77 @@ for (const p of people) {
     if (ag.category === 'PT') fdPT++;
   }
 
-  // --- VALIDACIÓN SEGÚN ESTADO ---
   if (!estadosValidos.includes(state)) {
     throw new Error(`Estado inválido: ${state}`);
   }
 
-  // 1) Sin Novedad o Comisión del servicio → municipio requerido
-  if (["SIN NOVEDAD", "COMISIÓN DEL SERVICIO"].includes(state)) {
-    if (!muniId) throw new Error(`Falta municipio para ${code} (${state})`);
-    // No requiere fechas ni descripción
+  // SIN NOVEDAD: municipio Bogotá (id 11001), solo lectura, no pide nada más
+  if (state === "SIN NOVEDAD") {
+    muniId = 11001;
+    novelty_start = null;
+    novelty_end = null;
+    novelty_description = null;
   }
-  // 2) Servicio → requiere municipio, fecha y descripción
+  // SERVICIO: municipio Bogotá (id 11001), pide fechas y descripción
   else if (state === "SERVICIO") {
-    if (!muniId) throw new Error(`Falta municipio para ${code} (SERVICIO)`);
-    if (!novelty_start) throw new Error(`Falta fecha para ${code} (SERVICIO)`);
-    if (!novelty_description) throw new Error(`Falta descripción para ${code} (SERVICIO)`);
+    muniId = 11001;
+    if (!p.novelty_start) throw new Error(`Falta fecha de inicio para ${code} (SERVICIO)`);
+    if (!p.novelty_end) throw new Error(`Falta fecha de fin para ${code} (SERVICIO)`);
+    if (!p.novelty_description) throw new Error(`Falta descripción para ${code} (SERVICIO)`);
+    novelty_start = p.novelty_start;
+    novelty_end = p.novelty_end;
+    novelty_description = p.novelty_description;
   }
-  // 3) Franco Franco → no pide nada más
+  // COMISIÓN DEL SERVICIO: municipio requerido, NO fechas ni descripción
+  else if (state === "COMISIÓN DEL SERVICIO") {
+    if (!muniId) throw new Error(`Falta municipio para ${code} (COMISIÓN DEL SERVICIO)`);
+    novelty_start = null;
+    novelty_end = null;
+    novelty_description = null;
+  }
+  // FRANCO FRANCO: no pide nada extra
   else if (state === "FRANCO FRANCO") {
-    // Ningún campo obligatorio extra
+    muniId = null;
+    novelty_start = null;
+    novelty_end = null;
+    novelty_description = null;
   }
-  // 4) Otros estados → fecha y descripción requeridas
+  // Otros: fecha inicio, fin, descripción requeridas, municipio null
   else {
-    if (!novelty_start) throw new Error(`Falta fecha para ${code} (${state})`);
-    if (!novelty_description) throw new Error(`Falta descripción para ${code} (${state})`);
+    if (!p.novelty_start) throw new Error(`Falta fecha de inicio para ${code} (${state})`);
+    if (!p.novelty_end) throw new Error(`Falta fecha de fin para ${code} (${state})`);
+    if (!p.novelty_description) throw new Error(`Falta descripción para ${code} (${state})`);
+    muniId = null;
+    novelty_start = p.novelty_start;
+    novelty_end = p.novelty_end;
+    novelty_description = p.novelty_description;
   }
+
+  // ---- Aquí puedes dejar la copia de fechas de reporte anterior, si aplica
+    if (prevNovedades[ag.id] && state === prevNovedades[ag.id].state) {
+      // Solo rellena si el campo está vacío y hay dato anterior:
+      if (!novelty_start && prevNovedades[ag.id].novelty_start)
+        novelty_start = prevNovedades[ag.id].novelty_start;
+      if (!novelty_end && prevNovedades[ag.id].novelty_end)
+        novelty_end = prevNovedades[ag.id].novelty_end;
+      if (!novelty_description && prevNovedades[ag.id].novelty_description)
+        novelty_description = prevNovedades[ag.id].novelty_description;
+    }
+
+
+  // Guarda lo que vas a insertar (puedes usar directamente o en el for siguiente)
+  p._resolved = {
+    state, muniId, novelty_start, novelty_end, novelty_description
+  };
 }
 
 const { OF_nov, SO_nov, PT_nov } = computeNovelties({
-  OF_effective: feOF, SO_effective: feSO, PT_effective: fePT,
-  OF_available: fdOF, SO_available: fdSO, PT_available: fdPT
+  OF_effective: feOF,
+  SO_effective: feSO,
+  PT_effective: fePT,
+  OF_available: fdOF,
+  SO_available: fdSO,
+  PT_available: fdPT
 });
 
 const leaderUserId = req.user.uid;
@@ -391,20 +436,13 @@ await conn.query('DELETE FROM dailyreport_agent WHERE reportId=?', [reportId]);
 
 for (const p of people) {
   const code = String(p.agentCode || '').toUpperCase().trim();
-  const state = String(p.state || '').toUpperCase().trim();
-  const muniId = p.municipalityId ? Number(p.municipalityId) : null;
-
   const ag = agentMap[code];
-
-  let novelty_start = (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_start || null) : null;
-  let novelty_end = (state !== 'LABORANDO' && state !== 'SERVICIO') ? (p.novelty_end || null) : null;
-  if (!novelty_start && !novelty_end && prevNovedades[ag.id] && (state === prevNovedades[ag.id].state)) {
-    novelty_start = prevNovedades[ag.id].novelty_start;
-    novelty_end = prevNovedades[ag.id].novelty_end;
-  }
+  const { state, muniId, novelty_start, novelty_end, novelty_description } = p._resolved;
 
   await conn.query(
-    `INSERT INTO dailyreport_agent (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO dailyreport_agent 
+      (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       reportId,
       ag.id,
@@ -414,7 +452,7 @@ for (const p of people) {
       muniId,
       novelty_start,
       novelty_end,
-      p.novelty_description
+      novelty_description
     ]
   );
 
@@ -423,6 +461,7 @@ for (const p of people) {
     [state, muniId, ag.id]
   );
 }
+
 
 
    await conn.commit();
