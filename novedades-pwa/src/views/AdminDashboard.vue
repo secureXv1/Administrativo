@@ -158,36 +158,45 @@
           ></div>
         </div>
       </div>
-      <!-- Cumplimiento por corte -->
-      <div class="card">
-        <div class="card-body space-y-3">
-          <div class="flex items-center justify-between">
-            <h3 class="font-semibold text-slate-800">Cumplimiento ({{ checkpointLabel }})</h3>
-            <button class="btn-ghost" @click="loadCompliance">Actualizar</button>
-          </div>
+     <!-- Cumplimiento por corte -->
+<div class="card">
+  <div class="card-body space-y-3">
+    <div class="flex items-center justify-between">
+      <h3 class="font-semibold text-slate-800">Cumplimiento ({{ checkpointLabel }})</h3>
+      <button class="btn-ghost" @click="loadCompliance">Actualizar</button>
+    </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <h4 class="text-slate-600 mb-2">✅ Actualizaron</h4>
-              <div class="flex flex-wrap gap-2">
-                <span v-for="g in compliance.done" :key="'d'+g.groupCode" class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm">
-                  {{ g.groupCode }}
-                </span>
-                <span v-if="!compliance.done.length" class="text-slate-500 text-sm">Nadie aún</span>
-              </div>
-            </div>
-            <div>
-              <h4 class="text-slate-600 mb-2">⏳ Pendientes</h4>
-              <div class="flex flex-wrap gap-2">
-                <span v-for="g in compliance.pending" :key="'p'+g.groupCode" class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm">
-                  {{ g.groupCode }}
-                </span>
-                <span v-if="!compliance.pending.length" class="text-slate-500 text-sm">Sin pendientes</span>
-              </div>
-            </div>
-          </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <h4 class="text-slate-600 mb-2">✅ Actualizaron</h4>
+        <div class="flex flex-wrap gap-2">
+          <span
+            v-for="g in compliance.done"
+            :key="'d'+(g.groupCode || g.unitName)"
+            class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm"
+          >
+            {{ g.unitName || g.groupCode }}
+          </span>
+          <span v-if="!compliance.done.length" class="text-slate-500 text-sm">Nadie aún</span>
         </div>
       </div>
+      <div>
+        <h4 class="text-slate-600 mb-2">⏳ Pendientes</h4>
+        <div class="flex flex-wrap gap-2">
+          <span
+            v-for="g in compliance.pending"
+            :key="'p'+(g.groupCode || g.unitName)"
+            class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm"
+          >
+            {{ g.unitName || g.groupCode }}
+          </span>
+          <span v-if="!compliance.pending.length" class="text-slate-500 text-sm">Sin pendientes</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
       <!-- Tabla -->
       <div class="card">
@@ -195,36 +204,37 @@
           <div class="overflow-auto">
             <table class="table">
               <thead>
-                <tr>
-                  <th>Grupo</th> <!-- Grupo primero -->
-                  <th>Fecha</th>
-                  <th>Hora</th>
-                  <th>FE (OF/SO/PT)</th>
-                  <th>FD (OF/SO/PT)</th>
-                  <th>Novedades (OF/SO/PT)</th>
-                  </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in rowsDisplay" :key="r.id" class="hover:bg-slate-50">
-                  <td>
+            <tr>
+              <th>{{ me && me.role === 'leader_group' ? 'Unidad' : 'Grupo' }}</th>
+              <th>Fecha</th>
+              <th>Hora</th>
+              <th>FE (OF/SO/PT)</th>
+              <th>FD (OF/SO/PT)</th>
+              <th>Novedades (OF/SO/PT)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in rowsDisplay" :key="r.id" class="hover:bg-slate-50">
+              <td>
                 <span
                   class="inline-flex items-center gap-2 cursor-pointer hover:underline text-brand-700"
                   @click="goToGroupDetail(r)"
                 >
-                  <span class="h-2 w-2 rounded-full bg-brand-600"></span>{{ r.groupCode }}
+                  <span class="h-2 w-2 rounded-full bg-brand-600"></span>
+                  {{ r.unitName || r.groupCode }}
                 </span>
               </td>
+              <td>{{ r.date }}</td>
+              <td>{{ formatTime(r.updatedAt) }}</td>
+              <td class="font-medium text-slate-900">{{ r.FE }}</td>
+              <td class="font-medium text-slate-900">{{ r.FD }}</td>
+              <td class="font-medium text-slate-900">{{ r.NOV }}</td>
+            </tr>
+            <tr v-if="rowsDisplay.length===0">
+              <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
+            </tr>
+          </tbody>
 
-                  <td>{{ r.date }}</td>
-                  <td>{{ formatTime(r.updatedAt) }}</td>
-                  <td class="font-medium text-slate-900">{{ r.FE }}</td>
-                  <td class="font-medium text-slate-900">{{ r.FD }}</td>
-                  <td class="font-medium text-slate-900">{{ r.NOV }}</td>
-                  </tr>
-                <tr v-if="rowsDisplay.length===0">
-                  <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
-                </tr>
-              </tbody>
             </table>
           </div>
         </div>
@@ -303,19 +313,10 @@ const gruposSeleccionados = ref([]) // Ids seleccionados para el filtro
 const cargado = ref(false)
 
 async function loadMapData() {
-  // Si el usuario es líder de grupo, forzar grupo fijo
+  // Si el usuario es líder de grupo, llama SIN parámetro groups
   if (me.value && me.value.role === 'leader_group') {
-    if (!me.value.groupId) {
-      municipalitiesMap.value = []
-      setTimeout(drawMap, 120)
-      return
-    }
-    const groupsParam = me.value.groupId
     const { data } = await axios.get('/admin/agent-municipalities', {
-      params: {
-        date: date.value,
-        groups: groupsParam
-      },
+      params: { date: date.value },
       headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
     })
     municipalitiesMap.value = data || []
@@ -339,6 +340,7 @@ async function loadMapData() {
   municipalitiesMap.value = data || []
   setTimeout(drawMap, 120)
 }
+
 
 
 
@@ -459,7 +461,7 @@ async function loadCompliance() {
   let url = '/dashboard/compliance'
   let params = { date: date.value }
 
-  // Si es líder de grupo, consulta cumplimiento de unidades de su grupo
+  // Si es líder de grupo, usa el nuevo endpoint
   if (me.value && me.value.role === 'leader_group' && me.value.groupId) {
     url = '/dashboard/compliance-units'
     params.groupId = me.value.groupId
@@ -471,6 +473,7 @@ async function loadCompliance() {
   })
   compliance.value = { done: data.done || [], pending: data.pending || [] }
 }
+
 
 
 // Botón "Aplicar"
