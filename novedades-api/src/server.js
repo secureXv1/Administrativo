@@ -1160,6 +1160,68 @@ app.get('/reports/export', auth, requireRole('superadmin', 'supervision', 'leade
 });
 
 
+// Crear nueva unidad (asignada automáticamente al grupo del líder)
+app.post('/my/units', auth, requireRole('leader_group'), async (req, res) => {
+  const groupId = req.user.groupId;
+  const { name, description } = req.body;
+  if (!name) return res.status(400).json({ error: 'Nombre requerido' });
+  await pool.query(
+    'INSERT INTO unit (name, description, groupId) VALUES (?, ?, ?)',
+    [name, description || null, groupId]
+  );
+  res.json({ ok: true });
+});
+
+
+// Listar unidades del grupo
+app.get('/my/units', auth, requireRole('leader_group'), async (req, res) => {
+  const [rows] = await pool.query(
+    'SELECT id, name, description FROM unit WHERE groupId = ? ORDER BY name',
+    [req.user.groupId]
+  );
+  res.json(rows);
+});
+
+// Crear unidad
+app.post('/my/units', auth, requireRole('leader_group'), async (req, res) => {
+  const { name, description } = req.body;
+  await pool.query(
+    'INSERT INTO unit (name, description, groupId) VALUES (?, ?, ?)',
+    [name, description || null, req.user.groupId]
+  );
+  res.json({ ok: true });
+});
+
+// Editar unidad
+app.put('/my/units/:id', auth, requireRole('leader_group'), async (req, res) => {
+  const { id } = req.params;
+  const { name, description } = req.body;
+  const [units] = await pool.query(
+    'SELECT id FROM unit WHERE id = ? AND groupId = ? LIMIT 1', [id, req.user.groupId]
+  );
+  if (!units.length) return res.status(403).json({ error: 'No autorizado' });
+  await pool.query(
+    'UPDATE unit SET name = ?, description = ? WHERE id = ?', [name, description, id]
+  );
+  res.json({ ok: true });
+});
+
+
+// (Opcional) Eliminar unidad de mi grupo
+app.delete('/my/units/:id', auth, requireRole('leader_group'), async (req, res) => {
+  const groupId = req.user.groupId;
+  const { id } = req.params;
+  // Solo si es de su grupo
+  const [units] = await pool.query(
+    'SELECT id FROM unit WHERE id = ? AND groupId = ? LIMIT 1', [id, groupId]
+  );
+  if (!units.length) return res.status(403).json({ error: 'No autorizado' });
+  await pool.query('DELETE FROM unit WHERE id = ?', [id]);
+  res.json({ ok: true });
+});
+
+
+
 // Inicia el servidor
 
 

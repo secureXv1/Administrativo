@@ -22,6 +22,15 @@ const routes = [
   { path: '/admin/users', component: AdminUsers },
   { path: '/admin/report/:id', component: AdminReportDetail },
   
+  {
+  path: '/admin/units',
+  name: 'Unidades',
+  component: () => import('@/views/AdminUnits.vue'),
+  meta: { requiresAuth: true, roles: ['leader_group', 'superadmin', 'supervision'] }
+  },
+
+
+  
 
   
   {

@@ -1,15 +1,21 @@
 // vite.config.js
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import path from 'path'
 
 export default defineConfig({
   plugins: [vue()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    }
+  },
   server: {
     proxy: {
       '/auth': 'http://localhost:8080',
       '/me': 'http://localhost:8080',
       '/admin': 'http://localhost:8080',
-      '/my': 'http://localhost:8080',         // <--- AGREGA ESTA LINEA
+      '/my': 'http://localhost:8080',
       '/catalogs': 'http://localhost:8080',
       '/reports': 'http://localhost:8080',
       '/dashboard': 'http://localhost:8080',
