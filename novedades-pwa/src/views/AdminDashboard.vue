@@ -45,7 +45,10 @@
             </div>
             <div class="flex gap-2 md:col-span-2">
               <button @click="applyFilters" class="btn-primary w-full md:w-auto">Aplicar</button>
-              <button @click="exportCSV" class="btn-ghost w-full md:w-auto">CSV</button>
+              <button @click="descargarExcel" class="btn-ghost w-full md:w-auto">
+                Descargar
+              </button>
+
             </div>
           </div>
         </div>
@@ -249,6 +252,9 @@ import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
+
 
 const me = ref(null)
 
@@ -259,6 +265,52 @@ async function loadMe() {
     })
     me.value = data
   } catch { me.value = null }
+}
+
+async function descargarExcel() {
+  // Prepara los filtros (usa los mismos que para cargar)
+  const params = {
+    date: date.value,
+  }
+  if (me.value?.role === 'leader_group') {
+    params.groupId = me.value.groupId
+  }
+  if (me.value?.role === 'leader_unit') {
+    params.unitId = me.value.unitId
+  }
+
+  // Llama al endpoint
+  const { data } = await axios.get('/reports/export', {
+    params,
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+
+  // Reemplaza campos vacíos/null/undefined por "N/A"
+  const normalizado = data.map(row => {
+    const newRow = {}
+    for (const key in row) {
+      let value = row[key]
+      // Verifica null, undefined, string vacío, etc.
+      if (
+        value === null ||
+        value === undefined ||
+        (typeof value === 'string' && value.trim() === '')
+      ) {
+        value = 'N/A'
+      }
+      newRow[key] = value
+    }
+    return newRow
+  })
+
+  // Convierte el resultado a hoja Excel
+  const ws = XLSX.utils.json_to_sheet(normalizado)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'DatosNovedades')
+
+  // Descarga el archivo
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  saveAs(new Blob([wbout], { type: "application/octet-stream" }), `novedades_${params.date}.xlsx`)
 }
 
 

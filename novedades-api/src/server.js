@@ -1111,6 +1111,55 @@ app.get('/dashboard/compliance-units', auth, requireRole('leader_group'), async 
   res.json({ date, done, pending });
 });
 
+
+// Descarga automatizada para alimentar el formato Excel
+app.get('/reports/export', auth, requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'), async (req, res) => {
+  const { date, groupId, unitId } = req.query;
+  if (!date) return res.status(400).json({ error: 'Falta la fecha' });
+
+  let where = 'dr.reportDate = ?';
+  let params = [date];
+
+  // Filtro de roles
+  if (req.user.role === 'leader_group') {
+    where += ' AND dr.groupId = ?';
+    params.push(req.user.groupId);
+  } else if (groupId) {
+    where += ' AND dr.groupId = ?';
+    params.push(groupId);
+  }
+  if (req.user.role === 'leader_unit') {
+    where += ' AND dr.unitId = ?';
+    params.push(req.user.unitId);
+  } else if (unitId) {
+    where += ' AND dr.unitId = ?';
+    params.push(unitId);
+  }
+
+  const [rows] = await pool.query(`
+    SELECT 
+      a.code AS codigo_agente,
+      da.state AS novedad,
+      da.novelty_description AS descripcion,
+      DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS fecha_inicio,
+      DATE_FORMAT(da.novelty_end, '%Y-%m-%d') AS fecha_fin,
+      g.code AS grupo,
+      u.name AS unidad,
+      CONCAT(m.name, ' (', m.dept, ')') AS ubicacion
+    FROM dailyreport dr
+    JOIN dailyreport_agent da ON da.reportId = dr.id
+    JOIN agent a ON a.id = da.agentId
+    JOIN \`group\` g ON g.id = da.groupId
+    LEFT JOIN unit u ON u.id = da.unitId
+    LEFT JOIN municipality m ON m.id = da.municipalityId
+    WHERE ${where}
+    ORDER BY a.code
+  `, params);
+
+  res.json(rows);
+});
+
+
 // Inicia el servidor
 
 

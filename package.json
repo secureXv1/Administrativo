@@ -1,5 +1,7 @@
 {
   "dependencies": {
-    "vue-multiselect": "^3.3.1"
+    "file-saver": "^2.0.5",
+    "vue-multiselect": "^3.3.1",
+    "xlsx": "^0.18.5"
   }
 }
