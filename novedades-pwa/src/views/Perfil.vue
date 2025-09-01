@@ -1,16 +1,5 @@
 <template>
-  <div class="min-h-screen bg-slate-50">
-    <header class="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-slate-200">
-      <div class="max-w-xl mx-auto px-4 py-3 flex items-center justify-between">
-        <h1 class="text-slate-900 font-semibold">Perfil de Usuario</h1>
-        <button @click="volver" class="btn-ghost flex items-center gap-1">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-          </svg>
-          Volver
-        </button>
-      </div>
-    </header>
+  <AdminMenuLayout :me="me" :logout="logout">
     <main class="max-w-xl mx-auto my-10 bg-white rounded-xl shadow-md p-8">
       <h2 class="text-2xl font-bold mb-4 text-brand-700">Perfil de Usuario</h2>
 
@@ -57,13 +46,14 @@
         </form>
       </div>
     </main>
-  </div>
+  </AdminMenuLayout>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
+import AdminMenuLayout from './AdminMenuLayout.vue'
 
 const router = useRouter()
 function volver() {
@@ -77,6 +67,9 @@ const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : '
 const oldPassword = ref('')
 const newPassword = ref('')
 const repeatPassword = ref('')
+
+// Si tienes datos del usuario autenticado (me/propiedades globales)
+const me = ref(JSON.parse(localStorage.getItem('me') || '{}'))
 
 function formatDate(dateStr) {
   if (!dateStr) return ''
@@ -125,6 +118,14 @@ async function cambiarPassword() {
   } catch (e) {
     msg.value = e.response?.data?.error || 'Error al cambiar contraseña'
   }
+}
+
+// Si quieres seguir permitiendo volver atrás en el navegador:
+// function volver() { router.back() }
+
+function logout() {
+  localStorage.removeItem('token')
+  window.location.href = '/login'
 }
 
 onMounted(loadProfile)

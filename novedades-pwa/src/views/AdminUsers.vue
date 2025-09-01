@@ -1,25 +1,6 @@
 <template>
-  <div class="min-h-screen bg-slate-50">
-    <header class="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-slate-200">
-      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-        <h1 class="text-slate-900 font-semibold">Usuarios</h1>
-        <nav class="flex items-center gap-3">
-          <router-link to="/admin" class="btn-ghost">Dashboard</router-link>
-          <router-link to="/admin/groups" class="btn-ghost">Grupos</router-link>
-          <router-link to="/admin/users" class="btn-ghost">Usuarios</router-link>
-          <router-link to="/admin/agents" class="btn-ghost">Agentes</router-link>
-          <router-link to="/perfil" class="btn-ghost flex items-center gap-1">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A10.97 10.97 0 0112 15c2.21 0 4.266.714 5.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            Perfil
-          </router-link>
-          <button @click="logout" class="btn-ghost">Cerrar sesión</button>
-        </nav>
-      </div>
-    </header>
-
-    <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+  <AdminMenuLayout :me="me" :logout="logout">
+    <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
       <div class="card">
         <div class="card-body">
           <div class="flex items-center justify-between">
@@ -55,7 +36,6 @@
               :required="!form.id"
               style="width:160px"
             />
-
             <button class="btn-primary" type="submit">
               {{ form.id ? 'Actualizar' : 'Crear usuario' }}
             </button>
@@ -98,11 +78,12 @@
           </table>
         </div>
       </div>
-    </main>
-  </div>
+    </div>
+  </AdminMenuLayout>
 </template>
 
 <script setup>
+import AdminMenuLayout from './AdminMenuLayout.vue'
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 
@@ -110,11 +91,11 @@ const users = ref([])
 const groups = ref([])
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
+const me = ref(JSON.parse(localStorage.getItem('me') || '{}'))
 
 // Formulario reactivo
 const form = ref({ id: null, email: '', role: '', groupId: '', password: '' })
 
-// Limpia el mensaje después de un delay
 function clearMsgAfterDelay() {
   setTimeout(() => { msg.value = '' }, 2500)
 }

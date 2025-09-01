@@ -1,48 +1,57 @@
 <template>
-  <div class="max-w-3xl mx-auto py-6">
-    <h1 class="text-xl font-bold mb-4">Unidades de mi Grupo</h1>
-    <!-- Crear nueva unidad -->
-    <form @submit.prevent="crearUnidad" class="flex gap-2 mb-4">
-      <input class="input" v-model="nuevaUnidad.name" placeholder="Nombre de la unidad" required>
-      <input class="input" v-model="nuevaUnidad.description" placeholder="Descripción (opcional)">
-      <button class="btn-primary">Crear unidad</button>
-    </form>
-    <!-- Listado de unidades -->
-    <div v-if="unidades.length">
-      <table class="table w-full">
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Descripción</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="u in unidades" :key="u.id">
-            <td>
-              <input class="input" v-model="u.editName" @blur="editarUnidad(u)" />
-            </td>
-            <td>
-              <input class="input" v-model="u.editDescription" @blur="editarUnidad(u)" />
-            </td>
-            <td>
-              <!-- Solo muestra editar inline, sin eliminar para seguridad -->
-              <span class="text-green-500" v-if="u.guardado">✓</span>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+  <AdminMenuLayout :me="me" :logout="logout">
+    <div class="max-w-3xl mx-auto py-6">
+      <h1 class="text-xl font-bold mb-4">Unidades de mi Grupo</h1>
+      <!-- Crear nueva unidad -->
+      <form @submit.prevent="crearUnidad" class="flex gap-2 mb-4">
+        <input class="input" v-model="nuevaUnidad.name" placeholder="Nombre de la unidad" required>
+        <input class="input" v-model="nuevaUnidad.description" placeholder="Descripción (opcional)">
+        <button class="btn-primary">Crear unidad</button>
+      </form>
+      <!-- Listado de unidades -->
+      <div v-if="unidades.length">
+        <table class="table w-full">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Descripción</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in unidades" :key="u.id">
+              <td>
+                <input class="input" v-model="u.editName" @blur="editarUnidad(u)" />
+              </td>
+              <td>
+                <input class="input" v-model="u.editDescription" @blur="editarUnidad(u)" />
+              </td>
+              <td>
+                <!-- Solo muestra editar inline, sin eliminar para seguridad -->
+                <span class="text-green-500" v-if="u.guardado">✓</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else class="text-slate-500">No tienes unidades aún.</div>
     </div>
-    <div v-else class="text-slate-500">No tienes unidades aún.</div>
-  </div>
+  </AdminMenuLayout>
 </template>
 
 <script setup>
+import AdminMenuLayout from './AdminMenuLayout.vue'
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
 
 const unidades = ref([])
 const nuevaUnidad = ref({ name: '', description: '' })
+const me = ref(JSON.parse(localStorage.getItem('me') || '{}'))
+
+function logout() {
+  localStorage.removeItem('token')
+  window.location.href = '/login'
+}
 
 async function cargarUnidades() {
   const { data } = await axios.get('/my/units', {
