@@ -53,11 +53,9 @@
             <button class="btn-primary" @click="addFreeAgent" :disabled="!selectedAgentToAdd">Agregar</button>
           </div>
 
-          <!-- Tabla de agentes editables -->
-          <div class="card">
-            <div class="card-body space-y-3">
-              <div class="overflow-auto">
-                <table class="table">
+          <!-- Tabla para desktop -->
+              <div class="overflow-auto hidden md:block">
+                <table class="table w-full">
                   <thead>
                     <tr>
                       <th>Código</th>
@@ -67,100 +65,136 @@
                       <th></th>
                     </tr>
                   </thead>
-                 <tbody>
-                  <tr v-for="(a, i) in agents" :key="a.id">
-                    <td>{{ a.code }}</td>
-                    <td>{{ a.category }}</td>
-                    <td>
-                      <select class="input" v-model="a.status" @change="onStateChange(a)">
-                        <option value="SIN NOVEDAD">SIN NOVEDAD</option>
-                        <option value="COMISIÓN DEL SERVICIO">COMISIÓN DEL SERVICIO</option>
-                        <option value="FRANCO FRANCO">FRANCO FRANCO</option>
-                        <option value="SERVICIO">SERVICIO</option>
-                        <option value="VACACIONES">VACACIONES</option>
-                        <option value="LICENCIA DE MATERNIDAD">LICENCIA DE MATERNIDAD</option>
-                        <option value="LICENCIA DE LUTO">LICENCIA DE LUTO</option>
-                        <option value="LICENCIA REMUNERADA">LICENCIA REMUNERADA</option>
-                        <option value="LICENCIA NO REMUNERADA">LICENCIA NO REMUNERADA</option>
-                        <option value="EXCUSA DEL SERVICIO">EXCUSA DEL SERVICIO</option>
-                        <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
-                      </select>
-                    </td>
-                    <td>
-                      <!-- SIN NOVEDAD: solo muestra Bogotá, solo lectura -->
-                      <template v-if="a.status === 'SIN NOVEDAD'">
-                        <input
-                          class="input bg-slate-100 cursor-not-allowed"
-                          :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'"
-                          readonly
-                          tabindex="-1"
-                        />
-                      </template>
-
-                      <!-- SERVICIO: Bogotá fijo (lectura) + fecha inicio/fin + descripción -->
-                      <template v-else-if="a.status === 'SERVICIO'">
-                        <input
-                          class="input mb-1 bg-slate-100 cursor-not-allowed"
-                          :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'"
-                          readonly
-                          tabindex="-1"
-                        />
-                        <div class="flex gap-1 mb-1">
-                          <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                          <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
-                        </div>
-                        <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
-                      </template>
-
-                      <!-- COMISIÓN DEL SERVICIO: municipio editable -->
-                      <template v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
-                        <input
-                          class="input"
-                          :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}"
-                          list="municipios-list"
-                          v-model="a.municipalityName"
-                          @input="onMuniInput(a)"
-                          @blur="onMuniInput(a)"
-                          placeholder="Buscar municipio..."
-                          autocomplete="off"
-                        />
-                        <datalist id="municipios-list">
-                          <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
-                        </datalist>
-                        <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
-                          Debe seleccionar un municipio válido
-                        </span>
-                      </template>
-
-                      <!-- FRANCO FRANCO: no muestra nada -->
-                      <template v-else-if="a.status === 'FRANCO FRANCO'">
-                        <span class="text-xs text-slate-400">Sin datos adicionales</span>
-                      </template>
-
-                      <!-- Otros estados: fecha inicio/fin y descripción -->
-                      <template v-else>
-                        <div class="flex gap-1 mb-1">
-                          <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                          <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
-                        </div>
-                        <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
-                      </template>
-                    </td>
-
-
-                    <td>
-                      <button class="btn-ghost" @click="removeAgent(a.id)">Quitar</button>
-                    </td>
-                  </tr>
-                  <tr v-if="agents.length === 0">
-                    <td colspan="5" class="text-center text-slate-500 py-4">Sin agentes en tu grupo.</td>
-                  </tr>
-                </tbody>
-
+                  <tbody>
+                    <tr v-for="(a, i) in agents" :key="a.id">
+                      <td>{{ a.code }}</td>
+                      <td>{{ a.category }}</td>
+                      <td>
+                        <select class="input" v-model="a.status" @change="onStateChange(a)">
+                          <!-- ...options como tienes... -->
+                          <option value="SIN NOVEDAD">SIN NOVEDAD</option>
+                          <option value="COMISIÓN DEL SERVICIO">COMISIÓN DEL SERVICIO</option>
+                          <option value="FRANCO FRANCO">FRANCO FRANCO</option>
+                          <option value="SERVICIO">SERVICIO</option>
+                          <option value="VACACIONES">VACACIONES</option>
+                          <option value="LICENCIA DE MATERNIDAD">LICENCIA DE MATERNIDAD</option>
+                          <option value="LICENCIA DE LUTO">LICENCIA DE LUTO</option>
+                          <option value="LICENCIA REMUNERADA">LICENCIA REMUNERADA</option>
+                          <option value="LICENCIA NO REMUNERADA">LICENCIA NO REMUNERADA</option>
+                          <option value="EXCUSA DEL SERVICIO">EXCUSA DEL SERVICIO</option>
+                          <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
+                        </select>
+                      </td>
+                      <td>
+                        <!-- Usa tu mismo template de inputs, igual que antes -->
+                        <!-- ... igual que tu código actual ... -->
+                        <template v-if="a.status === 'SIN NOVEDAD'">
+                          <input class="input bg-slate-100 cursor-not-allowed" :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'" readonly tabindex="-1" />
+                        </template>
+                        <template v-else-if="a.status === 'SERVICIO'">
+                          <input class="input mb-1 bg-slate-100 cursor-not-allowed" :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'" readonly tabindex="-1" />
+                          <div class="flex gap-1 mb-1">
+                            <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                            <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                          </div>
+                          <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                        </template>
+                        <template v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
+                          <input class="input" :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}" list="municipios-list" v-model="a.municipalityName" @input="onMuniInput(a)" @blur="onMuniInput(a)" placeholder="Buscar municipio..." autocomplete="off" />
+                          <datalist id="municipios-list">
+                            <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
+                          </datalist>
+                          <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
+                            Debe seleccionar un municipio válido
+                          </span>
+                        </template>
+                        <template v-else-if="a.status === 'FRANCO FRANCO'">
+                          <span class="text-xs text-slate-400">Sin datos adicionales</span>
+                        </template>
+                        <template v-else>
+                          <div class="flex gap-1 mb-1">
+                            <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                            <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                          </div>
+                          <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                        </template>
+                      </td>
+                      <td>
+                        <button class="btn-ghost" @click="removeAgent(a.id)">Quitar</button>
+                      </td>
+                    </tr>
+                    <tr v-if="agents.length === 0">
+                      <td colspan="5" class="text-center text-slate-500 py-4">Sin agentes en tu grupo.</td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
-            </div>
-          </div>
+
+              <!-- Tarjetas para móvil -->
+              <div class="block md:hidden space-y-4">
+                <div
+                  v-for="(a, i) in agents"
+                  :key="a.id"
+                  class="bg-white shadow rounded-xl p-4 flex flex-col gap-2 border"
+                >
+                  <div class="flex justify-between items-center mb-2">
+                    <div>
+                      <div class="font-bold text-base">{{ a.code }} <span class="font-normal text-xs">({{ a.category }})</span></div>
+                      <div class="text-xs text-gray-500 mt-0.5">Estado</div>
+                    </div>
+                    <button class="text-red-600 text-xs underline" @click="removeAgent(a.id)">Quitar</button>
+                  </div>
+                  <select class="input w-full" v-model="a.status" @change="onStateChange(a)">
+                    <option value="SIN NOVEDAD">SIN NOVEDAD</option>
+                    <option value="COMISIÓN DEL SERVICIO">COMISIÓN DEL SERVICIO</option>
+                    <option value="FRANCO FRANCO">FRANCO FRANCO</option>
+                    <option value="SERVICIO">SERVICIO</option>
+                    <option value="VACACIONES">VACACIONES</option>
+                    <option value="LICENCIA DE MATERNIDAD">LICENCIA DE MATERNIDAD</option>
+                    <option value="LICENCIA DE LUTO">LICENCIA DE LUTO</option>
+                    <option value="LICENCIA REMUNERADA">LICENCIA REMUNERADA</option>
+                    <option value="LICENCIA NO REMUNERADA">LICENCIA NO REMUNERADA</option>
+                    <option value="EXCUSA DEL SERVICIO">EXCUSA DEL SERVICIO</option>
+                    <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
+                  </select>
+
+                  <!-- Campos dinámicos según estado -->
+                  <div v-if="a.status === 'SIN NOVEDAD'">
+                    <input class="input w-full bg-slate-100" :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'" readonly />
+                  </div>
+                  <div v-else-if="a.status === 'SERVICIO'">
+                    <input class="input w-full bg-slate-100" :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'" readonly />
+                    <div class="flex gap-2 mt-2">
+                      <input class="input flex-1" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                      <input class="input flex-1" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                    </div>
+                    <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                  </div>
+                  <div v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
+                    <input class="input w-full" list="municipios-list" v-model="a.municipalityName" @input="onMuniInput(a)" placeholder="Buscar municipio..." autocomplete="off" />
+                    <datalist id="municipios-list">
+                      <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
+                    </datalist>
+                    <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
+                      Debe seleccionar un municipio válido
+                    </span>
+                  </div>
+                  <div v-else-if="a.status === 'FRANCO FRANCO'">
+                    <span class="text-xs text-slate-400">Sin datos adicionales</span>
+                  </div>
+                  <div v-else>
+                    <div class="flex gap-2 mt-2">
+                      <input class="input flex-1" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                      <input class="input flex-1" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                    </div>
+                    <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                  </div>
+                </div>
+                <div v-if="agents.length === 0" class="text-center text-slate-500 py-4">
+                  Sin agentes en tu grupo.
+                </div>
+              </div>
+
 
           <!-- KPIs calculados -->
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -206,11 +240,12 @@ const existeReporte = ref(false)
 
 async function loadMe() {
   try {
-    me.value = await axios.get('/me', {
+    me.value = await axios.get('/me/profile', {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     }).then(r => r.data)
   } catch { me.value = null }
 }
+
 
 async function loadAgents() {
   try {

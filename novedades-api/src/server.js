@@ -1,3 +1,4 @@
+// src/server.js
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -5,73 +6,101 @@ import helmet from 'helmet';
 import jwt from 'jsonwebtoken';
 import cron from 'node-cron';
 import bcrypt from 'bcryptjs';
-import { pool } from './db.js';
-import { computeNovelties } from './utils.js'
+import { initDb, pool } from './db.js'; // Si tu db.js NO tiene initDb, ignora y solo importa pool.
+import { computeNovelties } from './utils.js';
 
-
-const app = express();
-app.use(cors());
-app.use(helmet());
-app.use(express.json());
-
-// ---------- Auth ----------
-app.post('/auth/login', async (req, res) => {
-  console.log('BODY:', req.body); // <-- Solo prueba
-  const { username, password } = req.body;
-  const [rows] = await pool.query(
-    'SELECT id, username, passwordHash, role, groupId, unitId FROM `user` WHERE username=? LIMIT 1',
-    [username]
-  );
-  const user = rows[0];
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-
-  const ok = await bcrypt.compare(password, user.passwordHash).catch(() => false);
-  console.log('COMPARE:', password, user.passwordHash, ok); // <-- PRUEBA
-  if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
-
-  const token = jwt.sign(
-    { uid: user.id, username: user.username, role: user.role, groupId: user.groupId, unitId: user.unitId },
-    process.env.JWT_SECRET,
-    { expiresIn: '8h' }
-  );
-  res.json({ token });
-});
-
-function auth(req, res, next) {
-  const h = req.headers.authorization || '';
-  const token = h.startsWith('Bearer ') ? h.slice(7) : h;
-  try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Unauthorized' });
+// === INICIALIZACIÓN SEGURA DE LA DB ===
+async function main() {
+  if (typeof initDb === "function") {
+    await initDb();
   }
-}
 
-function requireRole(...roles) {
-  return (req, res, next) => {
-    const userRole = String(req.user?.role || '').toLowerCase();
-    if (!roles.map(r => r.toLowerCase()).includes(userRole)) {
-      return res.status(403).json({ error: 'Forbidden', detail: 'No tiene permisos suficientes.' });
-    }
-    next();
-  };
-}
+  const app = express();
+  app.use(cors());
+  app.use(helmet());
+  app.use(express.json());
 
-app.get('/me', auth, (req, res) => {
-  res.json({
-    uid: req.user.uid,
-    username: req.user.username,
-    role: req.user.role,
-    groupId: req.user.groupId,
-    unitId: req.user.unitId
+  // ---------- AUTH ----------
+  app.post('/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    const [rows] = await pool.query(
+      'SELECT id, username, passwordHash, role, groupId, unitId FROM `user` WHERE username=? LIMIT 1',
+      [username]
+    );
+    const user = rows[0];
+    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const ok = await bcrypt.compare(password, user.passwordHash).catch(() => false);
+    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+
+    const token = jwt.sign(
+      { uid: user.id, username: user.username, role: user.role, groupId: user.groupId, unitId: user.unitId },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+    res.json({ token });
   });
-});
 
+  function auth(req, res, next) {
+    const h = req.headers.authorization || '';
+    const token = h.startsWith('Bearer ') ? h.slice(7) : h;
+    try {
+      req.user = jwt.verify(token, process.env.JWT_SECRET);
+      next();
+    } catch {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  }
 
+  function requireRole(...roles) {
+    return (req, res, next) => {
+      const userRole = String(req.user?.role || '').toLowerCase();
+      if (!roles.map(r => r.toLowerCase()).includes(userRole)) {
+        return res.status(403).json({ error: 'Forbidden', detail: 'No tiene permisos suficientes.' });
+      }
+      next();
+    };
+  }
 
-// ---------- Catálogos ----------
-app.get('/catalogs/agents', auth, async (req, res) => {
+  // ---------- ENDPOINTS USUARIO ----------
+  app.get('/me', auth, (req, res) => {
+    res.json({
+      uid: req.user.uid,
+      username: req.user.username,
+      role: req.user.role,
+      groupId: req.user.groupId,
+      unitId: req.user.unitId
+    });
+  });
+
+  app.get('/me/profile', auth, async (req, res) => {
+    const [[user]] = await pool.query(
+      `SELECT u.id, u.username, u.role, u.groupId, u.unitId, u.createdAt, g.code AS groupCode, un.name AS unitName
+        FROM user u
+        LEFT JOIN \`group\` g ON g.id = u.groupId
+        LEFT JOIN unit un ON un.id = u.unitId
+        WHERE u.id=? LIMIT 1`,
+      [req.user.uid]
+    );
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    res.json(user);
+  });
+
+  app.post('/me/change-password', auth, async (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Campos requeridos' });
+    const [[user]] = await pool.query(
+      'SELECT passwordHash FROM user WHERE id=? LIMIT 1', [req.user.uid]
+    );
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+    const ok = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+    const hash = await bcrypt.hash(newPassword, 10);
+    await pool.query('UPDATE user SET passwordHash=? WHERE id=?', [hash, req.user.uid]);
+    res.json({ ok: true });
+  });
+
+  app.get('/catalogs/agents', auth, async (req, res) => {
   try {
     const { q, code, category, groupId, unitId, limit = 50 } = req.query;
     const take = Math.min(Number(limit) || 50, 200);
@@ -113,25 +142,24 @@ app.get('/catalogs/agents', auth, async (req, res) => {
 // ===== Mis agentes (del líder de unidad) =====
 app.get('/my/agents', auth, requireRole('leader_unit'), async (req, res) => {
   const unitId = req.user.unitId;
-
-  // Saca la fecha de hoy
   const now = new Date();
   const reportDate = now.toISOString().slice(0, 10);
 
-  // Busca el reporte actual de esa unidad
+  // Reporte actual de esa unidad
   const [[report]] = await pool.query(
     `SELECT id FROM dailyreport WHERE reportDate=? AND unitId=? LIMIT 1`,
     [reportDate, unitId]
   );
   const reportId = report?.id || null;
 
-  // Consulta los agentes + fechas de novedad del dailyreport_agent
+  // Consulta agentes + fechas de novedad
   const [rows] = await pool.query(
     `SELECT 
         a.id, a.code, a.category, a.status, a.municipalityId,
         m.dept, m.name,
         da.novelty_start, da.novelty_end,
-        da.novelty_description  
+        da.novelty_description,
+        da.state
       FROM agent a
       LEFT JOIN municipality m ON a.municipalityId = m.id
       LEFT JOIN dailyreport_agent da ON da.agentId = a.id AND da.reportId = ?
@@ -139,14 +167,34 @@ app.get('/my/agents', auth, requireRole('leader_unit'), async (req, res) => {
       ORDER BY a.code`,
     [reportId, unitId]
   );
+
+  // Ahora, para los agentes SIN novedad hoy, busca la última novedad previa
+  for (const agent of rows) {
+    if (!agent.novelty_start && !agent.novelty_end && !agent.novelty_description) {
+      // Busca la última novedad pasada (puedes optimizar con un solo query si tienes muchos agentes)
+      const [[lastNovedad]] = await pool.query(
+        `SELECT novelty_start, novelty_end, novelty_description, state
+         FROM dailyreport_agent da
+         JOIN dailyreport dr ON dr.id = da.reportId
+         WHERE da.agentId = ? AND dr.reportDate < ?
+         ORDER BY dr.reportDate DESC
+         LIMIT 1`,
+        [agent.id, reportDate]
+      );
+      if (lastNovedad && ['VACACIONES','EXCUSA','PERMISO','LICENCIA PATERNIDAD','SERVICIO'].includes(lastNovedad.state)) {
+        agent.novelty_start = lastNovedad.novelty_start;
+        agent.novelty_end = lastNovedad.novelty_end;
+        agent.novelty_description = lastNovedad.novelty_description;
+      }
+    }
+  }
+
   const withFullName = rows.map(r => ({
     ...r,
     municipalityName: r.municipalityId ? `${r.name} (${r.dept})` : ""
   }));
   res.json(withFullName);
 });
-
-
 
 
 
@@ -1224,9 +1272,13 @@ app.delete('/my/units/:id', auth, requireRole('leader_group'), async (req, res) 
 
 // Inicia el servidor
 
+  // === EJEMPLO DE FINAL ===
+  app.listen(process.env.PORT || 8080, () => {
+    console.log('API on', process.env.PORT || 8080);
+  });
+}
 
-app.listen(process.env.PORT || 8080, () => console.log('API on', process.env.PORT || 8080));
-
-
-
-
+main().catch(e => {
+  console.error('Fallo crítico al iniciar el servidor:', e);
+  process.exit(1);
+});

@@ -1,260 +1,226 @@
 <template>
   <div class="min-h-screen bg-slate-50">
-    <!-- Topbar -->
-    <header class="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-slate-200">
-      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <div class="h-9 w-9 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold">N</div>
-          <div>
-            <h1 class="text-slate-900 font-semibold leading-tight">
-                Dashboard de Novedades
-                <template v-if="me && me.role === 'leader_group'">- Grupo</template>
-              </h1>
-              <p class="text-slate-500 text-xs">
-                <template v-if="me && me.role === 'superadmin'">Administrador</template>
-                <template v-else-if="me && me.role === 'supervision'">Supervisión</template>
-                <template v-else-if="me && me.role === 'leader_group'">Líder de Grupo</template>
-              </p>
-                      </div>
-        </div>
-        <nav class="flex items-center gap-3">
-            <router-link to="/admin" class="btn-ghost">Dashboard</router-link>
+    <!-- Topbar: adaptativo -->
 
-            <!-- Grupos: solo para admin/supervision -->
-            <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision')" to="/admin/groups" class="btn-ghost">Grupos</router-link>
-            
-            <!-- Unidades: para admin/supervision/líder de grupo -->
-            <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision' || me.role === 'leader_group')" to="/admin/units" class="btn-ghost">Unidades</router-link>
-
-            <!-- Usuarios y agentes, todos pueden ver (o limita si lo deseas) -->
-            <router-link to="/admin/users" class="btn-ghost">Usuarios</router-link>
-            <router-link to="/admin/agents" class="btn-ghost">Agentes</router-link>
-
-            <router-link to="/perfil" class="btn-ghost flex items-center gap-1">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A10.97 10.97 0 0112 15c2.21 0 4.266.714 5.879 1.804M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Perfil
-            </router-link>
-            <button @click="logout" class="btn-ghost">Cerrar sesión</button>
-          </nav>
-
-
+     <transition name="fade">
+      <div v-if="drawerOpen" class="md:hidden">
+        <div
+          class="fixed inset-0 bg-black/40 z-50"
+          @click="drawerOpen = false"
+        ></div>
+        <nav
+          class="fixed top-0 left-0 h-full w-64 max-w-[80vw] bg-white shadow-xl flex flex-col py-6 px-4 gap-2 z-50"
+          style="min-width: 220px; overflow-y:auto; max-height:100vh;"
+          @click.stop
+        >
+          <button class="self-end mb-4" @click="drawerOpen = false" aria-label="Cerrar menú">
+            <svg class="h-7 w-7 text-brand-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+          <router-link to="/admin" class="btn-ghost w-full text-left">Dashboard</router-link>
+          <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision')" to="/admin/groups" class="btn-ghost w-full text-left">Grupos</router-link>
+          <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision' || me.role === 'leader_group')" to="/admin/units" class="btn-ghost w-full text-left">Unidades</router-link>
+          <router-link to="/admin/users" class="btn-ghost w-full text-left">Usuarios</router-link>
+          <router-link to="/admin/agents" class="btn-ghost w-full text-left">Agentes</router-link>
+          <router-link to="/perfil" class="btn-ghost w-full text-left">Perfil</router-link>
+          <button @click="logout" class="btn-ghost w-full text-left">Cerrar sesión</button>
+        </nav>
       </div>
-    </header>
+    </transition>
+    
+    <header class="sticky top-0 z-20 backdrop-blur bg-white/80 border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+    <!-- Logo + Título -->
+    <div class="flex items-center gap-3">
+      <!-- Botón hamburguesa solo en móvil -->
+      <button class="md:hidden p-2 -ml-2" @click="drawerOpen = true">
+        <svg class="h-7 w-7 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+      <div class="h-9 w-9 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold text-xl">N</div>
+      <div>
+        <h1 class="text-slate-900 font-semibold leading-tight text-base sm:text-lg">
+          Dashboard de Novedades
+          <template v-if="me && me.role === 'leader_group'">- Grupo</template>
+        </h1>
+        <p class="text-slate-500 text-xs">
+          <template v-if="me && me.role === 'superadmin'">Administrador</template>
+          <template v-else-if="me && me.role === 'supervision'">Supervisión</template>
+          <template v-else-if="me && me.role === 'leader_group'">Líder de Grupo</template>
+        </p>
+      </div>
+    </div>
+    <!-- Menú solo visible en desktop -->
+    <nav class="hidden md:flex items-center gap-2">
+      <router-link to="/admin" class="btn-ghost">Dashboard</router-link>
+      <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision')" to="/admin/groups" class="btn-ghost">Grupos</router-link>
+      <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision' || me.role === 'leader_group')" to="/admin/units" class="btn-ghost">Unidades</router-link>
+      <router-link to="/admin/users" class="btn-ghost">Usuarios</router-link>
+      <router-link to="/admin/agents" class="btn-ghost">Agentes</router-link>
+      <router-link to="/perfil" class="btn-ghost flex items-center gap-1">
+        Perfil
+      </router-link>
+      <button @click="logout" class="btn-ghost">Cerrar sesión</button>
+    </nav>
+  </div>
 
-    <main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+</header>
+
+
+    <main class="max-w-6xl mx-auto px-2 sm:px-4 py-4 space-y-5">
       <!-- Filtros -->
-      <div class="card">
+      <div class="card mb-2">
         <div class="card-body">
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+          <div class="flex flex-col gap-4 sm:grid sm:grid-cols-4 sm:items-end">
             <div>
               <label class="label">Fecha</label>
               <input type="date" v-model="date" class="input" />
             </div>
-            <div class="flex gap-2 md:col-span-2">
-              <button @click="applyFilters" class="btn-primary w-full md:w-auto">Aplicar</button>
-              <button @click="descargarExcel" class="btn-ghost w-full md:w-auto">
-                Descargar
-              </button>
-
+            <div class="flex gap-2 sm:col-span-2">
+              <button @click="applyFilters" class="btn-primary flex-1 sm:flex-none">Aplicar</button>
+              <button @click="descargarExcel" class="btn-ghost flex-1 sm:flex-none">Descargar</button>
             </div>
           </div>
         </div>
       </div>
-      <!-- KPIs -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+      <!-- KPIs en columna en mobile -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div class="kpi"><div class="card-body">
           <h4>FE total (OF/SO/PT)</h4>
-          <div class="value">{{ kpiFE }}</div>
+          <div class="value text-lg">{{ kpiFE }}</div>
         </div></div>
         <div class="kpi"><div class="card-body">
           <h4>FD total (OF/SO/PT)</h4>
-          <div class="value">{{ kpiFD }}</div>
+          <div class="value text-lg">{{ kpiFD }}</div>
         </div></div>
         <div class="kpi"><div class="card-body">
           <h4>Novedades totales (OF/SO/PT)</h4>
-          <div class="value">{{ kpiNOV }}</div>
+          <div class="value text-lg">{{ kpiNOV }}</div>
         </div></div>
       </div>
 
-      
-
-
-                <div class="flex gap-6 items-center mb-2">
-            <div class="kpi bg-white">
-              <div class="card-body">
-                <h4>Agentes sin grupo</h4>
-                <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
-              </div>
-            </div>
-
-           <!-- ...filtro en el mapa... -->
-
-              <div class="flex gap-6 items-center mb-2">
-                <div class="kpi bg-white">
-                  <div class="card-body">
-                    <h4>Agentes sin grupo</h4>
-                    <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
-                  </div>
-                </div>
-
-                <!-- Filtro de grupos, ADAPTATIVO -->
-                <div>
-                  <div v-if="!me || me.role === 'superadmin' || me.role === 'supervision'">
-                    <label class="label block mb-1">Filtrar grupos en mapa</label>
-                    <div class="flex gap-2 mb-1">
-                      <button
-                        type="button"
-                        class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
-                        @click="seleccionarTodosGrupos"
-                        v-if="cargado && gruposSeleccionados.length !== grupos.length"
-                      >Seleccionar todo</button>
-                      <button
-                        type="button"
-                        class="btn-ghost px-2 py-1 text-xs border border-slate-200 rounded"
-                        @click="deseleccionarTodosGrupos"
-                        v-if="cargado && gruposSeleccionados.length"
-                      >Quitar todo</button>
-                    </div>
-                    <Multiselect
-                      v-model="gruposSeleccionados"
-                      :options="grupos"
-                      :multiple="true"
-                      :close-on-select="false"
-                      :clear-on-select="false"
-                      :preserve-search="false"
-                      :searchable="false"
-                      :show-labels="false"
-                      placeholder="Selecciona grupos..."
-                      label="name"
-                      track-by="id"
-                      :preselect-first="false"
-                      @input="onChangeGrupos"
-                      class="w-full"
-                    >
-                      <template #option="{ option, isSelected }">
-                        <input type="checkbox" :checked="isSelected" style="margin-right:8px" />
-                        {{ groupLabel(option) }}
-                      </template>
-                      <template #singleLabel="{ value }">
-                        <span>{{ groupLabel(value) }}</span>
-                      </template>
-                      <template #selection="{ values }">
-                        <span class="text-brand-700 font-medium">{{ values.length }} grupos seleccionados</span>
-                      </template>
-                    </Multiselect>
-                    <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
-                  </div>
-                  <div v-else>
-                    <div class="text-sm text-slate-600">
-                      Grupo: <span class="font-semibold text-brand-700">{{ gruposSeleccionados[0]?.code }} - {{ gruposSeleccionados[0]?.name }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-
-
+      <!-- Agentes sin grupo + filtro de grupos -->
+      <div class="flex flex-col sm:flex-row gap-3">
+        <div class="kpi bg-white flex-1">
+          <div class="card-body">
+            <h4>Agentes sin grupo</h4>
+            <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
           </div>
+        </div>
+        <!-- Filtro de grupos adaptativo -->
+        <div class="flex-1">
+          <label class="label block mb-1">Filtrar grupos en mapa</label>
+          <Multiselect
+            v-model="gruposSeleccionados"
+            :options="grupos"
+            :multiple="true"
+            :close-on-select="false"
+            :clear-on-select="false"
+            :preserve-search="false"
+            :searchable="false"
+            :show-labels="false"
+            placeholder="Selecciona grupos..."
+            label="name"
+            track-by="id"
+            :preselect-first="false"
+            @input="onChangeGrupos"
+            class="w-full"
+          >
+            <template #selection="{ values }">
+              <span class="text-brand-700 font-medium">{{ values.length }} seleccionados</span>
+            </template>
+          </Multiselect>
+          <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
+        </div>
+      </div>
 
-
-
-      <!-- Mapa de agentes por municipio -->
+      <!-- Mapa -->
       <div class="card">
         <div class="card-body">
           <h3 class="font-semibold mb-3 text-slate-700">Mapa de ubicación de agentes</h3>
           <div id="mapa-agentes"
-            style="height:420px;min-height:350px;width:100%;border-radius:12px;box-shadow:0 2px 8px #0001;background:#eee;"
+            style="height:300px;min-height:200px;width:100%;border-radius:12px;box-shadow:0 2px 8px #0001;background:#eee;"
             class="relative z-0"
           ></div>
         </div>
       </div>
-     <!-- Cumplimiento por corte -->
-<div class="card">
-  <div class="card-body space-y-3">
-    <div class="flex items-center justify-between">
-      <h3 class="font-semibold text-slate-800">Cumplimiento ({{ checkpointLabel }})</h3>
-      <button class="btn-ghost" @click="loadCompliance">Actualizar</button>
-    </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <h4 class="text-slate-600 mb-2">✅ Actualizaron</h4>
-        <div class="flex flex-wrap gap-2">
-          <span
-            v-for="g in compliance.done"
-            :key="'d'+(g.groupCode || g.unitName)"
-            class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm"
-          >
-            {{ g.unitName || g.groupCode }}
-          </span>
-          <span v-if="!compliance.done.length" class="text-slate-500 text-sm">Nadie aún</span>
-        </div>
-      </div>
-      <div>
-        <h4 class="text-slate-600 mb-2">⏳ Pendientes</h4>
-        <div class="flex flex-wrap gap-2">
-          <span
-            v-for="g in compliance.pending"
-            :key="'p'+(g.groupCode || g.unitName)"
-            class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm"
-          >
-            {{ g.unitName || g.groupCode }}
-          </span>
-          <span v-if="!compliance.pending.length" class="text-slate-500 text-sm">Sin pendientes</span>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-      <!-- Tabla -->
+      <!-- Cumplimiento por corte -->
       <div class="card">
-        <div class="card-body">
-          <div class="overflow-auto">
-            <table class="table">
-              <thead>
-            <tr>
-              <th>{{ me && me.role === 'leader_group' ? 'Unidad' : 'Grupo' }}</th>
-              <th>Fecha</th>
-              <th>Hora</th>
-              <th>FE (OF/SO/PT)</th>
-              <th>FD (OF/SO/PT)</th>
-              <th>Novedades (OF/SO/PT)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in rowsDisplay" :key="r.id" class="hover:bg-slate-50">
-              <td>
-                <span
-                  class="inline-flex items-center gap-2 cursor-pointer hover:underline text-brand-700"
-                  @click="goToGroupDetail(r)"
-                >
-                  <span class="h-2 w-2 rounded-full bg-brand-600"></span>
-                  {{ r.unitName || r.groupCode }}
+        <div class="card-body space-y-3">
+          <div class="flex items-center justify-between flex-wrap">
+            <h3 class="font-semibold text-slate-800">Cumplimiento ({{ checkpointLabel }})</h3>
+            <button class="btn-ghost" @click="loadCompliance">Actualizar</button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <h4 class="text-slate-600 mb-2">✅ Actualizaron</h4>
+              <div class="flex flex-wrap gap-2">
+                <span v-for="g in compliance.done" :key="'d'+(g.groupCode || g.unitName)" class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm">
+                  {{ g.unitName || g.groupCode }}
                 </span>
-              </td>
-              <td>{{ r.date }}</td>
-              <td>{{ formatTime(r.updatedAt) }}</td>
-              <td class="font-medium text-slate-900">{{ r.FE }}</td>
-              <td class="font-medium text-slate-900">{{ r.FD }}</td>
-              <td class="font-medium text-slate-900">{{ r.NOV }}</td>
-            </tr>
-            <tr v-if="rowsDisplay.length===0">
-              <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
-            </tr>
-          </tbody>
-
-            </table>
+                <span v-if="!compliance.done.length" class="text-slate-500 text-sm">Nadie aún</span>
+              </div>
+            </div>
+            <div>
+              <h4 class="text-slate-600 mb-2">⏳ Pendientes</h4>
+              <div class="flex flex-wrap gap-2">
+                <span v-for="g in compliance.pending" :key="'p'+(g.groupCode || g.unitName)" class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm">
+                  {{ g.unitName || g.groupCode }}
+                </span>
+                <span v-if="!compliance.pending.length" class="text-slate-500 text-sm">Sin pendientes</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
+      <!-- Tabla de reportes -->
+      <div class="card">
+        <div class="card-body p-0">
+          <div class="overflow-x-auto">
+            <table class="table text-xs sm:text-sm">
+              <thead>
+                <tr>
+                  <th>{{ me && me.role === 'leader_group' ? 'Unidad' : 'Grupo' }}</th>
+                  <th>Fecha</th>
+                  <th>Hora</th>
+                  <th>FE (OF/SO/PT)</th>
+                  <th>FD (OF/SO/PT)</th>
+                  <th>Novedades (OF/SO/PT)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in rowsDisplay" :key="r.id" class="hover:bg-slate-50">
+                  <td>
+                    <span class="inline-flex items-center gap-2 cursor-pointer hover:underline text-brand-700" @click="goToGroupDetail(r)">
+                      <span class="h-2 w-2 rounded-full bg-brand-600"></span>
+                      {{ r.unitName || r.groupCode }}
+                    </span>
+                  </td>
+                  <td>{{ r.date }}</td>
+                  <td>{{ formatTime(r.updatedAt) }}</td>
+                  <td class="font-medium text-slate-900">{{ r.FE }}</td>
+                  <td class="font-medium text-slate-900">{{ r.FD }}</td>
+                  <td class="font-medium text-slate-900">{{ r.NOV }}</td>
+                </tr>
+                <tr v-if="rowsDisplay.length===0">
+                  <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 </template>
+
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
@@ -265,7 +231,10 @@ import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
 
 
+
 const me = ref(null)
+const drawerOpen = ref(false);
+
 
 async function loadMe() {
   try {
