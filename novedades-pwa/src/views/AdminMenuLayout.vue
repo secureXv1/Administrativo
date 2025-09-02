@@ -28,11 +28,16 @@
         <!-- Menú Desktop -->
         <nav class="hidden md:flex items-center gap-2">
           <router-link to="/admin" class="btn-ghost" active-class="bg-slate-200">Dashboard</router-link>
-          <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision')" to="/admin/groups" class="btn-ghost" active-class="bg-slate-200">Grupos</router-link>
-          <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision' || me.role === 'leader_group')" to="/admin/units" class="btn-ghost" active-class="bg-slate-200">Unidades</router-link>
+          <!-- SOLO supervisión y superadmin pueden ver Grupos -->
+          <router-link
+            v-if="me && (me.role === 'superadmin' || me.role === 'supervision')"
+            to="/admin/groups" class="btn-ghost" active-class="bg-slate-200">Grupos</router-link>
+          <router-link
+            v-if="me && (me.role === 'superadmin' || me.role === 'supervision' || me.role === 'leader_group')"
+            to="/admin/units" class="btn-ghost" active-class="bg-slate-200">Unidades</router-link>
           <router-link to="/admin/users" class="btn-ghost" active-class="bg-slate-200">Usuarios</router-link>
           <router-link to="/admin/agents" class="btn-ghost" active-class="bg-slate-200">Agentes</router-link>
-          <router-link to="/perfil" class="btn-ghost flex items-center gap-1" active-class="bg-slate-200">
+          <router-link to="/admin/perfil" class="btn-ghost flex items-center gap-1" active-class="bg-slate-200">
             Perfil
           </router-link>
           <button @click="logout" class="btn-ghost">Cerrar sesión</button>
@@ -60,24 +65,49 @@
             </svg>
           </button>
           <router-link to="/admin" class="btn-ghost w-full text-left" active-class="bg-slate-100">Dashboard</router-link>
-          <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision')" to="/admin/groups" class="btn-ghost w-full text-left" active-class="bg-slate-100">Grupos</router-link>
-          <router-link v-if="me && (me.role === 'superadmin' || me.role === 'supervision' || me.role === 'leader_group')" to="/admin/units" class="btn-ghost w-full text-left" active-class="bg-slate-100">Unidades</router-link>
+          <router-link
+            v-if="me && (me.role === 'superadmin' || me.role === 'supervision')"
+            to="/admin/groups" class="btn-ghost w-full text-left" active-class="bg-slate-100">Grupos</router-link>
+          <router-link
+            v-if="me && (me.role === 'superadmin' || me.role === 'supervision' || me.role === 'leader_group')"
+            to="/admin/units" class="btn-ghost w-full text-left" active-class="bg-slate-100">Unidades</router-link>
           <router-link to="/admin/users" class="btn-ghost w-full text-left" active-class="bg-slate-100">Usuarios</router-link>
           <router-link to="/admin/agents" class="btn-ghost w-full text-left" active-class="bg-slate-100">Agentes</router-link>
-          <router-link to="/perfil" class="btn-ghost w-full text-left" active-class="bg-slate-100">Perfil</router-link>
+          <router-link to="/admin/perfil" class="btn-ghost w-full text-left" active-class="bg-slate-100">Perfil</router-link>
           <button @click="logout" class="btn-ghost w-full text-left">Cerrar sesión</button>
         </nav>
       </div>
     </transition>
     <!-- MAIN universal para todas las vistas -->
     <main class="max-w-6xl mx-auto px-2 sm:px-4 py-4 space-y-5">
-      <slot />
+      <router-view />
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-const props = defineProps(['me', 'logout'])
+import { ref, onMounted } from 'vue'
+import axios from 'axios'
+
 const drawerOpen = ref(false)
+const me = ref(null)
+
+// ==== Cargar usuario global para menú ====
+async function loadMe() {
+  try {
+    const { data } = await axios.get('/me', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    me.value = data
+  } catch {
+    me.value = null
+  }
+}
+onMounted(loadMe)
+
+// ==== Logout global y confiable ====
+function logout() {
+  localStorage.removeItem('token')
+  window.location.href = '/login'
+}
 </script>

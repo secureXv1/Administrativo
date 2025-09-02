@@ -1,151 +1,149 @@
 <template>
-  <AdminMenuLayout :me="me" :logout="logout">
-    <!-- Filtros -->
-    <div class="card mb-2">
+  <!-- Filtros -->
+  <div class="card mb-2">
+    <div class="card-body">
+      <div class="flex flex-col gap-4 sm:grid sm:grid-cols-4 sm:items-end">
+        <div>
+          <label class="label">Fecha</label>
+          <input type="date" v-model="date" class="input" />
+        </div>
+        <div class="flex gap-2 sm:col-span-2">
+          <button @click="applyFilters" class="btn-primary flex-1 sm:flex-none">Aplicar</button>
+          <button @click="descargarExcel" class="btn-ghost flex-1 sm:flex-none">Descargar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs en columna en mobile -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="kpi"><div class="card-body">
+      <h4>FE total (OF/SO/PT)</h4>
+      <div class="value text-lg">{{ kpiFE }}</div>
+    </div></div>
+    <div class="kpi"><div class="card-body">
+      <h4>FD total (OF/SO/PT)</h4>
+      <div class="value text-lg">{{ kpiFD }}</div>
+    </div></div>
+    <div class="kpi"><div class="card-body">
+      <h4>Novedades totales (OF/SO/PT)</h4>
+      <div class="value text-lg">{{ kpiNOV }}</div>
+    </div></div>
+  </div>
+
+  <!-- Agentes sin grupo + filtro de grupos -->
+  <div class="flex flex-col sm:flex-row gap-3">
+    <div class="kpi bg-white flex-1">
       <div class="card-body">
-        <div class="flex flex-col gap-4 sm:grid sm:grid-cols-4 sm:items-end">
-          <div>
-            <label class="label">Fecha</label>
-            <input type="date" v-model="date" class="input" />
-          </div>
-          <div class="flex gap-2 sm:col-span-2">
-            <button @click="applyFilters" class="btn-primary flex-1 sm:flex-none">Aplicar</button>
-            <button @click="descargarExcel" class="btn-ghost flex-1 sm:flex-none">Descargar</button>
+        <h4>Agentes sin grupo</h4>
+        <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
+      </div>
+    </div>
+    <div class="flex-1">
+      <label class="label block mb-1">Filtrar grupos en mapa</label>
+      <Multiselect
+        v-model="gruposSeleccionados"
+        :options="grupos"
+        :multiple="true"
+        :close-on-select="false"
+        :clear-on-select="false"
+        :preserve-search="false"
+        :searchable="false"
+        :show-labels="false"
+        placeholder="Selecciona grupos..."
+        label="name"
+        track-by="id"
+        :preselect-first="false"
+        @input="onChangeGrupos"
+        class="w-full"
+      >
+        <template #selection="{ values }">
+          <span class="text-brand-700 font-medium">{{ values.length }} seleccionados</span>
+        </template>
+      </Multiselect>
+      <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <h3 class="font-semibold mb-3 text-slate-700">Mapa de ubicación de agentes</h3>
+      <div id="mapa-agentes"
+        style="height:300px;min-height:200px;width:100%;border-radius:12px;box-shadow:0 2px 8px #0001;background:#eee;"
+        class="relative z-0"
+      ></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body space-y-3">
+      <div class="flex items-center justify-between flex-wrap">
+        <h3 class="font-semibold text-slate-800">Cumplimiento ({{ checkpointLabel }})</h3>
+        <button class="btn-ghost" @click="loadCompliance">Actualizar</button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <h4 class="text-slate-600 mb-2">✅ Actualizaron</h4>
+          <div class="flex flex-wrap gap-2">
+            <span v-for="g in compliance.done" :key="'d'+(g.groupCode || g.unitName)" class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm">
+              {{ g.unitName || g.groupCode }}
+            </span>
+            <span v-if="!compliance.done.length" class="text-slate-500 text-sm">Nadie aún</span>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- KPIs en columna en mobile -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <div class="kpi"><div class="card-body">
-        <h4>FE total (OF/SO/PT)</h4>
-        <div class="value text-lg">{{ kpiFE }}</div>
-      </div></div>
-      <div class="kpi"><div class="card-body">
-        <h4>FD total (OF/SO/PT)</h4>
-        <div class="value text-lg">{{ kpiFD }}</div>
-      </div></div>
-      <div class="kpi"><div class="card-body">
-        <h4>Novedades totales (OF/SO/PT)</h4>
-        <div class="value text-lg">{{ kpiNOV }}</div>
-      </div></div>
-    </div>
-
-    <!-- Agentes sin grupo + filtro de grupos -->
-    <div class="flex flex-col sm:flex-row gap-3">
-      <div class="kpi bg-white flex-1">
-        <div class="card-body">
-          <h4>Agentes sin grupo</h4>
-          <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
-        </div>
-      </div>
-      <div class="flex-1">
-        <label class="label block mb-1">Filtrar grupos en mapa</label>
-        <Multiselect
-          v-model="gruposSeleccionados"
-          :options="grupos"
-          :multiple="true"
-          :close-on-select="false"
-          :clear-on-select="false"
-          :preserve-search="false"
-          :searchable="false"
-          :show-labels="false"
-          placeholder="Selecciona grupos..."
-          label="name"
-          track-by="id"
-          :preselect-first="false"
-          @input="onChangeGrupos"
-          class="w-full"
-        >
-          <template #selection="{ values }">
-            <span class="text-brand-700 font-medium">{{ values.length }} seleccionados</span>
-          </template>
-        </Multiselect>
-        <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-body">
-        <h3 class="font-semibold mb-3 text-slate-700">Mapa de ubicación de agentes</h3>
-        <div id="mapa-agentes"
-          style="height:300px;min-height:200px;width:100%;border-radius:12px;box-shadow:0 2px 8px #0001;background:#eee;"
-          class="relative z-0"
-        ></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-body space-y-3">
-        <div class="flex items-center justify-between flex-wrap">
-          <h3 class="font-semibold text-slate-800">Cumplimiento ({{ checkpointLabel }})</h3>
-          <button class="btn-ghost" @click="loadCompliance">Actualizar</button>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <h4 class="text-slate-600 mb-2">✅ Actualizaron</h4>
-            <div class="flex flex-wrap gap-2">
-              <span v-for="g in compliance.done" :key="'d'+(g.groupCode || g.unitName)" class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-sm">
-                {{ g.unitName || g.groupCode }}
-              </span>
-              <span v-if="!compliance.done.length" class="text-slate-500 text-sm">Nadie aún</span>
-            </div>
-          </div>
-          <div>
-            <h4 class="text-slate-600 mb-2">⏳ Pendientes</h4>
-            <div class="flex flex-wrap gap-2">
-              <span v-for="g in compliance.pending" :key="'p'+(g.groupCode || g.unitName)" class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm">
-                {{ g.unitName || g.groupCode }}
-              </span>
-              <span v-if="!compliance.pending.length" class="text-slate-500 text-sm">Sin pendientes</span>
-            </div>
+        <div>
+          <h4 class="text-slate-600 mb-2">⏳ Pendientes</h4>
+          <div class="flex flex-wrap gap-2">
+            <span v-for="g in compliance.pending" :key="'p'+(g.groupCode || g.unitName)" class="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-sm">
+              {{ g.unitName || g.groupCode }}
+            </span>
+            <span v-if="!compliance.pending.length" class="text-slate-500 text-sm">Sin pendientes</span>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <div class="card">
-      <div class="card-body p-0">
-        <div class="overflow-x-auto">
-          <table class="table text-xs sm:text-sm">
-            <thead>
-              <tr>
-                <th>{{ me && me.role === 'leader_group' ? 'Unidad' : 'Grupo' }}</th>
-                <th>Fecha</th>
-                <th>Hora</th>
-                <th>FE (OF/SO/PT)</th>
-                <th>FD (OF/SO/PT)</th>
-                <th>Novedades (OF/SO/PT)</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="r in rowsDisplay" :key="r.id" class="hover:bg-slate-50">
-                <td>
-                  <span class="inline-flex items-center gap-2 cursor-pointer hover:underline text-brand-700" @click="goToGroupDetail(r)">
-                    <span class="h-2 w-2 rounded-full bg-brand-600"></span>
-                    {{ r.unitName || r.groupCode }}
-                  </span>
-                </td>
-                <td>{{ r.date }}</td>
-                <td>{{ formatTime(r.updatedAt) }}</td>
-                <td class="font-medium text-slate-900">{{ r.FE }}</td>
-                <td class="font-medium text-slate-900">{{ r.FD }}</td>
-                <td class="font-medium text-slate-900">{{ r.NOV }}</td>
-              </tr>
-              <tr v-if="rowsDisplay.length===0">
-                <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="overflow-x-auto">
+        <table class="table text-xs sm:text-sm">
+          <thead>
+            <tr>
+              <th>{{ me && me.role === 'leader_group' ? 'Unidad' : 'Grupo' }}</th>
+              <th>Fecha</th>
+              <th>Hora</th>
+              <th>FE (OF/SO/PT)</th>
+              <th>FD (OF/SO/PT)</th>
+              <th>Novedades (OF/SO/PT)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in rowsDisplay" :key="r.id" class="hover:bg-slate-50">
+              <td>
+                <span class="inline-flex items-center gap-2 cursor-pointer hover:underline text-brand-700" @click="goToGroupDetail(r)">
+                  <span class="h-2 w-2 rounded-full bg-brand-600"></span>
+                  {{ r.unitName || r.groupCode }}
+                </span>
+              </td>
+              <td>{{ r.date }}</td>
+              <td>{{ formatTime(r.updatedAt) }}</td>
+              <td class="font-medium text-slate-900">{{ r.FE }}</td>
+              <td class="font-medium text-slate-900">{{ r.FD }}</td>
+              <td class="font-medium text-slate-900">{{ r.NOV }}</td>
+            </tr>
+            <tr v-if="rowsDisplay.length===0">
+              <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
-  </AdminMenuLayout>
+  </div>
 </template>
 
 <script setup>
-import AdminMenuLayout from './AdminMenuLayout.vue'
+
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import Multiselect from 'vue-multiselect'

@@ -1,67 +1,65 @@
 <template>
-  <AdminMenuLayout :me="me" :logout="logout">
-    <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-      <div class="card">
-        <div class="card-body">
-          <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-slate-800">Listado de grupos</h2>
-            <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-body">
-          <!-- Formulario para crear/editar -->
-          <form class="mb-6 flex flex-wrap gap-2 items-end" @submit.prevent="onSubmit">
-            <input class="input" v-model="form.code" placeholder="Código" maxlength="20" required style="width:120px" />
-            <input class="input" v-model="form.name" placeholder="Nombre" maxlength="80" required style="width:260px" />
-            <button class="btn-primary" type="submit">
-              {{ form.id ? 'Actualizar' : 'Crear grupo' }}
-            </button>
-            <button v-if="form.id" class="btn-ghost" @click.prevent="resetForm">Cancelar</button>
-          </form>
-
-          <table class="table">
-            <thead>
-              <tr>
-                <th style="width: 80px">ID</th>
-                <th style="width: 180px">Código</th>
-                <th>Nombre</th>
-                <th style="width:90px"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="g in groups" :key="g.id">
-                <td>{{ g.id }}</td>
-                <td>{{ g.code }}</td>
-                <td>{{ g.name || '—' }}</td>
-                <td>
-                  <div class="flex gap-1 items-center justify-center">
-                    <!-- Editar -->
-                    <button class="btn-ghost p-1" title="Editar" @click="editGroup(g)">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="lucide lucide-pencil" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/><path d="m15 5 4 4"/></svg>
-                    </button>
-                    <!-- Eliminar -->
-                    <button class="btn-ghost p-1" title="Eliminar" @click="deleteGroup(g)">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="lucide lucide-trash-2" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/><path d="M19 6V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="groups.length === 0">
-                <td colspan="4" class="text-center text-slate-500 py-6">Sin grupos</td>
-              </tr>
-            </tbody>
-          </table>
+  <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+    <div class="card">
+      <div class="card-body">
+        <div class="flex items-center justify-between">
+          <h2 class="font-semibold text-slate-800">Listado de grupos</h2>
+          <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
         </div>
       </div>
     </div>
-  </AdminMenuLayout>
+
+    <div class="card">
+      <div class="card-body">
+        <!-- Formulario para crear/editar -->
+        <form class="mb-6 flex flex-wrap gap-2 items-end" @submit.prevent="onSubmit">
+          <input class="input" v-model="form.code" placeholder="Código" maxlength="20" required style="width:120px" />
+          <input class="input" v-model="form.name" placeholder="Nombre" maxlength="80" required style="width:260px" />
+          <button class="btn-primary" type="submit">
+            {{ form.id ? 'Actualizar' : 'Crear grupo' }}
+          </button>
+          <button v-if="form.id" class="btn-ghost" @click.prevent="resetForm">Cancelar</button>
+        </form>
+
+        <table class="table">
+          <thead>
+            <tr>
+              <th style="width: 80px">ID</th>
+              <th style="width: 180px">Código</th>
+              <th>Nombre</th>
+              <th style="width:90px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="g in groups" :key="g.id">
+              <td>{{ g.id }}</td>
+              <td>{{ g.code }}</td>
+              <td>{{ g.name || '—' }}</td>
+              <td>
+                <div class="flex gap-1 items-center justify-center">
+                  <!-- Editar -->
+                  <button class="btn-ghost p-1" title="Editar" @click="editGroup(g)">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="lucide lucide-pencil" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/><path d="m15 5 4 4"/></svg>
+                  </button>
+                  <!-- Eliminar -->
+                  <button class="btn-ghost p-1" title="Eliminar" @click="deleteGroup(g)">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="lucide lucide-trash-2" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/><path d="M19 6V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="groups.length === 0">
+              <td colspan="4" class="text-center text-slate-500 py-6">Sin grupos</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </template>
 
+
 <script setup>
-import AdminMenuLayout from './AdminMenuLayout.vue'
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 
