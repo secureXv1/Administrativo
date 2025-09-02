@@ -991,30 +991,44 @@ cron.schedule('15 14 * * *', () => console.log('⏰ Recordatorio 14:15'));
 cron.schedule('45 14 * * *', () => console.log('⏳ Cierre ventana 14:45'));
 
 // Endpoint: Detalle de agentes por reporte
-app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
+
+  if (req.user.role === 'leader_group') {
+  // Obtén el id del reporte y revisa a qué grupo pertenece
+  const [[report]] = await pool.query(
+    'SELECT groupId FROM dailyreport WHERE id = ? LIMIT 1',
+    [req.params.id]
+  );
+  if (!report || report.groupId !== req.user.groupId) {
+    return res.status(403).json({ error: 'No autorizado a ver este reporte' });
+  }
+}
+
   const { id } = req.params;
   if (!id) return res.status(400).json({ error: 'Missing reportId' });
 
-  const [rows] = await pool.query(`
-    SELECT 
-      a.code, a.category,
-      da.state,
-      da.groupId, g.code AS groupCode,
-      da.unitId, u.name AS unitName,
-      m.name AS municipalityName, m.dept,
-      DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
-      DATE_FORMAT(da.novelty_end, '%Y-%m-%d') AS novelty_end
-    FROM dailyreport_agent da
-    JOIN agent a ON a.id = da.agentId
-    LEFT JOIN \`group\` g ON g.id = da.groupId
-    LEFT JOIN unit u ON u.id = da.unitId
-    LEFT JOIN municipality m ON m.id = da.municipalityId
-    WHERE da.reportId = ?
-    ORDER BY a.code
-  `, [id]);
+        const [rows] = await pool.query(`
+          SELECT 
+            a.code, a.category,
+            da.state,
+            da.groupId, g.code AS groupCode,
+            da.unitId, u.name AS unitName,
+            m.name AS municipalityName, m.dept,
+            DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
+            DATE_FORMAT(da.novelty_end, '%Y-%m-%d') AS novelty_end,
+            da.novelty_description
+          FROM dailyreport_agent da
+          JOIN agent a ON a.id = da.agentId
+          LEFT JOIN \`group\` g ON g.id = da.groupId
+          LEFT JOIN unit u ON u.id = da.unitId
+          LEFT JOIN municipality m ON m.id = da.municipalityId
+          WHERE da.reportId = ?
+          ORDER BY FIELD(a.category, 'OF', 'SO', 'PT'), a.code
+        `, [id]);
 
-  res.json(rows);
-});
+
+        res.json(rows);
+      });
 
 app.get('/me/profile', auth, async (req, res) => {
   const [[user]] = await pool.query(
