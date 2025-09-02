@@ -246,34 +246,39 @@ async function loadMe() {
   } catch { me.value = null }
 }
 
+const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
+
 
 async function loadAgents() {
   try {
     const { data } = await axios.get('/my/agents', {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     });
-    agents.value = data.map(a => {
-      let municipalityName = a.municipalityName || '';
-      if ((!municipalityName || municipalityName === '') && a.municipalityId && municipalities.value.length) {
-        const m = municipalities.value.find(m => m.id === a.municipalityId);
-        if (m) {
-          municipalityName = `${m.dept} - ${m.name}`;
-        }
-      }
-      return {
-        ...a,
-        municipalityName,
-        novelty_start: a.novelty_start ? a.novelty_start.slice(0, 10) : '', // YYYY-MM-DD
-        novelty_end: a.novelty_end ? a.novelty_end.slice(0, 10) : '',
-        novelty_description: a.novelty_description || '',
-      };
-    });
 
+    agents.value = data
+      .map(a => {
+        let municipalityName = a.municipalityName || '';
+        if ((!municipalityName || municipalityName === '') && a.municipalityId && municipalities.value.length) {
+          const m = municipalities.value.find(m => m.id === a.municipalityId);
+          if (m) {
+            municipalityName = `${m.dept} - ${m.name}`;
+          }
+        }
+        return {
+          ...a,
+          municipalityName,
+          novelty_start: a.novelty_start ? a.novelty_start.slice(0, 10) : '', // YYYY-MM-DD
+          novelty_end: a.novelty_end ? a.novelty_end.slice(0, 10) : '',
+          novelty_description: a.novelty_description || '',
+        };
+      })
+      .sort((a, b) => (CATEG_ORDER[a.category] || 99) - (CATEG_ORDER[b.category] || 99)); // <--- ORDEN SIEMPRE
   } catch (e) {
     msg.value = e.response?.data?.error || 'Error al cargar agentes'
     agents.value = []
   }
 }
+
 
 async function getMunicipalityIdFromLabel(label) {
   if (!label || label === 'N/A') return null
