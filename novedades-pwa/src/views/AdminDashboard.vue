@@ -2,11 +2,35 @@
   <!-- Filtros -->
   <div class="card mb-2">
     <div class="card-body">
-      <div class="flex flex-col gap-4 sm:grid sm:grid-cols-4 sm:items-end">
+      <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 sm:items-end">
         <div>
           <label class="label">Fecha</label>
           <input type="date" v-model="date" class="input" />
         </div>
+
+        <!-- Selects SOLO para admin/supervisión -->
+        <template v-if="isAdmin">
+          <div>
+            <label class="label">Grupo</label>
+            <select v-model="selectedGroupId" class="input" @change="onChangeGrupo">
+              <option value="all">Todas</option>
+              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">
+                {{ g.code }} ({{ g.name }})
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Unidad</label>
+            <select v-model="selectedUnitId" class="input">
+              <option value="all">Todas</option>
+              <option v-for="u in unitsOfSelectedGroup" :key="u.id" :value="String(u.id)">
+                {{ u.name }}
+              </option>
+            </select>
+          </div>
+        </template>
+
+        <!-- Acciones -->
         <div class="flex gap-2 sm:col-span-2">
           <button @click="applyFilters" class="btn-primary flex-1 sm:flex-none">Aplicar</button>
           <button @click="descargarExcel" class="btn-ghost flex-1 sm:flex-none">Descargar</button>
@@ -15,7 +39,7 @@
     </div>
   </div>
 
-  <!-- KPIs en columna en mobile -->
+  <!-- KPIs -->
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
     <div class="kpi"><div class="card-body">
       <h4>FE total (OF/SO/PT)</h4>
@@ -31,37 +55,13 @@
     </div></div>
   </div>
 
-  <!-- Agentes sin grupo + filtro de grupos -->
+  <!-- Agentes sin grupo + (los filtros de grupo ya están arriba) -->
   <div class="flex flex-col sm:flex-row gap-3">
     <div class="kpi bg-white flex-1">
       <div class="card-body">
         <h4>Agentes sin grupo</h4>
         <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
       </div>
-    </div>
-    <div class="flex-1">
-      <label class="label block mb-1">Filtrar grupos en mapa</label>
-      <Multiselect
-        v-model="gruposSeleccionados"
-        :options="grupos"
-        :multiple="true"
-        :close-on-select="false"
-        :clear-on-select="false"
-        :preserve-search="false"
-        :searchable="false"
-        :show-labels="false"
-        placeholder="Selecciona grupos..."
-        label="name"
-        track-by="id"
-        :preselect-first="false"
-        @input="onChangeGrupos"
-        class="w-full"
-      >
-        <template #selection="{ values }">
-          <span class="text-brand-700 font-medium">{{ values.length }} seleccionados</span>
-        </template>
-      </Multiselect>
-      <div class="text-xs text-slate-400 mt-1">Puedes seleccionar uno o varios grupos</div>
     </div>
   </div>
 
@@ -143,20 +143,17 @@
 </template>
 
 <script setup>
-
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
-import Multiselect from 'vue-multiselect'
-import 'vue-multiselect/dist/vue-multiselect.css'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
+import L from 'leaflet'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 
-
+// ===== Auth/User
 const me = ref(null)
-const drawerOpen = ref(false);
-
-
 async function loadMe() {
   try {
     const { data } = await axios.get('/me', {
@@ -165,87 +162,51 @@ async function loadMe() {
     me.value = data
   } catch { me.value = null }
 }
+const isAdmin = computed(() =>
+  ['superadmin','supervision','supervisor'].includes((me.value?.role || '').toLowerCase())
+)
 
-async function descargarExcel() {
-  // Prepara los filtros (usa los mismos que para cargar)
-  const params = {
-    date: date.value,
-  }
-  if (me.value?.role === 'leader_group') {
-    params.groupId = me.value.groupId
-  }
-  if (me.value?.role === 'leader_unit') {
-    params.unitId = me.value.unitId
-  }
-
-  // Llama al endpoint
-  const { data } = await axios.get('/reports/export', {
-    params,
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-
-  // Reemplaza campos vacíos/null/undefined por "N/A"
-  const normalizado = data.map(row => {
-    const newRow = {}
-    for (const key in row) {
-      let value = row[key]
-      // Verifica null, undefined, string vacío, etc.
-      if (
-        value === null ||
-        value === undefined ||
-        (typeof value === 'string' && value.trim() === '')
-      ) {
-        value = 'N/A'
-      }
-      newRow[key] = value
-    }
-    return newRow
-  })
-
-  // Convierte el resultado a hoja Excel
-  const ws = XLSX.utils.json_to_sheet(normalizado)
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'DatosNovedades')
-
-  // Descarga el archivo
-  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-  saveAs(new Blob([wbout], { type: "application/octet-stream" }), `novedades_${params.date}.xlsx`)
-}
-
-
-
-function groupLabel(option) {
-  // Para mostrar código y nombre
-  return `${option.code} - ${option.name}`
-}
-
-function seleccionarTodosGrupos() {
-  gruposSeleccionados.value = grupos.value.slice()
-}
-function deseleccionarTodosGrupos() {
-  gruposSeleccionados.value = []
-}
-
-
-
-
-
-
+// ===== Filtros
 const today = new Date().toISOString().slice(0,10)
-const date = ref(today)        // un solo día
-const agentesLibres = ref(0)
-const rows = ref([])
+const date = ref(today)
+const selectedGroupId = ref('all')   // 'all' | groupId (string)
+const selectedUnitId  = ref('all')   // 'all' | unitId  (string)
 
-const tot = ref({
-  OF_FE: 0, SO_FE: 0, PT_FE: 0,
-  OF_FD: 0, SO_FD: 0, PT_FD: 0,
-  OF_N:  0, SO_N:  0, PT_N:  0
+// ===== Datos
+const grupos = ref([])
+const units = ref([]) // todas las unidades (admin/supervision)
+const unitsOfSelectedGroup = computed(() => {
+  if (selectedGroupId.value === 'all') return []
+  return units.value.filter(u => String(u.groupId) === String(selectedGroupId.value))
 })
 
+async function loadGrupos() {
+  const { data } = await axios.get('/admin/groups', {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  grupos.value = Array.isArray(data) ? data : []
+}
+
+async function loadUnits() {
+  // Solo admin/supervision tiene acceso a /admin/units
+  if (!isAdmin.value) return
+  const { data } = await axios.get('/admin/units', {
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  units.value = Array.isArray(data) ? data : []
+}
+
+function onChangeGrupo() {
+  // Al cambiar grupo, resetea unidad
+  selectedUnitId.value = 'all'
+}
+
+// ===== KPIs / Tabla
+const rows = ref([])
+const tot = ref({ OF_FE:0,SO_FE:0,PT_FE:0, OF_FD:0,SO_FD:0,PT_FD:0, OF_N:0,SO_N:0,PT_N:0 })
 const kpiFE  = computed(() => `${tot.value.OF_FE}/${tot.value.SO_FE}/${tot.value.PT_FE}`)
 const kpiFD  = computed(() => `${tot.value.OF_FD}/${tot.value.SO_FD}/${tot.value.PT_FD}`)
 const kpiNOV = computed(() => `${tot.value.OF_N}/${tot.value.SO_N}/${tot.value.PT_N}`)
-
 const rowsDisplay = computed(() =>
   rows.value.map(r => ({
     ...r,
@@ -254,112 +215,6 @@ const rowsDisplay = computed(() =>
     NOV: `${r.OF_nov||0}/${r.SO_nov||0}/${r.PT_nov||0}`
   }))
 )
-
-import L from 'leaflet'
-
-const municipalitiesMap = ref([])
-
-const grupos = ref([]) // Todos los grupos cargados del backend
-const gruposSeleccionados = ref([]) // Ids seleccionados para el filtro
-const cargado = ref(false)
-
-async function loadMapData() {
-  // Si el usuario es líder de grupo, llama SIN parámetro groups
-  if (me.value && me.value.role === 'leader_group') {
-    const { data } = await axios.get('/admin/agent-municipalities', {
-      params: { date: date.value },
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
-    municipalitiesMap.value = data || []
-    setTimeout(drawMap, 120)
-    return
-  }
-  // Para admin/supervision: multiselección normal
-  if (!gruposSeleccionados.value.length) {
-    municipalitiesMap.value = []
-    setTimeout(drawMap, 120)
-    return
-  }
-  const groupsParam = gruposSeleccionados.value.map(g => g.id).join(',')
-  const { data } = await axios.get('/admin/agent-municipalities', {
-    params: {
-      date: date.value,
-      groups: groupsParam
-    },
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  municipalitiesMap.value = data || []
-  setTimeout(drawMap, 120)
-}
-
-
-
-
-
-
-function drawMap() {
-  if (window.myMap) {
-    window.myMap.remove();
-    window.myMap = null;
-  }
-
-  window.myMap = L.map('mapa-agentes', {
-    fullscreenControl: true
-  }).setView([6.25, -75.6], 7);
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 15,
-    attribution: 'Map data © OpenStreetMap contributors'
-  }).addTo(window.myMap);
-
-  municipalitiesMap.value.forEach(m => {
-    if (m.lat && m.lon) {
-      L.marker([m.lat, m.lon], {
-        icon: L.icon({
-          iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-          iconSize: [25, 41],
-          iconAnchor: [12, 41]
-        })
-      })
-      .addTo(window.myMap)
-      .bindPopup(`
-        <b>${m.name}</b> <br>
-        <span style="font-size:13px">${m.dept}</span><br>
-        <span>Agentes: <b>${m.agent_count}</b></span>
-      `)
-    }
-  })
-}
-
-// === CARGAR AGENTES LIBRES ===
-async function loadAgentesLibres() {
-  let params = { limit: 9999 }
-
-  // Si es líder de grupo, filtra por su grupo y SIN unidad
-  if (me.value && me.value.role === 'leader_group' && me.value.groupId) {
-    params.groupId = me.value.groupId
-  }
-
-  const { data } = await axios.get('/admin/agents', {
-    params,
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-
-  if (me.value && me.value.role === 'leader_group') {
-    // Solo agentes de SU grupo sin unidad
-    agentesLibres.value = (data || []).filter(a => !a.unitId).length
-  } else {
-    // Admin/supervision: todos los agentes sin grupo
-    agentesLibres.value = (data || []).filter(a => a.groupId == null || a.groupId === 0).length
-  }
-}
-
-
-function formatTime(ts) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  return d.toISOString().substring(11, 16)
-}
 
 function recalcTotals() {
   tot.value = { OF_FE:0,SO_FE:0,PT_FE:0, OF_FD:0,SO_FD:0,PT_FD:0, OF_N:0,SO_N:0,PT_N:0 }
@@ -378,42 +233,106 @@ function recalcTotals() {
   }
 }
 
-import { useRouter } from 'vue-router'
-const router = useRouter()
+function formatTime(ts) {
+  if (!ts) return ''
+  const d = new Date(ts)
+  return d.toISOString().substring(11, 16)
+}
+
 function goToGroupDetail(r) {
   router.push(`/admin/report/${r.id}`)
 }
 
-async function load() {
-  let params = {
-    date_from: date.value,
-    date_to: date.value,
+// ===== Mapa
+const municipalitiesMap = ref([])
+
+async function loadMapData() {
+  const params = { date: date.value }
+
+  if (me.value?.role === 'leader_group') {
+    // backend ya fuerza su groupId
+    // no pasamos groups/units
+  } else {
+    // Admin / Supervisión
+    if (selectedGroupId.value !== 'all') {
+      params.groups = selectedGroupId.value
+    }
+    if (selectedUnitId.value !== 'all') {
+      params.units = selectedUnitId.value
+    }
   }
 
-  // Si es líder de grupo, filtra por su groupId
-  if (me.value && me.value.role === 'leader_group' && me.value.groupId) {
-    params.groupId = me.value.groupId
-  }
-
-  const { data } = await axios.get('/dashboard/reports', {
+  const { data } = await axios.get('/admin/agent-municipalities', {
     params,
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
-  rows.value = data.items || []
-  recalcTotals()
+  municipalitiesMap.value = data || []
+  setTimeout(drawMap, 100)
 }
 
+function drawMap() {
+  if (window.myMap) {
+    window.myMap.remove()
+    window.myMap = null
+  }
 
-// Cumplimiento
+  window.myMap = L.map('mapa-agentes').setView([6.25, -75.6], 7)
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 15,
+    attribution: 'Map data © OpenStreetMap contributors'
+  }).addTo(window.myMap)
+
+  municipalitiesMap.value.forEach(m => {
+    if (m.lat && m.lon) {
+      L.marker([m.lat, m.lon], {
+        icon: L.icon({
+          iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+          iconSize: [25, 41],
+          iconAnchor: [12, 41]
+        })
+      })
+      .addTo(window.myMap)
+      .bindPopup(`
+        <b>${m.name}</b> <br>
+        <span style="font-size:13px">${m.dept}</span><br>
+        <span>Agentes: <b>${m.agent_count}</b></span><br>
+        <span>${m.groupCode}${m.unitName ? ' — ' + m.unitName : ''}</span>
+      `)
+    }
+  })
+}
+
+// ===== Agentes libres
+const agentesLibres = ref(0)
+async function loadAgentesLibres() {
+  let params = { limit: 9999 }
+
+  if (me.value?.role === 'leader_group' && me.value.groupId) {
+    params.groupId = me.value.groupId
+  }
+
+  const { data } = await axios.get('/admin/agents', {
+    params,
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+
+  if (me.value?.role === 'leader_group') {
+    agentesLibres.value = (data || []).filter(a => !a.unitId).length
+  } else {
+    agentesLibres.value = (data || []).filter(a => a.groupId == null || a.groupId === 0).length
+  }
+}
+
+// ===== Cumplimiento
 const compliance = ref({ done: [], pending: [] })
-
+const checkpointLabel = 'diario'
 
 async function loadCompliance() {
   let url = '/dashboard/compliance'
-  let params = { date: date.value }
+  const params = { date: date.value }
 
-  // Si es líder de grupo, usa el nuevo endpoint
-  if (me.value && me.value.role === 'leader_group' && me.value.groupId) {
+  if (me.value?.role === 'leader_group' && me.value.groupId) {
     url = '/dashboard/compliance-units'
     params.groupId = me.value.groupId
   }
@@ -425,39 +344,75 @@ async function loadCompliance() {
   compliance.value = { done: data.done || [], pending: data.pending || [] }
 }
 
+// ===== Tabla/KPIs load
+async function load() {
+  const params = { date_from: date.value, date_to: date.value }
 
+  if (me.value?.role === 'leader_group' && me.value.groupId) {
+    params.groupId = me.value.groupId
+  } else {
+    if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
+    if (selectedUnitId.value  !== 'all') params.unitId  = selectedUnitId.value
+  }
 
-// Botón "Aplicar"
+  const { data } = await axios.get('/dashboard/reports', {
+    params,
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  rows.value = data.items || []
+  recalcTotals()
+}
+
+// ===== Descargar Excel (respeta filtros)
+async function descargarExcel() {
+  const params = { date: date.value }
+
+  if (me.value?.role === 'leader_group') {
+    params.groupId = me.value.groupId
+  } else {
+    if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
+    if (selectedUnitId.value  !== 'all') params.unitId  = selectedUnitId.value
+  }
+
+  const { data } = await axios.get('/reports/export', {
+    params,
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+
+  const normalizado = data.map(row => {
+    const out = {}
+    for (const k in row) {
+      let v = row[k]
+      if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) v = 'N/A'
+      out[k] = v
+    }
+    return out
+  })
+
+  const ws = XLSX.utils.json_to_sheet(normalizado)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'DatosNovedades')
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  saveAs(new Blob([wbout], { type: "application/octet-stream" }), `novedades_${params.date}.xlsx`)
+}
+
+// ===== Botón "Aplicar"
 async function applyFilters() {
   await load()
   await loadCompliance()
-  // Selecciona todos los grupos SIEMPRE al filtrar:
-  gruposSeleccionados.value = grupos.value.slice()
   await loadMapData()
   await loadAgentesLibres()
 }
 
-
-
-function onChangeGrupos() {
-  loadMapData()
-}
-
-
-
-
-// Cargar al montar
+// ===== Init
 onMounted(async () => {
   await loadMe()
   await loadGrupos()
+  if (isAdmin.value) await loadUnits()
 
-  // Si es líder de grupo, selecciona SOLO su grupo
-  if (me.value && me.value.role === 'leader_group') {
-    gruposSeleccionados.value = grupos.value.filter(g => g.id === me.value.groupId)
-  } else {
-    gruposSeleccionados.value = grupos.value.slice() // Todos seleccionados por defecto
-  }
-  cargado.value = true
+  // Líder de grupo no necesita selects; admin empieza en "Todas"
+  selectedGroupId.value = 'all'
+  selectedUnitId.value  = 'all'
 
   await load()
   await loadCompliance()
@@ -465,20 +420,19 @@ onMounted(async () => {
   await loadAgentesLibres()
 })
 
-
-// Nueva función:
-async function loadGrupos() {
-  const { data: gruposData } = await axios.get('/admin/groups', {
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  grupos.value = Array.isArray(gruposData) ? gruposData : []
-}
-
-
-
-// Logout
+// Logout util (si lo usas en el layout)
 function logout(){
   localStorage.removeItem('token')
   window.location.href = '/login'
 }
 </script>
+
+<style scoped>
+.input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500; }
+.btn-primary { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700; }
+.btn-ghost { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100; }
+.label { @apply text-sm text-slate-600; }
+.card { @apply bg-white rounded-xl shadow; }
+.card-body { @apply p-4; }
+.kpi { @apply bg-white rounded-xl shadow; }
+</style>
