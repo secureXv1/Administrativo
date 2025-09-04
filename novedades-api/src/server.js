@@ -1328,6 +1328,17 @@ app.delete('/admin/units/:id', auth, requireRole('superadmin'), async (req, res)
   res.json({ ok: true });
 });
 
+app.get('/admin/units', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+  const [rows] = await pool.query(
+    `SELECT u.id, u.name, u.description, u.groupId,
+            g.code AS groupCode, g.name AS groupName
+       FROM unit u
+       LEFT JOIN \`group\` g ON g.id = u.groupId
+      ORDER BY g.code, u.name`
+  );
+  res.json(rows);
+});
+
 
 
 

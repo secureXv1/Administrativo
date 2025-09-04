@@ -56,88 +56,116 @@ const unidades = ref([])
 const grupos = ref([])
 const nuevaUnidad = ref({ name: '', description: '', groupId: '' })
 
+// Si en tu BD hay usuarios con 'supervisor' en vez de 'supervision', inclúyelo.
 const isAdmin = computed(() =>
-  ['superadmin', 'supervision'].includes((me.value.role || '').toLowerCase())
+  ['superadmin', 'supervision', 'supervisor'].includes((me.value.role || '').toLowerCase())
 )
 const canCreate = computed(() =>
   isAdmin.value || (me.value.role === 'leader_group')
 )
 
-function logout() {
-  localStorage.removeItem('token')
-  window.location.href = '/login'
+function authHeader() {
+  return { Authorization: 'Bearer ' + localStorage.getItem('token') }
+}
+
+async function ensureMe() {
+  try {
+    const { data } = await axios.get('/me', { headers: authHeader() })
+    me.value = data
+    localStorage.setItem('me', JSON.stringify(data))
+  } catch (e) {
+    console.error('No se pudo cargar /me:', e?.response?.status, e?.response?.data)
+  }
 }
 
 async function cargarUnidades() {
-  if (isAdmin.value) {
-    const { data } = await axios.get('/admin/units', {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
+  // Estrategia: probar admin primero; si 403, probar my/units.
+  try {
+    if (isAdmin.value) {
+      const { data } = await axios.get('/admin/units', { headers: authHeader() })
+      unidades.value = (data || []).map(u => ({
+        ...u,
+        editName: u.name,
+        editDescription: u.description,
+        groupCode: u.groupCode,
+        groupName: u.groupName || '', // lo mandaremos desde backend
+        groupId: u.groupId,
+        guardado: false
+      }))
+      await cargarGrupos()
+      return
+    }
+  } catch (e) {
+    if (e?.response?.status !== 403) {
+      console.error('Error /admin/units:', e?.response?.status, e?.response?.data)
+    }
+  }
+
+  // Fallback para líderes de grupo:
+  try {
+    const { data } = await axios.get('/my/units', { headers: authHeader() })
     unidades.value = (data || []).map(u => ({
       ...u,
       editName: u.name,
       editDescription: u.description,
-      groupCode: u.groupCode,
-      groupName: u.groupName || '',
-      groupId: u.groupId,
       guardado: false
     }))
-    await cargarGrupos()
-  } else {
-    const { data } = await axios.get('/my/units', {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
-    unidades.value = (data || []).map(u => ({
-      ...u, editName: u.name, editDescription: u.description, guardado: false
-    }))
+  } catch (e) {
+    console.error('Error /my/units:', e?.response?.status, e?.response?.data)
+    unidades.value = []
   }
 }
+
 async function cargarGrupos() {
-  const { data } = await axios.get('/admin/groups', {
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  grupos.value = data || []
+  try {
+    const { data } = await axios.get('/admin/groups', { headers: authHeader() })
+    grupos.value = data || []
+  } catch (e) {
+    console.error('Error /admin/groups:', e?.response?.status, e?.response?.data)
+  }
 }
+
 async function crearUnidad() {
   if (!nuevaUnidad.value.name) return
-  if (isAdmin.value) {
-    await axios.post('/admin/units', nuevaUnidad.value, {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
-  } else {
-    await axios.post('/my/units', nuevaUnidad.value, {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
+  try {
+    if (isAdmin.value) {
+      await axios.post('/admin/units', nuevaUnidad.value, { headers: authHeader() })
+    } else {
+      await axios.post('/my/units', nuevaUnidad.value, { headers: authHeader() })
+    }
+    nuevaUnidad.value = { name: '', description: '', groupId: '' }
+    await cargarUnidades()
+  } catch (e) {
+    console.error('crearUnidad error:', e?.response?.status, e?.response?.data)
   }
-  nuevaUnidad.value = { name: '', description: '', groupId: '' }
-  await cargarUnidades()
 }
+
 async function editarUnidad(u) {
   if (!u.editName) return
-  if (isAdmin.value) {
-    await axios.put(`/admin/units/${u.id}`, {
-      name: u.editName,
-      description: u.editDescription,
-      groupId: u.groupId
-    }, {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
-  } else {
-    await axios.put(`/my/units/${u.id}`, {
-      name: u.editName,
-      description: u.editDescription
-    }, {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
+  try {
+    if (isAdmin.value) {
+      await axios.put(`/admin/units/${u.id}`, {
+        name: u.editName,
+        description: u.editDescription,
+        groupId: u.groupId
+      }, { headers: authHeader() })
+    } else {
+      await axios.put(`/my/units/${u.id}`, {
+        name: u.editName,
+        description: u.editDescription
+      }, { headers: authHeader() })
+    }
+    u.guardado = true
+    setTimeout(() => (u.guardado = false), 1000)
+  } catch (e) {
+    console.error('editarUnidad error:', e?.response?.status, e?.response?.data)
   }
-  u.guardado = true
-  setTimeout(() => (u.guardado = false), 1000)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await ensureMe()
   console.log('me.value:', me.value)
   console.log('isAdmin:', isAdmin.value)
-  cargarUnidades()
+  await cargarUnidades()
 })
-
 </script>
