@@ -52,10 +52,11 @@
         <table class="table w-full text-sm">
           <thead>
             <tr>
-              <th class="w-[30%]">Nombre</th>
-              <th class="w-[40%]">Descripción</th>
+              <th class="w-[35%]">Nombre</th>
+              <th class="w-[45%]">Descripción</th>
               <th v-if="isAdmin" class="w-[20%]">Grupo</th>
-              <th class="w-[10%] text-right">Acciones</th>
+              <!-- Acciones SOLO si superadmin -->
+              <th v-if="isSuperadmin" class="w-[10%] text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
@@ -94,32 +95,76 @@
                 </template>
               </td>
 
-              <!-- Acciones -->
-              <td class="text-right">
-                <div class="flex justify-end gap-2">
-                  <span class="text-green-500" v-if="u.guardado">✓</span>
+              <!-- Acciones SOLO superadmin -->
+            
+                <td v-if="isSuperadmin" class="text-right">
+                  <div class="flex justify-end gap-2">
+                    <span class="text-green-600" v-if="u.guardado">✓</span>
 
-                  <!-- Botones SOLO superadmin -->
-                  <template v-if="isSuperadmin">
-                    <button
-                      v-if="!u._editing"
-                      class="btn-ghost"
-                      @click="startEdit(u)"
-                      title="Editar"
-                    >
-                      Editar
-                    </button>
-                    <template v-else>
-                      <button class="btn-primary" @click="saveUnidad(u)" title="Guardar">Guardar</button>
-                      <button class="btn-ghost" @click="cancelEdit(u)" title="Cancelar">Cancelar</button>
+                    <!-- Modo normal -->
+                    <template v-if="!u._editing">
+                      <button
+                        type="button"
+                        @click="startEdit(u)"
+                        class="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        title="Editar"
+                        aria-label="Editar"
+                      >
+                        <!-- lápiz -->
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <path d="M4 21h4l11-11a2.828 2.828 0 10-4-4L4 17v4z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                       
+                      </button>
+
+                      <button
+                        type="button"
+                        @click="deleteUnidad(u)"
+                        class="inline-flex items-center gap-1 rounded-lg border border-red-600 bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+                        title="Eliminar"
+                        aria-label="Eliminar"
+                      >
+                        <!-- papelera -->
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <path d="M3 6h18M8 6V4h8v2m-1 0v14a2 2 0 01-2 2H9a2 2 0 01-2-2V6h10z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        
+                      </button>
                     </template>
 
-                    <button class="btn-danger" @click="deleteUnidad(u)" title="Eliminar">
-                      Eliminar
-                    </button>
-                  </template>
-                </div>
-              </td>
+                    <!-- Modo edición -->
+                    <template v-else>
+                      <button
+                        type="button"
+                        @click="saveUnidad(u)"
+                        class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                        title="Guardar"
+                        aria-label="Guardar"
+                      >
+                        <!-- check -->
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Guardar</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        @click="cancelEdit(u)"
+                        class="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                        title="Cancelar"
+                        aria-label="Cancelar"
+                      >
+                        <!-- X -->
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <span>Cancelar</span>
+                      </button>
+                    </template>
+                  </div>
+                </td>
+
             </tr>
           </tbody>
         </table>
@@ -131,7 +176,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import axios from 'axios'
 
 const me = ref(JSON.parse(localStorage.getItem('me') || '{}'))
@@ -313,31 +358,29 @@ onMounted(async () => {
   await ensureMe()
   await cargarUnidades()
 })
-
-// (Opcional) Si cambias de grupo, puedes volver a cargar si lo prefieres:
-// watch(selectedGroupId, async () => {
-//   if (isAdmin.value) await cargarUnidades()
-// })
 </script>
 
 <style scoped>
-/* Helpers para inputs/botones minimalistas compatibles móvil */
 .input {
   @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500;
 }
 .btn-primary {
   @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700;
 }
-.btn-ghost {
-  @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100;
-}
-.btn-danger {
-  @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700;
-}
 .table thead th {
   @apply text-left text-slate-600 font-semibold;
 }
 .table tbody td {
   @apply align-middle;
+}
+
+/* Botones con ícono */
+.icon-btn {
+  @apply inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white p-2 hover:bg-slate-100 text-slate-700;
+}
+.icon-btn.primary { @apply border-blue-600 bg-blue-600 text-white hover:bg-blue-700; }
+.icon-btn.danger  { @apply border-red-600  bg-red-600  text-white hover:bg-red-700; }
+.icon {
+  width: 18px; height: 18px;
 }
 </style>
