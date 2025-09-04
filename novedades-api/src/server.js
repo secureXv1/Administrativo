@@ -1222,20 +1222,9 @@ app.get('/reports/export', auth, requireRole('superadmin', 'supervision', 'leade
 });
 
 
-// Crear nueva unidad (asignada automáticamente al grupo del líder)
-app.post('/my/units', auth, requireRole('leader_group'), async (req, res) => {
-  const groupId = req.user.groupId;
-  const { name, description } = req.body;
-  if (!name) return res.status(400).json({ error: 'Nombre requerido' });
-  await pool.query(
-    'INSERT INTO unit (name, description, groupId) VALUES (?, ?, ?)',
-    [name, description || null, groupId]
-  );
-  res.json({ ok: true });
-});
+// ===================== UNITS =====================
 
-
-// Listar unidades del grupo
+// --- Mi grupo (leader_group) -> SOLO LECTURA ---
 app.get('/my/units', auth, requireRole('leader_group'), async (req, res) => {
   const [rows] = await pool.query(
     'SELECT id, name, description FROM unit WHERE groupId = ? ORDER BY name',
@@ -1244,90 +1233,22 @@ app.get('/my/units', auth, requireRole('leader_group'), async (req, res) => {
   res.json(rows);
 });
 
-// Crear unidad
+// Bloquea creación/edición/eliminación para líder de grupo
 app.post('/my/units', auth, requireRole('leader_group'), async (req, res) => {
-  const { name, description } = req.body;
-  await pool.query(
-    'INSERT INTO unit (name, description, groupId) VALUES (?, ?, ?)',
-    [name, description || null, req.user.groupId]
-  );
-  res.json({ ok: true });
+  return res.status(403).json({ error: 'Forbidden', detail: 'No puede crear unidades. Solicite al superadmin.' });
 });
 
-// Editar unidad
 app.put('/my/units/:id', auth, requireRole('leader_group'), async (req, res) => {
-  const { id } = req.params;
-  const { name, description } = req.body;
-  const [units] = await pool.query(
-    'SELECT id FROM unit WHERE id = ? AND groupId = ? LIMIT 1', [id, req.user.groupId]
-  );
-  if (!units.length) return res.status(403).json({ error: 'No autorizado' });
-  await pool.query(
-    'UPDATE unit SET name = ?, description = ? WHERE id = ?', [name, description, id]
-  );
-  res.json({ ok: true });
+  return res.status(403).json({ error: 'Forbidden', detail: 'No puede editar unidades. Solicite al superadmin.' });
 });
 
-
-// (Opcional) Eliminar unidad de mi grupo
 app.delete('/my/units/:id', auth, requireRole('leader_group'), async (req, res) => {
-  const groupId = req.user.groupId;
-  const { id } = req.params;
-  // Solo si es de su grupo
-  const [units] = await pool.query(
-    'SELECT id FROM unit WHERE id = ? AND groupId = ? LIMIT 1', [id, groupId]
-  );
-  if (!units.length) return res.status(403).json({ error: 'No autorizado' });
-  await pool.query('DELETE FROM unit WHERE id = ?', [id]);
-  res.json({ ok: true });
-});
-
-// Listar todas las unidades (para admin)
-app.get('/admin/units', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
-  const [rows] = await pool.query(
-    `SELECT u.id, u.name, u.description, u.groupId, g.code AS groupCode
-     FROM unit u
-     LEFT JOIN \`group\` g ON g.id = u.groupId
-     ORDER BY g.code, u.name`
-  );
-  res.json(rows);
-});
-
-app.post('/admin/units', auth, requireRole('superadmin'), async (req, res) => {
-  const { name, description, groupId } = req.body;
-  if (!name || !groupId) return res.status(400).json({ error: 'Nombre y groupId requeridos' });
-  // Verifica que el grupo exista
-  const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
-  if (!g) return res.status(404).json({ error: 'Grupo no existe' });
-
-  await pool.query(
-    'INSERT INTO unit (name, description, groupId) VALUES (?, ?, ?)',
-    [name, description || null, groupId]
-  );
-  res.json({ ok: true });
-});
-
-app.put('/admin/units/:id', auth, requireRole('superadmin'), async (req, res) => {
-  const { id } = req.params;
-  const { name, description, groupId } = req.body;
-  if (!name || !groupId) return res.status(400).json({ error: 'Nombre y groupId requeridos' });
-  const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
-  if (!g) return res.status(404).json({ error: 'Grupo no existe' });
-
-  await pool.query(
-    'UPDATE unit SET name=?, description=?, groupId=? WHERE id=?',
-    [name, description || null, groupId, id]
-  );
-  res.json({ ok: true });
+  return res.status(403).json({ error: 'Forbidden', detail: 'No puede eliminar unidades. Solicite al superadmin.' });
 });
 
 
-app.delete('/admin/units/:id', auth, requireRole('superadmin'), async (req, res) => {
-  const { id } = req.params;
-  await pool.query('DELETE FROM unit WHERE id=?', [id]);
-  res.json({ ok: true });
-});
-
+// --- Admin (superadmin/supervision) ---
+// Listar todas (superadmin y supervision)
 app.get('/admin/units', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const [rows] = await pool.query(
     `SELECT u.id, u.name, u.description, u.groupId,
@@ -1338,6 +1259,50 @@ app.get('/admin/units', auth, requireRole('superadmin', 'supervision'), async (r
   );
   res.json(rows);
 });
+
+// Crear (solo superadmin)
+app.post('/admin/units', auth, requireRole('superadmin'), async (req, res) => {
+  const { name, description, groupId } = req.body;
+  if (!name || !groupId) {
+    return res.status(400).json({ error: 'Nombre y groupId requeridos' });
+  }
+  const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+  if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+
+  await pool.query(
+    'INSERT INTO unit (name, description, groupId) VALUES (?, ?, ?)',
+    [name.trim(), description || null, groupId]
+  );
+  res.json({ ok: true });
+});
+
+// Editar (solo superadmin)
+app.put('/admin/units/:id', auth, requireRole('superadmin'), async (req, res) => {
+  const { id } = req.params;
+  const { name, description, groupId } = req.body;
+
+  if (!name || !groupId) {
+    return res.status(400).json({ error: 'Nombre y groupId requeridos' });
+  }
+  const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+  if (!g) return res.status(404).json({ error: 'Grupo no existe' });
+
+  const [r] = await pool.query(
+    'UPDATE unit SET name=?, description=?, groupId=? WHERE id=?',
+    [name.trim(), description || null, groupId, id]
+  );
+  if (r.affectedRows === 0) return res.status(404).json({ error: 'Unidad no encontrada' });
+  res.json({ ok: true });
+});
+
+// Eliminar (solo superadmin)
+app.delete('/admin/units/:id', auth, requireRole('superadmin'), async (req, res) => {
+  const { id } = req.params;
+  const [r] = await pool.query('DELETE FROM unit WHERE id=?', [id]);
+  if (r.affectedRows === 0) return res.status(404).json({ error: 'Unidad no encontrada' });
+  res.json({ ok: true });
+});
+
 
 
 
