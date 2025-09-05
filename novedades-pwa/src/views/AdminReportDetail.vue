@@ -10,7 +10,6 @@
     </header>
 
     <main class="max-w-6xl mx-auto px-2 sm:px-4 py-6 space-y-4">
-      <!-- Loading / Empty -->
       <div v-if="loading" class="text-center py-12 text-brand-700 font-semibold">Cargando...</div>
       <div v-else-if="!headerOk" class="text-center py-12 text-red-500">No se encontró información para los parámetros.</div>
 
@@ -97,6 +96,7 @@
                   <th>Ubicación</th>
                   <th>Descripción</th>
                   <th>Novedad (inicio - fin)</th>
+                  <th v-if="canEdit" style="width: 56px">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -123,12 +123,99 @@
                       <span class="text-slate-300">—</span>
                     </template>
                   </td>
+                  <td v-if="canEdit" class="text-right">
+                    <button class="icon-btn" title="Editar" @click="openEdit(a)">
+                      <!-- Lápiz -->
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/>
+                        <path d="m15 5 4 4"/>
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
                 <tr v-if="!agentesFiltrados.length">
-                  <td :colspan="isGroupMode ? 7 : 6" class="text-center text-slate-500 py-6">Sin agentes</td>
+                  <td :colspan="canEdit ? (isGroupMode ? 8 : 7) : (isGroupMode ? 7 : 6)"
+                      class="text-center text-slate-500 py-6">Sin agentes</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <!-- Modal edición -->
+        <div v-if="editOpen" class="modal-backdrop" @click.self="closeEdit">
+          <div class="modal">
+            <div class="modal-header">
+              <h3 class="font-semibold text-slate-800">Editar agente {{ editRow?.code }}</h3>
+              <button class="btn-ghost" @click="closeEdit">Cerrar</button>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="label">Estado</label>
+                <select v-model="form.state" class="input">
+                  <option v-for="s in estadosValidos" :key="s" :value="s">{{ s }}</option>
+                </select>
+              </div>
+
+              <!-- Autocomplete municipio (solo para Comisión del servicio) -->
+              <div v-if="needsMunicipio" class="sm:col-span-2">
+                <label class="label">Municipio</label>
+                <Multiselect
+                  v-model="form.municipio"
+                  :options="muniOptions"
+                  :loading="muniLoading"
+                  :internal-search="false"
+                  :clear-on-select="true"
+                  :close-on-select="true"
+                  :preserve-search="true"
+                  :show-labels="false"
+                  placeholder="Escribe para buscar…"
+                  label="label"
+                  track-by="id"
+                  @search-change="searchMunicipios"
+                  class="w-full"
+                >
+                  <template #noResult>Ningún municipio encontrado</template>
+                  <template #option="{ option }">
+                    <div class="flex items-center justify-between w-full">
+                      <span>{{ option.label }}</span>
+                      <span class="text-xs text-slate-400">id: {{ option.id }}</span>
+                    </div>
+                  </template>
+                  <template #singleLabel="{ option }">
+                    <span>{{ option.label }}</span>
+                  </template>
+                </Multiselect>
+                <div class="text-xs text-slate-500 mt-1">Requerido para Comisión del servicio.</div>
+              </div>
+
+              <!-- Fechas + descripción según estado -->
+              <div v-if="needsFechas" class="sm:col-span-1">
+                <label class="label">Inicio</label>
+                <input v-model="form.novelty_start" type="date" class="input" />
+              </div>
+              <div v-if="needsFechas" class="sm:col-span-1">
+                <label class="label">Fin</label>
+                <input v-model="form.novelty_end" type="date" class="input" />
+              </div>
+              <div v-if="needsDescripcion" class="sm:col-span-3">
+                <label class="label">Descripción</label>
+                <textarea v-model="form.novelty_description" class="input" rows="2" placeholder="Motivo / detalle..."></textarea>
+              </div>
+
+              <!-- Nota para SERVICIO -->
+              <div v-if="form.state === 'SERVICIO'" class="sm:col-span-3 text-xs text-slate-500">
+                Para “SERVICIO” el municipio se fija automáticamente en Bogotá (11001).
+              </div>
+            </div>
+
+            <div class="mt-4 flex justify-end gap-2">
+              <button class="btn-ghost" @click="closeEdit">Cancelar</button>
+              <button class="btn-primary" @click="saveEdit" :disabled="saving">
+                {{ saving ? 'Guardando...' : 'Guardar cambios' }}
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -137,27 +224,42 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
+import Multiselect from 'vue-multiselect'
+import 'vue-multiselect/dist/vue-multiselect.css'
 
 const route = useRoute()
 const router = useRouter()
+
+// ===== user (permisos)
+const me = ref(null)
+async function loadMe() {
+  try {
+    const { data } = await axios.get('/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+    me.value = data
+  } catch { me.value = null }
+}
+const canEdit = computed(() => {
+  const r = String(me.value?.role || '').toLowerCase()
+  return ['leader_group','superadmin','supervision','supervisor'].includes(r)
+})
 
 // ===== Parámetros
 const reportId   = computed(() => route.params.id ? String(route.params.id) : null)
 const dateParam  = computed(() => route.query.date ? String(route.query.date) : new Date().toISOString().slice(0,10))
 const groupIdQ   = computed(() => route.query.groupId ? String(route.query.groupId) : null)
-const isGroupMode = computed(() => !!groupIdQ.value)   // admin/supervisor
+const isGroupMode = computed(() => !!groupIdQ.value)
 const loading   = ref(true)
 
 // ===== Estado UI
 const head = ref({ groupCode:'', unitName:'', date:'—' })
 const headerOk = ref(false)
-const agentes = ref([])        // plano, viene de 1..n reportes
-const unitsInGroup = ref([])   // para selector de unidad (modo grupo)
+const agentes = ref([])        // plano
+const unitsInGroup = ref([])   // para selector unidad
 
 // ===== Filtros
 const filtrosBase = { q:'', category:'ALL', state:'ALL', unitId:'ALL', onlyNovelties:false }
@@ -192,7 +294,6 @@ function formatDate(dateStr) {
   const year = d.getFullYear()
   return `${day}/${month}/${year}`
 }
-
 function badgeClass(state){
   const s = String(state || '').toUpperCase()
   if (s === 'SIN NOVEDAD') return 'bg-green-50 text-green-700 border-green-200'
@@ -202,7 +303,6 @@ function badgeClass(state){
 
 // ===== Carga
 async function loadSingleReport(id){
-  // Trae agentes del detalle
   const { data: ags } = await axios.get(`/admin/report-agents/${id}`, {
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
@@ -210,38 +310,32 @@ async function loadSingleReport(id){
     ...row,
     _key: `${row.code}-${row.unitName||''}-${row.state}-${row.novelty_start||''}-${row.novelty_end||''}`,
     municipality: row.municipalityName && row.dept ? `${row.municipalityName} (${row.dept})` : (row.municipalityName || ''),
-    novelty_description: row.novelty_description || row.descripcion
+    municipalityName: row.municipalityName || null,
+    municipalityDept: row.dept || null,
+    municipalityId: row.municipalityId ?? null,         // 👈 usa esto si el backend lo devuelve
+    novelty_description: row.novelty_description || row.descripcion,
+    reportId: id
   })
   const list = (Array.isArray(ags) ? ags : []).map(map)
   agentes.value = list
-  // Encabezado
   const first = list[0]
-  head.value = {
-    groupCode: first?.groupCode || '',
-    unitName : first?.unitName || '',
-    date     : dateParam.value
-  }
+  head.value = { groupCode: first?.groupCode || '', unitName: first?.unitName || '', date: dateParam.value }
   headerOk.value = true
 }
 
 async function loadGroupReports(date, groupId){
-  // 1) Lista de reportes (uno por unidad)
   const { data } = await axios.get('/dashboard/reports', {
     params: { date_from: date, date_to: date, groupId },
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
   const items = Array.isArray(data?.items) ? data.items : []
-  if (!items.length) {
-    headerOk.value = false
-    return
-  }
-  // Encabezado y unidades
+  if (!items.length) { headerOk.value = false; return }
+
   head.value = { groupCode: items[0].groupCode, unitName: '', date }
   unitsInGroup.value = [...new Map(items.map(r => [String(r.unitName||''), { id: r.unitId, name: r.unitName }])).values()]
                       .filter(u => !!u.id)
                       .sort((a,b)=> (a.name||'').localeCompare(b.name||''))
 
-  // 2) Cargar cada detalle de agentes
   const all = []
   for (const r of items) {
     const { data: ags } = await axios.get(`/admin/report-agents/${r.id}`, {
@@ -251,7 +345,11 @@ async function loadGroupReports(date, groupId){
       ...a,
       _key: `${a.code}-${a.unitName||''}-${a.state}-${a.novelty_start||''}-${a.novelty_end||''}`,
       municipality: a.municipalityName && a.dept ? `${a.municipalityName} (${a.dept})` : (a.municipalityName || ''),
-      novelty_description: a.novelty_description || a.descripcion
+      municipalityName: a.municipalityName || null,
+      municipalityDept: a.dept || null,
+      municipalityId: a.municipalityId ?? null,         // 👈 usa esto si el backend lo devuelve
+      novelty_description: a.novelty_description || a.descripcion,
+      reportId: r.id
     }))
     all.push(...list)
   }
@@ -270,17 +368,12 @@ const agentesFiltrados = computed(() => {
       String(a.unitName||'').toUpperCase().includes(q)
     )
   }
-  if (filters.value.category !== 'ALL') {
-    list = list.filter(a => String(a.category) === filters.value.category)
-  }
-  if (filters.value.state !== 'ALL') {
-    list = list.filter(a => String(a.state).toUpperCase() === filters.value.state)
-  }
-  if (filters.value.onlyNovelties) {
-    list = list.filter(a => String(a.state).toUpperCase() !== 'SIN NOVEDAD')
-  }
+  if (filters.value.category !== 'ALL') list = list.filter(a => String(a.category) === filters.value.category)
+  if (filters.value.state !== 'ALL')    list = list.filter(a => String(a.state).toUpperCase() === filters.value.state)
+  if (filters.value.onlyNovelties)      list = list.filter(a => String(a.state).toUpperCase() !== 'SIN NOVEDAD')
   if (isGroupMode.value && filters.value.unitId !== 'ALL') {
-    list = list.filter(a => String(a.unitName||'') === (unitsInGroup.value.find(u => String(u.id) === String(filters.value.unitId))?.name || ''))
+    const uName = unitsInGroup.value.find(u => String(u.id) === String(filters.value.unitId))?.name || ''
+    list = list.filter(a => String(a.unitName||'') === uName)
   }
   return list
 })
@@ -296,18 +389,125 @@ const resumenChips = computed(() => {
     else cnt.otros++
   }
   return [
-    { key:'sn', label:'Sin novedad', count:cnt['SIN NOVEDAD'], cls:'bg-green-50 text-green-700 border-green-200', dot:'bg-green-600' },
-    { key:'srv', label:'Servicio', count:cnt['SERVICIO'], cls:'bg-sky-50 text-sky-700 border-sky-200', dot:'bg-sky-600' },
-    { key:'cds', label:'Comisión del servicio', count:cnt['COMISIÓN DEL SERVICIO'], cls:'bg-sky-50 text-sky-700 border-sky-200', dot:'bg-sky-600' },
-    { key:'oth', label:'Otros', count:cnt.otros, cls:'bg-amber-50 text-amber-800 border-amber-200', dot:'bg-amber-600' }
+    { key:'sn',  label:'Sin novedad',            count:cnt['SIN NOVEDAD'],            cls:'bg-green-50 text-green-700 border-green-200', dot:'bg-green-600' },
+    { key:'srv', label:'Servicio',               count:cnt['SERVICIO'],               cls:'bg-sky-50 text-sky-700 border-sky-200',       dot:'bg-sky-600' },
+    { key:'cds', label:'Comisión del servicio',  count:cnt['COMISIÓN DEL SERVICIO'],  cls:'bg-sky-50 text-sky-700 border-sky-200',       dot:'bg-sky-600' },
+    { key:'oth', label:'Otros',                  count:cnt.otros,                     cls:'bg-amber-50 text-amber-800 border-amber-200', dot:'bg-amber-600' }
   ]
 })
 
-// ===== Acciones
-async function reload(){
-  // El filtrado es client-side; este botón sirve por si en el futuro vuelves a cargar.
-  // Aquí lo mantenemos simple: no recargamos desde servidor salvo que quieras.
+// ===== Modal edición
+const editOpen = ref(false)
+const editRow  = ref(null)
+const saving   = ref(false)
+const form     = ref({
+  state:'SIN NOVEDAD',
+  municipio: null,              // {id,label}
+  novelty_start:'',
+  novelty_end:'',
+  novelty_description:''
+})
+const needsMunicipio   = computed(() => form.value.state === 'COMISIÓN DEL SERVICIO')
+const needsFechas      = computed(() => ['SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD'].includes(form.value.state))
+const needsDescripcion = computed(() => ['SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD'].includes(form.value.state))
+
+function openEdit(a){
+  if (!canEdit.value) return
+  editRow.value = a
+  form.value = {
+    state: a.state,
+    municipio: a.municipalityId
+      ? { id: a.municipalityId, label: a.municipalityName ? `${a.municipalityName} (${a.municipalityDept||''})` : `id ${a.municipalityId}` }
+      : null,
+    novelty_start: a.novelty_start || '',
+    novelty_end: a.novelty_end || '',
+    novelty_description: a.novelty_description || ''
+  }
+  editOpen.value = true
 }
+function closeEdit(){ editOpen.value = false; editRow.value = null }
+
+// ===== Autocomplete municipios
+const muniOptions = ref([])
+const muniLoading = ref(false)
+let muniTimer = null
+async function searchMunicipios(term){
+  if (muniTimer) clearTimeout(muniTimer)
+  muniTimer = setTimeout(async () => {
+    const q = String(term || '').trim()
+    if (q.length < 2) { muniOptions.value = []; return }
+    muniLoading.value = true
+    try {
+      const { data } = await axios.get('/catalogs/municipalities', {
+        params: { q, limit: 15 },
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+      })
+      muniOptions.value = (data || []).map(m => ({
+        id: m.id,
+        label: `${m.name} (${m.dept})`
+      }))
+    } catch {
+      muniOptions.value = []
+    } finally {
+      muniLoading.value = false
+    }
+  }, 250)
+}
+
+// ===== Guardar
+async function saveEdit(){
+  if (!editRow.value) return
+  // Validaciones mínimas
+  if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipio?.id) {
+    alert('Selecciona un municipio para Comisión del servicio')
+    return
+  }
+  if (needsFechas.value) {
+    if (!form.value.novelty_start || !form.value.novelty_end) {
+      alert('Completa las fechas de la novedad')
+      return
+    }
+  }
+  if (needsDescripcion.value && !form.value.novelty_description?.trim()) {
+    alert('La descripción es requerida para este estado')
+    return
+  }
+
+  saving.value = true
+  try {
+    await axios.put(`/admin/report-agents/${editRow.value.reportId}/${editRow.value.agentId}`, {
+      state: form.value.state,
+      municipalityId: form.value.state === 'COMISIÓN DEL SERVICIO' ? (form.value.municipio?.id || null) : null,
+      novelty_start: form.value.novelty_start || null,
+      novelty_end: form.value.novelty_end || null,
+      novelty_description: form.value.novelty_description || null
+    }, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+
+    // Actualiza en memoria
+    Object.assign(editRow.value, {
+      state: form.value.state,
+      municipalityId: form.value.municipio?.id || null,
+      municipalityName: form.value.municipio?.label?.split(' (')[0] || editRow.value.municipalityName || null,
+      municipalityDept: editRow.value.municipalityDept || null,
+      municipality: form.value.municipio?.label || (
+        form.value.state === 'SERVICIO' ? 'Bogotá (Cundinamarca)' :
+        form.value.state === 'SIN NOVEDAD' ? 'Bogotá (Cundinamarca)' : ''
+      ),
+      novelty_start: form.value.novelty_start || null,
+      novelty_end: form.value.novelty_end || null,
+      novelty_description: form.value.novelty_description || null
+    })
+
+    closeEdit()
+  } catch (e) {
+    alert(e?.response?.data?.detail || e?.response?.data?.error || 'No se pudo guardar')
+  } finally {
+    saving.value = false
+  }
+}
+
+// ===== Acciones varias
+async function reload(){ /* filtrado es client-side */ }
 
 async function exportarExcel(){
   const rows = agentesFiltrados.value.map(a => ({
@@ -330,6 +530,7 @@ async function exportarExcel(){
 // ===== Init
 onMounted(async () => {
   loading.value = true
+  await loadMe()
   try {
     if (isGroupMode.value) {
       await loadGroupReports(dateParam.value, groupIdQ.value)
@@ -338,7 +539,7 @@ onMounted(async () => {
     } else {
       headerOk.value = false
     }
-  } catch (e) {
+  } catch {
     headerOk.value = false
   } finally {
     loading.value = false
@@ -347,14 +548,25 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-/* utilidades base */
 .input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500; }
 .btn-ghost { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100; }
+.btn-primary { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700; }
 .card { @apply bg-white rounded-xl shadow; }
 .card-body { @apply p-4; }
 .table { min-width: 780px; }
 
-/* móvil */
+/* Botón icono */
+.icon-btn{
+  @apply inline-flex items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700;
+  width: 32px; height: 32px;
+}
+.icon-btn:hover{ @apply bg-slate-100; }
+
+/* Modal */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.35); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+.modal { width: 100%; max-width: 720px; background: white; border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.25); padding: 16px; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+
 @media (max-width: 640px) {
   .card-body { padding: 1rem !important; }
   .table th, .table td { padding: 6px 4px !important; font-size: 12px !important; }

@@ -1003,41 +1003,129 @@ cron.schedule('45 14 * * *', () => console.log('⏳ Cierre ventana 14:45'));
 app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
 
   if (req.user.role === 'leader_group') {
-  // Obtén el id del reporte y revisa a qué grupo pertenece
-  const [[report]] = await pool.query(
-    'SELECT groupId FROM dailyreport WHERE id = ? LIMIT 1',
-    [req.params.id]
-  );
-  if (!report || report.groupId !== req.user.groupId) {
-    return res.status(403).json({ error: 'No autorizado a ver este reporte' });
+    const [[report]] = await pool.query(
+      'SELECT groupId FROM dailyreport WHERE id = ? LIMIT 1',
+      [req.params.id]
+    );
+    if (!report || report.groupId !== req.user.groupId) {
+      return res.status(403).json({ error: 'No autorizado a ver este reporte' });
+    }
   }
-}
 
   const { id } = req.params;
   if (!id) return res.status(400).json({ error: 'Missing reportId' });
 
-        const [rows] = await pool.query(`
-          SELECT 
-            a.code, a.category,
-            da.state,
-            da.groupId, g.code AS groupCode,
-            da.unitId, u.name AS unitName,
-            m.name AS municipalityName, m.dept,
-            DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
-            DATE_FORMAT(da.novelty_end, '%Y-%m-%d') AS novelty_end,
-            da.novelty_description
-          FROM dailyreport_agent da
-          JOIN agent a ON a.id = da.agentId
-          LEFT JOIN \`group\` g ON g.id = da.groupId
-          LEFT JOIN unit u ON u.id = da.unitId
-          LEFT JOIN municipality m ON m.id = da.municipalityId
-          WHERE da.reportId = ?
-          ORDER BY FIELD(a.category, 'OF', 'SO', 'PT'), a.code
-        `, [id]);
+  const [rows] = await pool.query(`
+    SELECT 
+      a.id AS agentId,          -- 👈 NUEVO
+      a.code, a.category,
+      da.state,
+      da.groupId, g.code AS groupCode,
+      da.unitId, u.name AS unitName,
+      m.name AS municipalityName, m.dept,
+      DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
+      DATE_FORMAT(da.novelty_end,   '%Y-%m-%d') AS novelty_end,
+      da.novelty_description
+    FROM dailyreport_agent da
+    JOIN agent a ON a.id = da.agentId
+    LEFT JOIN \`group\` g ON g.id = da.groupId
+    LEFT JOIN unit u ON u.id = da.unitId
+    LEFT JOIN municipality m ON m.id = da.municipalityId
+    WHERE da.reportId = ?
+    ORDER BY FIELD(a.category, 'OF', 'SO', 'PT'), a.code
+  `, [id]);
+
+  res.json(rows);
+});
 
 
-        res.json(rows);
-      });
+
+// Endpoint: Editar estado/novedad de un agente en un reporte específico
+
+app.put('/admin/report-agents/:reportId/:agentId',
+  auth,
+  requireRole('superadmin', 'supervision', 'leader_group'),
+  async (req, res) => {
+    const { reportId, agentId } = req.params;
+    const { state, municipalityId, novelty_start, novelty_end, novelty_description } = req.body;
+
+    if (!reportId || !agentId) return res.status(400).json({ error: 'Parámetros requeridos' });
+
+    // Si es líder de grupo, solo puede editar reportes de SU grupo
+    if (req.user.role === 'leader_group') {
+      const [[rep]] = await pool.query('SELECT groupId FROM dailyreport WHERE id=? LIMIT 1', [reportId]);
+      if (!rep || rep.groupId !== req.user.groupId) {
+        return res.status(403).json({ error: 'No autorizado' });
+      }
+    }
+
+    const estadosValidos = [
+      "SIN NOVEDAD",
+      "SERVICIO",
+      "COMISIÓN DEL SERVICIO",
+      "FRANCO FRANCO",
+      "VACACIONES",
+      "LICENCIA DE MATERNIDAD",
+      "LICENCIA DE LUTO",
+      "LICENCIA REMUNERADA",
+      "LICENCIA NO REMUNERADA",
+      "EXCUSA DEL SERVICIO",
+      "LICENCIA PATERNIDAD"
+    ];
+    const s = String(state || '').toUpperCase().trim();
+    if (!estadosValidos.includes(s)) {
+      return res.status(422).json({ error: 'Estado inválido' });
+    }
+
+    // Normalización/validación según estado
+    let muniId = municipalityId ? Number(municipalityId) : null;
+    let novStart = novelty_start || null;
+    let novEnd   = novelty_end   || null;
+    let novDesc  = novelty_description || null;
+
+    if (s === 'SIN NOVEDAD') {
+      muniId = 11001; novStart = null; novEnd = null; novDesc = null;
+    } else if (s === 'SERVICIO') {
+      muniId = 11001;
+      if (!novStart) return res.status(422).json({ error: 'Falta fecha de inicio (SERVICIO)' });
+      if (!novEnd)   return res.status(422).json({ error: 'Falta fecha de fin (SERVICIO)' });
+      if (!novDesc)  return res.status(422).json({ error: 'Falta descripción (SERVICIO)' });
+    } else if (s === 'COMISIÓN DEL SERVICIO') {
+      if (!muniId) return res.status(422).json({ error: 'Falta municipio (COMISIÓN DEL SERVICIO)' });
+      novStart = null; novEnd = null; novDesc = null;
+    } else if (s === 'FRANCO FRANCO') {
+      muniId = null; novStart = null; novEnd = null; novDesc = null;
+    } else {
+      // VACACIONES, LICENCIAS, EXCUSA, PATERNIDAD...
+      if (!novStart) return res.status(422).json({ error: `Falta fecha de inicio (${s})` });
+      if (!novEnd)   return res.status(422).json({ error: `Falta fecha de fin (${s})` });
+      if (!novDesc)  return res.status(422).json({ error: `Falta descripción (${s})` });
+      muniId = null;
+    }
+
+    // Verifica que exista la fila
+    const [[exists]] = await pool.query(
+      'SELECT 1 FROM dailyreport_agent WHERE reportId=? AND agentId=? LIMIT 1',
+      [reportId, agentId]
+    );
+    if (!exists) return res.status(404).json({ error: 'Fila no encontrada' });
+
+    // Actualiza dailyreport_agent y el agente
+    await pool.query(`
+      UPDATE dailyreport_agent
+      SET state=?, municipalityId=?, novelty_start=?, novelty_end=?, novelty_description=?
+      WHERE reportId=? AND agentId=?
+    `, [s, muniId, novStart, novEnd, novDesc, reportId, agentId]);
+
+    await pool.query(`
+      UPDATE agent SET status=?, municipalityId=? WHERE id=?
+    `, [s, muniId, agentId]);
+
+    res.json({ ok: true });
+  }
+);
+
+
 
 app.get('/me/profile', auth, async (req, res) => {
   const [[user]] = await pool.query(
