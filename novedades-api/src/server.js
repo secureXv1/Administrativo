@@ -562,6 +562,7 @@ app.get('/group/agents', auth, requireRole('leader_group', 'leader_unit'), async
 });
 
 // ---------- Dashboard y admin ----------
+// ---------- Dashboard y admin ----------
 app.get('/dashboard/reports', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
   const { date_from, date_to, groupId, unitId } = req.query;
   const params = [];
@@ -572,38 +573,46 @@ app.get('/dashboard/reports', auth, requireRole('superadmin', 'supervision', 'le
     params.push(req.user.groupId);
   } else {
     if (groupId) { where.push('r.groupId=?'); params.push(groupId); }
-    if (unitId) { where.push('r.unitId=?'); params.push(unitId); }
+    if (unitId)  { where.push('r.unitId=?');  params.push(unitId);  }
   }
 
   if (date_from) { where.push('r.reportDate>=?'); params.push(date_from); }
-  if (date_to)   { where.push('r.reportDate<=?'); params.push(date_to); }
+  if (date_to)   { where.push('r.reportDate<=?'); params.push(date_to);   }
 
   const sql = `
     SELECT r.*, g.code AS groupCode, u.name AS unitName
     FROM dailyreport r
     JOIN \`group\` g ON g.id = r.groupId
     LEFT JOIN unit u ON u.id = r.unitId
-    ${where.length ? 'WHERE '+where.join(' AND ') : ''}
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY r.reportDate DESC
   `;
   const [rows] = await pool.query(sql, params);
 
   const items = rows.map(r => ({
     id: r.id,
+    // ✅ añadidos para que el frontend pueda navegar por grupo/unidad
+    groupId: r.groupId,
+    unitId:  r.unitId,
+
     date: (r.reportDate instanceof Date)
       ? r.reportDate.toISOString().slice(0,10)
       : String(r.reportDate).slice(0,10),
+
     groupCode: r.groupCode,
-    unitName: r.unitName || '',
+    unitName:  r.unitName || '',
+
     OF_effective: r.OF_effective, SO_effective: r.SO_effective, PT_effective: r.PT_effective,
     OF_available: r.OF_available, SO_available: r.SO_available, PT_available: r.PT_available,
     OF_nov: r.OF_nov, SO_nov: r.SO_nov, PT_nov: r.PT_nov,
+
     updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : r.updatedAt,
     notes: r.notes || ''
   }));
 
   res.json({ items });
 });
+
 
 
 

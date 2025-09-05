@@ -5,40 +5,53 @@ import AdminDashboard from '../views/AdminDashboard.vue'
 import AdminGroups from '../views/AdminGroups.vue'
 import AdminUsers from '../views/AdminUsers.vue'
 import AdminAgents from '../views/AdminAgents.vue'
-import AdminReportDetail from '../views/AdminReportDetail.vue'
 import Perfil from '../views/Perfil.vue'
-import AdminUnits from '../views/AdminUnits.vue' // <--- IMPORTA TU VISTA DE UNIDADES NORMAL
+import AdminUnits from '../views/AdminUnits.vue'
 import AdminMenuLayout from '../views/AdminMenuLayout.vue'
+const AdminReportDetail = () => import('../views/AdminReportDetail.vue')
 import { http } from '../lib/http'
 
-// ===== Rutas principales =====
+// Rutas
 const routes = [
   { path: '/', redirect: '/login' },
   { path: '/login', component: LoginView },
-  { path: '/report', component: ReportView },
-  // Redirección opcional para URLs viejas
+  { path: '/report', component: ReportView },       // vista simple para leader_unit
   { path: '/perfil', redirect: '/admin/perfil' },
 
-  // === Agrupa rutas de admin bajo el layout ===
+  // Todo lo de admin bajo el layout
   {
     path: '/admin',
     component: AdminMenuLayout,
     meta: { requiresAuth: true },
     children: [
-      { path: '', component: AdminDashboard },              // /admin
-      { path: 'groups', component: AdminGroups },           // /admin/groups
-      { path: 'units', component: AdminUnits, meta: { roles: ['leader_group', 'superadmin', 'supervision'] } }, // /admin/units
-      { path: 'users', component: AdminUsers },             // /admin/users
-      { path: 'agents', component: AdminAgents },           // /admin/agents
-      { path: 'report/:id', component: AdminReportDetail }, // /admin/report/:id
-      { path: 'perfil', component: Perfil },                // /admin/perfil
+      { path: '', name: 'AdminHome', component: AdminDashboard },
+
+      // Grupos: solo superadmin/supervision/supervisor
+      { path: 'groups', name: 'AdminGroups', component: AdminGroups, meta: { roles: ['superadmin', 'supervision', 'supervisor'] } },
+
+      // Unidades: leader_group + admin + supervision + supervisor (UI controla edición)
+      { path: 'units', name: 'AdminUnits', component: AdminUnits, meta: { roles: ['leader_group', 'superadmin', 'supervision', 'supervisor'] } },
+
+      { path: 'users', name: 'AdminUsers', component: AdminUsers },
+      { path: 'agents', name: 'AdminAgents', component: AdminAgents },
+
+      { path: 'perfil', name: 'Perfil', component: Perfil },
+
+      // Detalle por UNIDAD (id de dailyreport)
+      { path: 'report/:id', name: 'ReportUnit', component: AdminReportDetail },
+
+      // Detalle por GRUPO (admin/supervision/supervisor) -> /admin/report?date=YYYY-MM-DD&groupId=123
+      { path: 'report', name: 'ReportGroup', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'supervisor'] } }
     ]
-  }
+  },
+
+  // Fallback
+  { path: '/:pathMatch(.*)*', redirect: '/admin' }
 ]
 
 const router = createRouter({ history: createWebHistory(), routes })
 
-// ========== Guarda y navegación ==========
+// ====== Guarda de navegación ======
 async function getMe() {
   try {
     const { data } = await http.get('/me')
@@ -50,7 +63,8 @@ async function getMe() {
 
 router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
-  // Permitir acceso libre solo al login
+
+  // Solo /login es libre
   if (!token && to.path !== '/login') return next('/login')
   if (to.path === '/login') return next()
 
@@ -59,23 +73,33 @@ router.beforeEach(async (to, from, next) => {
 
   const role = String(me.role || '').toLowerCase()
 
-  // Permitir acceso a /admin/perfil y /report para todos autenticados
-  if (to.path === '/admin/perfil' || to.path === '/report') return next()
+  // Accesos siempre permitidos
+  if (to.path === '/report' || to.path === '/admin/perfil') return next()
 
-  // SUPERADMIN o SUPERVISION o LEADER_GROUP: acceso total a /admin/*
-  if (role === 'superadmin' || role === 'supervision' || role === 'leader_group') {
-    if (!to.path.startsWith('/admin')) return next('/admin')
+  // Rutas con roles explícitos
+  if (to.meta?.roles && Array.isArray(to.meta.roles)) {
+    if (!to.meta.roles.map(r => r.toLowerCase()).includes(role)) {
+      // Si no tiene el rol, intenta mandarlo a su “home” válido
+      if (['superadmin', 'supervision', 'supervisor', 'leader_group'].includes(role)) {
+        return next('/admin')
+      }
+      if (role === 'leader_unit') return next('/report')
+      return next('/login')
+    }
     return next()
   }
 
-  // LEADER_UNIT: acceso solo a /report
-  if (role === 'leader_unit') {
-    if (to.path !== '/report' && to.path !== '/admin/perfil') return next('/report')
-    return next()
+  // Acceso general a /admin/*
+  if (to.path.startsWith('/admin')) {
+    // incluye supervisor
+    if (['superadmin', 'supervision', 'supervisor', 'leader_group'].includes(role)) {
+      return next()
+    }
+    if (role === 'leader_unit') return next('/report')
+    return next('/login')
   }
 
-  // Cualquier otro caso, fuera
-  return next('/login')
+  return next()
 })
 
 export default router

@@ -221,11 +221,17 @@
                     {{ r.unitName || r.groupCode }}
                   </span>
                 </template>
+
+                <!-- ADMIN / SUPERVISOR: botón que navega al detalle del grupo -->
                 <template v-else>
-                  <span class="inline-flex items-center gap-2">
+                  <button
+                    class="inline-flex items-center gap-2 text-brand-700 hover:underline"
+                    @click="goToGroupReport(r)"
+                    title="Ver detalle del grupo"
+                  >
                     <span class="h-2 w-2 rounded-full" :class="r.isComplete ? 'bg-green-600' : 'bg-amber-600'"></span>
                     {{ r.groupCode }}
-                  </span>
+                  </button>
                 </template>
               </td>
               <td>{{ r.date }}</td>
@@ -330,6 +336,20 @@ function formatTime (ts) {
 function goToGroupDetail (r) {
   router.push(`/admin/report/${r.id}`)
 }
+
+function goToGroupReport(r) {
+  const gid = r.groupId || r.group_id; // fallback por si el nombre cambia
+  if (!gid) {
+    console.warn('No se encontró groupId en la fila seleccionada', r);
+    return;
+  }
+  router.push({
+    path: '/admin/report',
+    query: { date: r.date, groupId: String(gid) }
+  });
+}
+
+
 
 // ===== Mapa
 const municipalitiesMap = ref([])
@@ -500,7 +520,10 @@ const rowsDisplayAdmin = computed(() => {
     if (!code) continue
     if (!map.has(code)) {
       map.set(code, {
-        _key: code, groupCode: code, date: r.date,
+        _key: code,
+        groupCode: code,
+        groupId: r.groupId,           // <-- IMPORTANTE
+        date: r.date,
         updatedAtMax: r.updatedAt || null,
         OF_effective:0, SO_effective:0, PT_effective:0,
         OF_available:0, SO_available:0, PT_available:0,
@@ -529,8 +552,9 @@ const rowsDisplayAdmin = computed(() => {
     out.push({
       _key: code,
       groupCode: code,
+      groupId: g.groupId,                 // <-- IMPORTANTE
       date: g.date,
-      time: isComplete ? g.updatedAtMax : null, // hora de cierre si completo
+      time: isComplete ? g.updatedAtMax : null,
       isComplete,
       FE:  `${g.OF_effective}/${g.SO_effective}/${g.PT_effective}`,
       FD:  `${g.OF_available}/${g.SO_available}/${g.PT_available}`,
@@ -539,6 +563,7 @@ const rowsDisplayAdmin = computed(() => {
   }
   return out.sort((a,b)=>a.groupCode.localeCompare(b.groupCode))
 })
+
 
 const tableRows = computed(() => isAdminView.value ? rowsDisplayAdmin.value : rowsDisplayLeader.value)
 
