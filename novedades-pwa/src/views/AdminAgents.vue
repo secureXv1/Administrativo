@@ -453,51 +453,50 @@ async function saveEdit(){
   msg.value = ''
   const id = form.value.id
 
-  try {
-    // 1) Cambio de grupo/unidad/código/categoría (según rol)
-    if (isSuperadmin.value) {
-      await axios.put(`/admin/agents/${id}`, {
-        code: form.value.code,
-        category: uiToApiCategory(form.value.categoryUi),
-        groupId: form.value.groupId || null,
-        unitId: form.value.unitId || null
-      }, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
-    } else if (isAdminLike.value) {
-      await axios.put(`/admin/agents/${id}`, {
-        groupId: form.value.groupId || null,
-        unitId: form.value.unitId || null
-      }, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
-    } else if (isLeaderGroup.value) {
-      // sólo unidad dentro de mi grupo
-      if ((editing.value.unitId || null) !== (form.value.unitId || null)) {
-        await axios.put(`/my/agents/${id}/unit`, {
-          unitId: form.value.unitId || null
-        }, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
-      }
+  // 1) Cambios de ubicación (unidad)
+  if (isLeaderGroup.value) {
+    if ((editing.value.unitId || null) !== (form.value.unitId || null)) {
+      await axios.put(`/my/agents/${id}/unit`, { unitId: form.value.unitId || null }, authHeader())
     }
+  } else if (isAdminLike.value) {
+    // si también permites mover grupo/unidad desde admin:
+    await axios.put(`/admin/agents/${id}`, {
+      code: isSuperadmin.value ? form.value.code : undefined,
+      category: isSuperadmin.value ? uiToApiCategory(form.value.categoryUi) : undefined,
+      groupId: form.value.groupId || null,
+      unitId: form.value.unitId || null
+    }, authHeader())
+  }
 
-    // 2) Guardar novedad del día (misma validación que reporte)
-    // IMPORTANTE: este endpoint debe permitir leader_group en backend.
-    const payload = {
+  // 2) ¿cambió la NOVEDAD?
+  const novChanged =
+    String(editing.value.status||'') !== String(form.value.state||'') ||
+    String(editing.value.municipalityId||'') !== String(form.value.municipalityId||'') ||
+    (editing.value.novelty_start||'') !== (form.value.novelty_start||'') ||
+    (editing.value.novelty_end||'')   !== (form.value.novelty_end||'') ||
+    (editing.value.novelty_description||'') !== (form.value.novelty_description||'')
+
+  if (novChanged) {
+    // guarda novedad del día seleccionado
+    await axios.put(`/admin/agents/${id}/novelty`, {
       date: today.value,
       state: form.value.state,
       municipalityId: form.value.state === 'COMISIÓN DEL SERVICIO' ? form.value.municipalityId : null,
       novelty_start: (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_start : null,
       novelty_end:   (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_end   : null,
       novelty_description: (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_description : null
-    }
-    await axios.put(`/admin/agents/${id}/novelty`, payload, {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
-
-    msg.value = 'Cambios guardados ✅'
-    closeEdit()
-    await loadAgents()
-  } catch (e) {
-    // Si backend aún no permite leader_group en /admin/agents/:id/novelty, verás 403 aquí.
-    msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo guardar'
+    }, authHeader())
   }
+
+  msg.value = 'Cambios guardados ✅'
+  closeEdit()
+  await loadAgents()
 }
+
+function authHeader(){
+  return { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
+}
+
 
 async function deleteAgent(a){
   if (!confirm('¿Eliminar este agente?')) return
