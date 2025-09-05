@@ -1,265 +1,582 @@
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <!-- Bloqueo para roles no permitidos -->
-    <div v-if="isLeaderGroup" class="card">
-      <div class="card-body">
-        <h2 class="font-semibold text-slate-800">Listado de grupos</h2>
-        <p class="text-slate-600 mt-2">No autorizado.</p>
+  <!-- Filtros -->
+  <div class="card mb-2">
+    <div class="card-body">
+      <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 sm:items-end">
+        <div>
+          <label class="label">Fecha</label>
+          <input type="date" v-model="date" class="input" />
+        </div>
+
+        <!-- Admin/Supervisión: Grupo + Unidad -->
+        <template v-if="isAdmin">
+          <div>
+            <label class="label">Grupo</label>
+            <select v-model="selectedGroupId" class="input" @change="onChangeGrupo">
+              <option value="all">Todas</option>
+              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">{{ g.code }} ({{ g.name }})</option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Unidad</label>
+            <select v-model="selectedUnitId" class="input">
+              <option value="all">Todas</option>
+              <option v-for="u in unitsOfSelectedGroup" :key="u.id" :value="String(u.id)">{{ u.name }}</option>
+            </select>
+          </div>
+        </template>
+
+        <!-- Líder de grupo: filtro de UNIDAD (para el mapa) -->
+        <template v-else-if="isLeaderGroup">
+          <div class="sm:col-span-2">
+            <label class="label">Unidad</label>
+            <select v-model="selectedLeaderUnitId" class="input">
+              <option value="all">Todas</option>
+              <option v-for="u in myUnits" :key="u.id" :value="String(u.id)">{{ u.name }}</option>
+            </select>
+          </div>
+        </template>
+
+        <!-- Acciones -->
+        <div class="flex gap-2 sm:col-span-2">
+          <button @click="applyFilters" class="btn-primary flex-1 sm:flex-none">Aplicar</button>
+          <button @click="descargarExcel" class="btn-ghost flex-1 sm:flex-none">Descargar</button>
+        </div>
       </div>
     </div>
+  </div>
 
-    <template v-else>
-      <div class="card">
-        <div class="card-body">
-          <div class="flex items-center justify-between gap-2">
-            <h2 class="font-semibold text-slate-800">
-              Listado de grupos
-              <span v-if="isSupervisor" class="text-xs font-normal text-slate-500">(solo lectura)</span>
-            </h2>
-            <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
+  <!-- KPIs -->
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="kpi"><div class="card-body"><h4>FE total (OF/SO/PT)</h4><div class="value text-lg">{{ kpiFE }}</div></div></div>
+    <div class="kpi"><div class="card-body"><h4>FD total (OF/SO/PT)</h4><div class="value text-lg">{{ kpiFD }}</div></div></div>
+    <div class="kpi"><div class="card-body"><h4>Novedades totales (OF/SO/PT)</h4><div class="value text-lg">{{ kpiNOV }}</div></div></div>
+  </div>
+
+  <!-- Agentes sin grupo -->
+  <div class="flex flex-col sm:flex-row gap-3">
+    <div class="kpi bg-white flex-1">
+      <div class="card-body">
+        <h4>Agentes sin grupo</h4>
+        <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mapa -->
+  <div class="card">
+    <div class="card-body">
+      <h3 class="font-semibold mb-3 text-slate-700">Mapa de ubicación de agentes</h3>
+      <div class="relative">
+        <div id="mapa-agentes" class="relative z-0"
+             style="height:300px;min-height:200px;width:100%;border-radius:12px;box-shadow:0 2px 8px #0001;background:#eee;">
+        </div>
+        <!-- Botón overlay Pantalla Completa -->
+        <button class="map-fs-btn" type="button" title="Pantalla completa" aria-label="Pantalla completa del mapa"
+                @click="toggleFullscreen">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M9 3H3v6M3 3l6 6M15 21h6v-6M21 21l-6-6M21 9V3h-6M15 9l6-6M3 15v6h6M9 15l-6 6"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cumplimiento -->
+  <div class="card" ref="complianceBox">
+    <div class="card-body space-y-4">
+      <div class="flex items-center justify-between flex-wrap">
+        <h3 class="font-semibold text-slate-800">
+          Cumplimiento ({{ checkpointLabel }})
+          <span v-if="isAdmin" class="text-slate-500 font-normal text-sm">– grupos completos (todas sus unidades)</span>
+        </h3>
+        <button class="btn-ghost" @click="reloadCompliance">Actualizar</button>
+      </div>
+
+      <!-- Líder (igual que antes) -->
+      <template v-if="isLeaderGroup">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <h4 class="text-slate-600 mb-2">✅ Actualizaron</h4>
+            <div class="flex flex-wrap gap-2">
+              <span v-for="g in compliance.done" :key="'d'+(g.groupCode||g.unitName)"
+                    class="inline-flex items-center gap-2 rounded-full border text-sm font-medium px-3 py-1 bg-green-50 text-green-700 border-green-200">
+                {{ g.unitName || g.groupCode }}
+              </span>
+              <span v-if="!compliance.done.length" class="text-slate-500 text-sm">Nadie aún</span>
+            </div>
+          </div>
+          <div>
+            <h4 class="text-slate-600 mb-2">⏳ Pendientes</h4>
+            <div class="flex flex-wrap gap-2">
+              <span v-for="g in compliance.pending" :key="'p'+(g.groupCode||g.unitName)"
+                    class="inline-flex items-center gap-2 rounded-full border text-sm font-medium px-3 py-1 bg-amber-50 text-amber-800 border-amber-200">
+                {{ g.unitName || g.groupCode }}
+              </span>
+              <span v-if="!compliance.pending.length" class="text-slate-500 text-sm">Sin pendientes</span>
+            </div>
           </div>
         </div>
-      </div>
+      </template>
 
-      <div class="card">
-        <div class="card-body">
-          <!-- Formulario: SOLO superadmin -->
-          <form v-if="isSuperadmin" class="mb-6 grid grid-cols-1 sm:grid-cols-5 gap-2 items-end" @submit.prevent="onSubmit">
-            <input class="input sm:col-span-1" v-model="form.code" placeholder="Código" maxlength="20" required />
-            <input class="input sm:col-span-3" v-model="form.name" placeholder="Nombre" maxlength="80" required />
-            <div class="flex gap-2 sm:col-span-1">
-              <button class="btn-primary flex-1" type="submit">
-                {{ form.id ? 'Actualizar' : 'Crear grupo' }}
-              </button>
-              <button v-if="form.id" class="btn-ghost" @click.prevent="resetForm">Cancelar</button>
+      <!-- Admin / Supervisor -->
+      <template v-else-if="isAdmin">
+        <div class="space-y-3">
+          <div>
+            <h4 class="text-slate-600 mb-2"><span class="inline-flex items-center gap-2"><span class="inline-block w-2.5 h-2.5 rounded-full bg-green-600"></span>Grupos completos</span></h4>
+            <div class="flex flex-wrap gap-2">
+              <span v-for="g in compAdmin.complete" :key="'cg'+g.groupId"
+                    class="inline-flex items-center gap-2 rounded-full border text-sm font-medium px-3 py-1 bg-green-50 text-green-700 border-green-200 shadow">
+                {{ g.groupCode }}
+              </span>
+              <span v-if="!compAdmin.complete.length" class="text-slate-500 text-sm">Ninguno aún</span>
             </div>
-          </form>
+          </div>
 
-          <table class="table w-full">
-            <thead>
-              <tr>
-                <th class="w-[90px]">ID</th>
-                <th class="w-[180px]">Código</th>
-                <th>Nombre</th>
-                <th v-if="isSuperadmin" class="w-[120px] text-right">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="g in groups" :key="g.id">
-                <td>{{ g.id }}</td>
-                <td>
-                  <template v-if="isSuperadmin && g._editing">
-                    <input class="input" v-model="g.editCode" />
-                  </template>
-                  <template v-else>{{ g.code }}</template>
-                </td>
-                <td>
-                  <template v-if="isSuperadmin && g._editing">
-                    <input class="input" v-model="g.editName" />
-                  </template>
-                  <template v-else>{{ g.name || '—' }}</template>
-                </td>
-
-                <!-- Acciones SOLO superadmin -->
-                <td v-if="isSuperadmin" class="text-right">
-                  <div class="flex justify-end gap-2">
-                    <template v-if="!g._editing">
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                        title="Editar" @click="editGroup(g)">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none">
-                          <path d="M4 21h4l11-11a2.828 2.828 0 10-4-4L4 17v4z"
-                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span>Editar</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-lg border border-red-600 bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
-                        title="Eliminar" @click="deleteGroup(g)">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none">
-                          <path d="M3 6h18M8 6V4h8v2m-1 0v14a2 2 0 01-2 2H9a2 2 0 01-2-2V6h10z"
-                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span>Eliminar</span>
-                      </button>
-                    </template>
-
-                    <template v-else>
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-lg border border-blue-600 bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
-                        title="Guardar" @click="saveGroup(g)">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none">
-                          <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span>Guardar</span>
-                      </button>
-                      <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                        title="Cancelar" @click="cancelEdit(g)">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none">
-                          <path d="M6 18L18 6M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                        </svg>
-                        <span>Cancelar</span>
-                      </button>
-                    </template>
+          <div>
+            <h4 class="text-slate-600 mb-2"><span class="inline-flex items-center gap-2"><span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-600"></span>Grupos con unidades pendientes</span></h4>
+            <div class="flex flex-wrap gap-2">
+              <div v-for="g in compAdmin.pending" :key="'pg'+g.groupId" class="relative">
+                <button @click="togglePendingPopover(g.groupId)"
+                        class="inline-flex items-center gap-2 rounded-full border text-sm font-medium px-3 py-1 bg-amber-50 text-amber-800 border-amber-200 shadow">
+                  {{ g.groupCode }}
+                  <span class="ml-1 inline-flex items-center justify-center text-xs font-semibold rounded-full min-w-[18px] h-[18px] px-[6px] bg-amber-200 text-amber-900 border border-amber-300">{{ g.missingUnits.length }}</span>
+                </button>
+                <!-- Popover -->
+                <div v-if="openGroupId === g.groupId"
+                     class="absolute top-[calc(100%+8px)] left-0 z-30 w-72 bg-white border border-slate-200 rounded-xl shadow-xl">
+                  <div class="absolute -top-2 left-4 w-4 h-4 bg-white border-l border-t border-slate-200 rotate-45"></div>
+                  <div class="p-3">
+                    <div class="font-medium text-slate-700 mb-2">Unidades pendientes ({{ g.missingUnits.length }})</div>
+                    <ul class="space-y-1 max-h-56 overflow-auto pr-1">
+                      <li v-for="u in g.missingUnits" :key="u" class="text-slate-700 text-sm">• {{ u }}</li>
+                    </ul>
                   </div>
-                </td>
-              </tr>
-
-              <tr v-if="groups.length === 0">
-                <td :colspan="isSuperadmin ? 4 : 3" class="text-center text-slate-500 py-6">Sin grupos</td>
-              </tr>
-            </tbody>
-          </table>
+                </div>
+              </div>
+              <span v-if="!compAdmin.pending.length" class="text-slate-500 text-sm">Sin pendientes</span>
+            </div>
+          </div>
         </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Tabla -->
+  <div class="card">
+    <div class="card-body p-0">
+      <div class="overflow-x-auto">
+        <table class="table text-xs sm:text-sm">
+          <thead>
+            <tr>
+              <th>{{ isAdmin ? 'Grupo' : 'Unidad' }}</th>
+              <th>Fecha</th>
+              <th>{{ isAdmin ? 'Hora de cierre' : 'Hora' }}</th>
+              <th>FE (OF/SO/PT)</th>
+              <th>FD (OF/SO/PT)</th>
+              <th>Novedades (OF/SO/PT)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in tableRows" :key="r._key" class="hover:bg-slate-50">
+              <td>
+                <template v-if="!isAdmin">
+                  <span class="inline-flex items-center gap-2 cursor-pointer hover:underline text-brand-700" @click="goToGroupDetail(r)">
+                    <span class="h-2 w-2 rounded-full bg-brand-600"></span>
+                    {{ r.unitName || r.groupCode }}
+                  </span>
+                </template>
+                <template v-else>
+                  <span class="inline-flex items-center gap-2">
+                    <span class="h-2 w-2 rounded-full" :class="r.isComplete ? 'bg-green-600' : 'bg-amber-600'"></span>
+                    {{ r.groupCode }}
+                  </span>
+                </template>
+              </td>
+              <td>{{ r.date }}</td>
+              <td>{{ formatTime(r.time) }}</td>
+              <td class="font-medium text-slate-900">{{ r.FE }}</td>
+              <td class="font-medium text-slate-900">{{ r.FD }}</td>
+              <td class="font-medium text-slate-900">{{ r.NOV }}</td>
+            </tr>
+            <tr v-if="tableRows.length === 0">
+              <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
+import L from 'leaflet'
+import { useRouter } from 'vue-router'
 
-const groups = ref([])
-const msg = ref('')
-const me = ref(JSON.parse(localStorage.getItem('me') || '{}'))
+const router = useRouter()
 
-const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
-const isSuperadmin = computed(() => (me.value.role || '').toLowerCase() === 'superadmin')
-const isSupervisor  = computed(() => (me.value.role || '').toLowerCase() === 'supervision' || (me.value.role || '').toLowerCase() === 'supervisor')
-const isLeaderGroup = computed(() => (me.value.role || '').toLowerCase() === 'leader_group')
-
-// Formulario reactivo
-const form = ref({ id: null, code: '', name: '' })
-
-function authHeader() {
-  return { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-}
-
-async function ensureMe() {
+// ===== Auth/User
+const me = ref(null)
+async function loadMe () {
   try {
-    const { data } = await axios.get('/me', { headers: authHeader() })
+    const { data } = await axios.get('/me', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
     me.value = data
-    localStorage.setItem('me', JSON.stringify(data))
-  } catch (e) {
-    // si falla, igual intentamos pintar mensaje
-  }
+  } catch { me.value = null }
 }
+const roleLc = computed(() => String(me.value?.role || '').trim().toLowerCase())
+const isAdmin = computed(() => ['superadmin','supervision','supervisor'].includes(roleLc.value))
+const isLeaderGroup = computed(() => roleLc.value === 'leader_group')
 
-async function load() {
-  msg.value = ''
-  try {
-    const { data } = await axios.get('/admin/groups', { headers: authHeader() })
-    groups.value = (Array.isArray(data) ? data : []).map(g => ({
-      ...g,
-      editCode: g.code,
-      editName: g.name,
-      _editing: false,
-      _original: null
-    }))
-    if (!groups.value.length) msg.value = 'No hay grupos para mostrar'
-  } catch (e) {
-    msg.value = e.response?.data?.detail || e.response?.data?.error || 'Error al cargar grupos'
-  }
-}
+// ===== Filtros
+const today = new Date().toISOString().slice(0,10)
+const date = ref(today)
+const selectedGroupId = ref('all')
+const selectedUnitId  = ref('all')
+const selectedLeaderUnitId = ref('all')
 
-function resetForm() {
-  form.value = { id: null, code: '', name: '' }
-  msg.value = ''
-}
+// ===== Datos grupos/unidades
+const grupos = ref([])
+const units = ref([])
+const myUnits = ref([])
 
-function editGroup(g) {
-  if (!isSuperadmin.value) return
-  g._original = { code: g.editCode, name: g.editName }
-  g._editing = true
-}
-
-function cancelEdit(g) {
-  if (!g._original) { g._editing = false; return }
-  g.editCode = g._original.code
-  g.editName = g._original.name
-  g._editing = false
-  g._original = null
-}
-
-// Crear o actualizar (SOLO superadmin)
-async function onSubmit() {
-  if (!isSuperadmin.value) return
-  if (!form.value.code.trim()) { msg.value = 'El código es requerido'; return }
-  if (!form.value.name.trim()) { msg.value = 'El nombre es requerido'; return }
-  try {
-    if (!form.value.id) {
-      await axios.post('/admin/groups',
-        { code: form.value.code.trim(), name: form.value.name.trim() },
-        { headers: authHeader() }
-      )
-      msg.value = 'Grupo creado ✅'
-    } else {
-      await axios.put(`/admin/groups/${form.value.id}`,
-        { code: form.value.code.trim(), name: form.value.name.trim() },
-        { headers: authHeader() }
-      )
-      msg.value = 'Grupo actualizado ✅'
-    }
-    await load()
-    resetForm()
-  } catch (e) {
-    msg.value = e.response?.data?.detail || e.response?.data?.error || 'Error al guardar'
-  }
-}
-
-// Guardar fila (SOLO superadmin)
-async function saveGroup(g) {
-  if (!isSuperadmin.value) return
-  if (!g.editCode?.trim() || !g.editName?.trim()) { msg.value = 'Código y nombre requeridos'; return }
-  try {
-    await axios.put(`/admin/groups/${g.id}`,
-      { code: g.editCode.trim(), name: g.editName.trim() },
-      { headers: authHeader() }
-    )
-    g.code = g.editCode
-    g.name = g.editName
-    g._editing = false
-    g._original = null
-    msg.value = 'Grupo actualizado ✅'
-  } catch (e) {
-    msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo actualizar'
-  }
-}
-
-// Eliminar (SOLO superadmin)
-async function deleteGroup(g) {
-  if (!isSuperadmin.value) return
-  if (!confirm(`¿Eliminar grupo ${g.code}?`)) return
-  try {
-    await axios.delete(`/admin/groups/${g.id}`, { headers: authHeader() })
-    groups.value = groups.value.filter(x => x.id !== g.id)
-    msg.value = 'Grupo eliminado ✅'
-    // si estabas editando el mismo, limpia form
-    if (form.value.id === g.id) resetForm()
-  } catch (e) {
-    msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo eliminar'
-  }
-}
-
-onMounted(async () => {
-  await ensureMe()
-  // si es líder de grupo, no cargamos nada (no autorizado)
-  if (!isLeaderGroup.value) await load()
+const unitsOfSelectedGroup = computed(() => {
+  if (selectedGroupId.value === 'all') return []
+  return units.value.filter(u => String(u.groupId) === String(selectedGroupId.value))
 })
+
+async function loadGrupos () {
+  const { data } = await axios.get('/admin/groups', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  grupos.value = Array.isArray(data) ? data : []
+}
+async function loadUnits () {
+  if (!isAdmin.value) return
+  const { data } = await axios.get('/admin/units', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  units.value = Array.isArray(data) ? data : []
+}
+async function loadMyUnits () {
+  if (!isLeaderGroup.value) return
+  const { data } = await axios.get('/my/units', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  myUnits.value = Array.isArray(data) ? data : []
+}
+function onChangeGrupo () { selectedUnitId.value = 'all' }
+
+// ===== KPIs / Tabla base
+const rows = ref([])
+const tot = ref({ OF_FE:0,SO_FE:0,PT_FE:0, OF_FD:0,SO_FD:0,PT_FD:0, OF_N:0,SO_N:0,PT_N:0 })
+const kpiFE  = computed(() => `${tot.value.OF_FE}/${tot.value.SO_FE}/${tot.value.PT_FE}`)
+const kpiFD  = computed(() => `${tot.value.OF_FD}/${tot.value.SO_FD}/${tot.value.PT_FD}`)
+const kpiNOV = computed(() => `${tot.value.OF_N}/${tot.value.SO_N}/${tot.value.PT_N}`)
+
+function recalcTotals () {
+  tot.value = { OF_FE:0,SO_FE:0,PT_FE:0, OF_FD:0,SO_FD:0,PT_FD:0, OF_N:0,SO_N:0,PT_N:0 }
+  for (const r of rows.value) {
+    tot.value.OF_FE += r.OF_effective||0
+    tot.value.SO_FE += r.SO_effective||0
+    tot.value.PT_FE += r.PT_effective||0
+    tot.value.OF_FD += r.OF_available||0
+    tot.value.SO_FD += r.SO_available||0
+    tot.value.PT_FD += r.PT_available||0
+    tot.value.OF_N  += r.OF_nov||0
+    tot.value.SO_N  += r.SO_nov||0
+    tot.value.PT_N  += r.PT_nov||0
+  }
+}
+
+function formatTime (ts) {
+  if (!ts) return '—'
+  const d = new Date(ts)
+  return Number.isNaN(d.getTime()) ? '—' : d.toISOString().substring(11,16)
+}
+
+function goToGroupDetail (r) { router.push(`/admin/report/${r.id}`) }
+
+// ===== Mapa
+const municipalitiesMap = ref([])
+
+async function loadMapData () {
+  const params = { date: date.value }
+  if (isLeaderGroup.value) {
+    const { data } = await axios.get('/admin/agent-municipalities', { params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+    let list = data || []
+    if (selectedLeaderUnitId.value !== 'all') list = list.filter(m => String(m.unitId) === String(selectedLeaderUnitId.value))
+    municipalitiesMap.value = list
+  } else {
+    if (selectedGroupId.value !== 'all') params.groups = selectedGroupId.value
+    if (selectedUnitId.value  !== 'all') params.units  = selectedUnitId.value
+    const { data } = await axios.get('/admin/agent-municipalities', { params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+    municipalitiesMap.value = data || []
+  }
+  setTimeout(drawMap, 100)
+}
+
+function drawMap () {
+  if (window.myMap) { window.myMap.remove(); window.myMap = null }
+  const hasFsPlugin = !!(L.Control && L.Control.Fullscreen)
+  window.myMap = L.map('mapa-agentes', { fullscreenControl: hasFsPlugin }).setView([6.25, -75.6], 7)
+  if (hasFsPlugin) window.myMap.addControl(new L.Control.Fullscreen())
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 15, attribution: 'Map data © OpenStreetMap contributors' }).addTo(window.myMap)
+  municipalitiesMap.value.forEach(m => {
+    if (m.lat && m.lon) {
+      L.marker([m.lat, m.lon], {
+        icon: L.icon({ iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png', iconSize:[25,41], iconAnchor:[12,41] })
+      }).addTo(window.myMap).bindPopup(`
+        <b>${m.name}</b><br/>
+        <span style="font-size:13px">${m.dept}</span><br/>
+        Agentes: <b>${m.agent_count}</b><br/>
+        ${m.groupCode}${m.unitName ? ' — ' + m.unitName : ''}
+      `)
+    }
+  })
+}
+
+// Fullscreen (fallback nativo)
+function toggleFullscreen () {
+  const el = document.getElementById('mapa-agentes')
+  if (!document.fullscreenElement) {
+    (el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen)?.call(el)
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen)?.call(document)
+  }
+}
+
+// ===== Agentes libres
+const agentesLibres = ref(0)
+async function loadAgentesLibres () {
+  let params = { limit: 9999 }
+  if (isLeaderGroup.value && me.value?.groupId) params.groupId = me.value.groupId
+  const { data } = await axios.get('/admin/agents', { params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  agentesLibres.value = isLeaderGroup.value
+    ? (data || []).filter(a => !a.unitId).length
+    : (data || []).filter(a => a.groupId == null || a.groupId === 0).length
+}
+
+// ===== Cumplimiento
+const compliance = ref({ done: [], pending: [] }) // líder
+const checkpointLabel = 'diario'
+async function loadComplianceLeader () {
+  let url = '/dashboard/compliance'
+  const params = { date: date.value }
+  if (isLeaderGroup.value && me.value?.groupId) { url = '/dashboard/compliance-units'; params.groupId = me.value.groupId }
+  const { data } = await axios.get(url, { params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  compliance.value = { done: data.done || [], pending: data.pending || [] }
+}
+
+// Admin/Supervisor
+const compAdmin = ref({ complete: [], pending: [] })
+const openGroupId = ref(null)
+const complianceBox = ref(null)
+
+async function loadComplianceAdmin () {
+  const [unitsResp, groupsResp, reportsResp] = await Promise.all([
+    axios.get('/admin/units',  { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }),
+    axios.get('/admin/groups', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }),
+    axios.get('/reports',      { params: { date: date.value }, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  ])
+
+  const unitsList   = Array.isArray(unitsResp.data)  ? unitsResp.data  : []
+  const groupsList  = Array.isArray(groupsResp.data) ? groupsResp.data : []
+  const reportsList = Array.isArray(reportsResp.data)? reportsResp.data: []
+
+  const unitsByGroup = {}
+  for (const u of unitsList) {
+    if (!unitsByGroup[u.groupId]) unitsByGroup[u.groupId] = []
+    unitsByGroup[u.groupId].push(u)
+  }
+
+  const reportedByGroup = {}
+  for (const r of reportsList) {
+    const gid = r.groupId, uid = r.unitId
+    if (!reportedByGroup[gid]) reportedByGroup[gid] = new Set()
+    if (uid) reportedByGroup[gid].add(uid)
+  }
+
+  const complete = []
+  const pending  = []
+
+  for (const g of groupsList) {
+    const allUnits = unitsByGroup[g.id] || []
+    const repSet   = reportedByGroup[g.id] || new Set()
+    const missingUnits = allUnits.filter(u => !repSet.has(u.id)).map(u => u.name)
+
+    if (allUnits.length === 0 || missingUnits.length === 0) {
+      complete.push({ groupId: g.id, groupCode: g.code })
+    } else {
+      pending.push({ groupId: g.id, groupCode: g.code, missingUnits })
+    }
+  }
+
+  compAdmin.value = {
+    complete: complete.sort((a,b) => a.groupCode.localeCompare(b.groupCode)),
+    pending : pending.sort((a,b) => a.groupCode.localeCompare(b.groupCode))
+  }
+}
+
+// ===== Tabla agregada por grupo para admin/supervisor
+const rowsDisplayLeader = computed(() =>
+  rows.value.map(r => ({
+    _key: r.id,
+    id: r.id,
+    unitName: r.unitName,
+    groupCode: r.groupCode,
+    date: r.date,
+    time: r.updatedAt,
+    FE:  `${r.OF_effective||0}/${r.SO_effective||0}/${r.PT_effective||0}`,
+    FD:  `${r.OF_available||0}/${r.SO_available||0}/${r.PT_available||0}`,
+    NOV: `${r.OF_nov||0}/${r.SO_nov||0}/${r.PT_nov||0}`
+  }))
+)
+
+const completeGroupCodes = computed(() => new Set(compAdmin.value.complete.map(x => x.groupCode)))
+
+const rowsDisplayAdmin = computed(() => {
+  const map = new Map()
+  for (const r of rows.value) {
+    const code = r.groupCode
+    if (!code) continue
+    if (!map.has(code)) {
+      map.set(code, {
+        _key: code, groupCode: code, date: r.date,
+        updatedAtMax: r.updatedAt || null,
+        OF_effective:0, SO_effective:0, PT_effective:0,
+        OF_available:0, SO_available:0, PT_available:0,
+        OF_nov:0, SO_nov:0, PT_nov:0
+      })
+    }
+    const g = map.get(code)
+    const ts = new Date(r.updatedAt || 0).getTime()
+    const old = new Date(g.updatedAtMax || 0).getTime()
+    if (isFinite(ts) && ts > old) g.updatedAtMax = r.updatedAt
+
+    g.OF_effective += r.OF_effective||0
+    g.SO_effective += r.SO_effective||0
+    g.PT_effective += r.PT_effective||0
+    g.OF_available += r.OF_available||0
+    g.SO_available += r.SO_available||0
+    g.PT_available += r.PT_available||0
+    g.OF_nov += r.OF_nov||0
+    g.SO_nov += r.SO_nov||0
+    g.PT_nov += r.PT_nov||0
+  }
+
+  const out = []
+  for (const [code, g] of map.entries()) {
+    const complete = completeGroupCodes.value.has(code)
+    out.push({
+      _key: code, groupCode: code, date: g.date,
+      time: complete ? g.updatedAtMax : null,
+      isComplete: complete,
+      FE:  `${g.OF_effective}/${g.SO_effective}/${g.PT_effective}`,
+      FD:  `${g.OF_available}/${g.SO_available}/${g.PT_available}`,
+      NOV: `${g.OF_nov}/${g.SO_nov}/${g.PT_nov}`
+    })
+  }
+  return out.sort((a,b) => a.groupCode.localeCompare(b.groupCode))
+})
+
+const tableRows = computed(() => isAdmin.value ? rowsDisplayAdmin.value : rowsDisplayLeader.value)
+
+// ===== Carga / Export
+async function load () {
+  const params = { date_from: date.value, date_to: date.value }
+  if (isLeaderGroup.value && me.value?.groupId) {
+    params.groupId = me.value.groupId
+  } else {
+    if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
+    if (selectedUnitId.value  !== 'all') params.unitId  = selectedUnitId.value
+  }
+  const { data } = await axios.get('/dashboard/reports', { params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  rows.value = data.items || []
+  recalcTotals()
+}
+
+async function descargarExcel () {
+  const params = { date: date.value }
+  if (isLeaderGroup.value) params.groupId = me.value.groupId
+  else {
+    if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
+    if (selectedUnitId.value  !== 'all') params.unitId  = selectedUnitId.value
+  }
+  const { data } = await axios.get('/reports/export', { params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  const normalizado = data.map(row => {
+    const out = {}; for (const k in row) { let v = row[k]; if (v==null || (typeof v==='string' && v.trim()==='')) v='N/A'; out[k]=v }
+    return out
+  })
+  const ws = XLSX.utils.json_to_sheet(normalizado)
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'DatosNovedades')
+  const wbout = XLSX.write(wb, { bookType:'xlsx', type:'array' })
+  saveAs(new Blob([wbout], { type:'application/octet-stream' }), `novedades_${params.date}.xlsx`)
+}
+
+// ===== Acciones
+async function applyFilters () {
+  await load()
+  if (isLeaderGroup.value) await loadComplianceLeader()
+  else await loadComplianceAdmin()
+  await loadMapData()
+  await loadAgentesLibres()
+}
+async function reloadCompliance () {
+  if (isLeaderGroup.value) await loadComplianceLeader()
+  else await loadComplianceAdmin()
+}
+
+// ===== Init
+function handleClickOutside (e) {
+  const el = complianceBox.value; if (!el) return
+  if (!el.contains(e.target)) openGroupId.value = null
+}
+onMounted(async () => {
+  await loadMe()
+  await loadGrupos()
+  if (isAdmin.value) await loadUnits()
+  if (isLeaderGroup.value) await loadMyUnits()
+
+  selectedGroupId.value = 'all'
+  selectedUnitId.value = 'all'
+  selectedLeaderUnitId.value = 'all'
+
+  await load()
+  if (isLeaderGroup.value) await loadComplianceLeader()
+  else await loadComplianceAdmin()
+  await loadMapData()
+  await loadAgentesLibres()
+
+  document.addEventListener('click', handleClickOutside)
+
+  // debug rápido por si acaso
+  console.log('role:', me.value?.role, 'isAdmin:', isAdmin.value, 'isLeaderGroup:', isLeaderGroup.value)
+})
+onBeforeUnmount(() => document.removeEventListener('click', handleClickOutside))
 </script>
 
 <style scoped>
 .input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500; }
 .btn-primary { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700; }
 .btn-ghost { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100; }
-.table thead th { @apply text-left text-slate-600 font-semibold; }
-.table tbody td { @apply align-middle; }
+.label { @apply text-sm text-slate-600; }
 .card { @apply bg-white rounded-xl shadow; }
 .card-body { @apply p-4; }
+.kpi { @apply bg-white rounded-xl shadow; }
+
+/* Botón overlay Fullscreen */
+.map-fs-btn{
+  position:absolute; right:12px; top:12px; z-index:1000;
+  width:44px; height:44px; border-radius:12px;
+  display:flex; align-items:center; justify-content:center;
+  background:#ffffffeb; color:#0f172a;
+  border:1px solid #cbd5e1;
+  box-shadow:0 6px 18px rgba(15,23,42,.18);
+  transition: transform .08s ease, box-shadow .08s ease, background .2s ease;
+}
+.map-fs-btn:hover{ transform: translateY(-1px); background:#fff; }
+
+/* Fullscreen API */
+#mapa-agentes:fullscreen,
+#mapa-agentes:-webkit-full-screen{ width:100% !important; height:100% !important; }
+:deep(.leaflet-container.leaflet-fullscreen-on){ width:100% !important; height:100% !important; }
 </style>
