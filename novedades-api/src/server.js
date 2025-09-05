@@ -140,61 +140,208 @@ async function main() {
 });
 
 // ===== Mis agentes (del líder de unidad) =====
-app.get('/my/agents', auth, requireRole('leader_unit'), async (req, res) => {
-  const unitId = req.user.unitId;
-  const now = new Date();
-  const reportDate = now.toISOString().slice(0, 10);
+// ===== Mis agentes (líder de unidad o de grupo) =====
+app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (req, res) => {
+  try {
+    const role = String(req.user.role).toLowerCase();
+    const today = new Date().toISOString().slice(0,10);
 
-  // Reporte actual de esa unidad
-  const [[report]] = await pool.query(
-    `SELECT id FROM dailyreport WHERE reportDate=? AND unitId=? LIMIT 1`,
-    [reportDate, unitId]
-  );
-  const reportId = report?.id || null;
+    if (role === 'leader_unit') {
+      // --- Igual que tenías, por unidad ---
+      const unitId = req.user.unitId;
 
-  // Consulta agentes + fechas de novedad
-  const [rows] = await pool.query(
-    `SELECT 
-        a.id, a.code, a.category, a.status, a.municipalityId,
-        m.dept, m.name,
-        da.novelty_start, da.novelty_end,
-        da.novelty_description,
-        da.state
-      FROM agent a
-      LEFT JOIN municipality m ON a.municipalityId = m.id
-      LEFT JOIN dailyreport_agent da ON da.agentId = a.id AND da.reportId = ?
-      WHERE a.unitId = ?
-      ORDER BY a.code`,
-    [reportId, unitId]
-  );
-
-  // Ahora, para los agentes SIN novedad hoy, busca la última novedad previa
-  for (const agent of rows) {
-    if (!agent.novelty_start && !agent.novelty_end && !agent.novelty_description) {
-      // Busca la última novedad pasada (puedes optimizar con un solo query si tienes muchos agentes)
-      const [[lastNovedad]] = await pool.query(
-        `SELECT novelty_start, novelty_end, novelty_description, state
-         FROM dailyreport_agent da
-         JOIN dailyreport dr ON dr.id = da.reportId
-         WHERE da.agentId = ? AND dr.reportDate < ?
-         ORDER BY dr.reportDate DESC
-         LIMIT 1`,
-        [agent.id, reportDate]
+      const [[report]] = await pool.query(
+        `SELECT id FROM dailyreport WHERE reportDate=? AND unitId=? LIMIT 1`,
+        [today, unitId]
       );
-      if (lastNovedad && ['VACACIONES','EXCUSA','PERMISO','LICENCIA PATERNIDAD','SERVICIO'].includes(lastNovedad.state)) {
-        agent.novelty_start = lastNovedad.novelty_start;
-        agent.novelty_end = lastNovedad.novelty_end;
-        agent.novelty_description = lastNovedad.novelty_description;
-      }
+      const reportId = report?.id || null;
+
+      const [rows] = await pool.query(
+        `SELECT 
+            a.id, a.code, a.category, a.status, a.groupId, a.unitId, a.municipalityId,
+            m.dept, m.name,
+            da.novelty_start, da.novelty_end, da.novelty_description, da.state
+         FROM agent a
+         LEFT JOIN municipality m ON a.municipalityId = m.id
+         LEFT JOIN dailyreport_agent da ON da.agentId=a.id AND da.reportId=?
+         WHERE a.unitId = ?
+         ORDER BY a.code`,
+        [reportId, unitId]
+      );
+
+      return res.json(rows.map(r => ({
+        ...r,
+        municipalityName: r.municipalityId ? `${r.name} (${r.dept})` : ''
+      })));
     }
+
+    // --- leader_group: todos los agentes de SU grupo, con unidad/municipio ---
+    const groupId = req.user.groupId;
+    const [rows] = await pool.query(
+      `SELECT 
+         a.id, a.code, a.category, a.status, a.groupId, a.unitId, a.municipalityId,
+         g.code AS groupCode, u.name AS unitName,
+         m.dept, m.name
+       FROM agent a
+       JOIN \`group\` g ON g.id=a.groupId
+       LEFT JOIN unit u ON u.id=a.unitId
+       LEFT JOIN municipality m ON m.id=a.municipalityId
+       WHERE a.groupId=?
+       ORDER BY a.category='OF' DESC, a.category='SO' DESC, a.category='PT' DESC, a.code`,
+      [groupId]
+    );
+
+    res.json(rows.map(r => ({
+      ...r,
+      municipalityName: r.municipalityId ? `${r.name} (${r.dept})` : ''
+    })));
+  } catch (e) {
+    res.status(500).json({ error:'MyAgentsError', detail:e.message });
+  }
+});
+
+// Cambiar de unidad (solo dentro de MI grupo) - líder de grupo
+app.put('/my/agents/:id/unit', auth, requireRole('leader_group'), async (req, res) => {
+  const { id } = req.params;
+  const { unitId } = req.body; // puede ser null
+  const myGroupId = req.user.groupId;
+
+  // Verifica que el agente pertenezca a mi grupo
+  const [[ag]] = await pool.query('SELECT id, groupId FROM agent WHERE id=? LIMIT 1', [id]);
+  if (!ag || ag.groupId !== myGroupId) {
+    return res.status(403).json({ error:'NoAutorizado', detail:'El agente no pertenece a su grupo' });
   }
 
-  const withFullName = rows.map(r => ({
-    ...r,
-    municipalityName: r.municipalityId ? `${r.name} (${r.dept})` : ""
-  }));
-  res.json(withFullName);
+  // Si envían unitId, verifica que esa unidad sea de mi grupo
+  if (unitId) {
+    const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? AND groupId=? LIMIT 1', [unitId, myGroupId]);
+    if (!u) return res.status(404).json({ error:'UnidadNoExiste', detail:'Unidad no existe en su grupo' });
+  }
+
+  await pool.query('UPDATE agent SET unitId=? WHERE id=?', [unitId || null, id]);
+  res.json({ ok:true });
 });
+
+
+// Helper: asegúrate de tener el reporte del día (o créalo vacío)
+async function ensureDailyReport(conn, date, groupId, unitId, leaderUserId) {
+  const [[ex]] = await conn.query(
+    'SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1',
+    [date, groupId, unitId]
+  );
+  if (ex) return ex.id;
+
+  await conn.query(
+    `INSERT INTO dailyreport
+      (reportDate, groupId, unitId, leaderUserId,
+       OF_effective,SO_effective,PT_effective,
+       OF_available,SO_available,PT_available,
+       OF_nov,SO_nov,PT_nov)
+     VALUES (?, ?, ?, ?, 0,0,0, 0,0,0, 0,0,0)`,
+    [date, groupId, unitId, leaderUserId]
+  );
+  const [[row]] = await conn.query(
+    'SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1',
+    [date, groupId, unitId]
+  );
+  return row.id;
+}
+
+// Editar novedad del día para un agente (fuera de la pantalla de Reporte)
+app.put('/admin/agents/:id/novelty',
+  auth, requireRole('superadmin','supervision'),
+  async (req, res) => {
+    const { id } = req.params;
+    const {
+      date,                // YYYY-MM-DD (obligatorio)
+      state,
+      municipalityId,
+      novelty_start,
+      novelty_end,
+      novelty_description
+    } = req.body;
+
+    if (!date) return res.status(422).json({ error:'FechaRequerida' });
+
+    const estadosValidos = [
+      "SIN NOVEDAD","SERVICIO","COMISIÓN DEL SERVICIO","FRANCO FRANCO",
+      "VACACIONES","LICENCIA DE MATERNIDAD","LICENCIA DE LUTO","LICENCIA REMUNERADA",
+      "LICENCIA NO REMUNERADA","EXCUSA DEL SERVICIO","LICENCIA PATERNIDAD"
+    ];
+    const s = String(state||'').toUpperCase().trim();
+    if (!estadosValidos.includes(s)) {
+      return res.status(422).json({ error:'Estado inválido' });
+    }
+
+    const [[ag]] = await pool.query('SELECT id, groupId, unitId FROM agent WHERE id=? LIMIT 1', [id]);
+    if (!ag) return res.status(404).json({ error:'Agente no encontrado' });
+    if (!ag.groupId || !ag.unitId) return res.status(422).json({ error:'El agente no tiene grupo/unidad asignados' });
+
+    // Normaliza reglas idénticas a /reports
+    let muniId = municipalityId ? Number(municipalityId) : null;
+    let nStart = novelty_start || null;
+    let nEnd   = novelty_end   || null;
+    let nDesc  = novelty_description || null;
+
+    if (s === 'SIN NOVEDAD') {
+      muniId = 11001; nStart = null; nEnd = null; nDesc = null;
+    } else if (s === 'SERVICIO') {
+      muniId = 11001;
+      if (!nStart) return res.status(422).json({ error:'Falta fecha de inicio (SERVICIO)' });
+      if (!nEnd)   return res.status(422).json({ error:'Falta fecha de fin (SERVICIO)' });
+      if (!nDesc)  return res.status(422).json({ error:'Falta descripción (SERVICIO)' });
+    } else if (s === 'COMISIÓN DEL SERVICIO') {
+      if (!muniId) return res.status(422).json({ error:'Falta municipio (COMISIÓN DEL SERVICIO)' });
+      nStart = null; nEnd = null; nDesc = null;
+    } else if (s === 'FRANCO FRANCO') {
+      muniId = null; nStart = null; nEnd = null; nDesc = null;
+    } else {
+      if (!nStart) return res.status(422).json({ error:`Falta fecha de inicio (${s})` });
+      if (!nEnd)   return res.status(422).json({ error:`Falta fecha de fin (${s})` });
+      if (!nDesc)  return res.status(422).json({ error:`Falta descripción (${s})` });
+      muniId = null;
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      const reportId = await ensureDailyReport(conn, date, ag.groupId, ag.unitId, req.user.uid);
+
+      // upsert dailyreport_agent
+      const [[exists]] = await conn.query(
+        'SELECT 1 FROM dailyreport_agent WHERE reportId=? AND agentId=? LIMIT 1',
+        [reportId, ag.id]
+      );
+      if (exists) {
+        await conn.query(
+          `UPDATE dailyreport_agent
+             SET state=?, municipalityId=?, novelty_start=?, novelty_end=?, novelty_description=?
+           WHERE reportId=? AND agentId=?`,
+          [s, muniId, nStart, nEnd, nDesc, reportId, ag.id]
+        );
+      } else {
+        await conn.query(
+          `INSERT INTO dailyreport_agent
+             (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [reportId, ag.id, ag.groupId, ag.unitId, s, muniId, nStart, nEnd, nDesc]
+        );
+      }
+
+      // Estado actual del agente (como ya haces al guardar reportes)
+      await conn.query('UPDATE agent SET status=?, municipalityId=? WHERE id=?', [s, muniId, ag.id]);
+
+      await conn.commit();
+      res.json({ ok:true, reportId });
+    } catch (e) {
+      await conn.rollback();
+      res.status(500).json({ error:'SaveNoveltyError', detail:e.message });
+    } finally {
+      conn.release();
+    }
+  }
+);
 
 
 
@@ -833,44 +980,59 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
   }
 });
 
-// Actualizar agente
+// Actualizar agente (parcial)
 app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { id } = req.params;
   const { code, category, groupId, unitId, status, municipalityId } = req.body;
-  if (!code || !category) {
-    return res.status(400).json({ error: 'Campos requeridos: code, category' });
+
+  const sets = [];
+  const params = [];
+
+  if (code !== undefined) {
+    if (!/^[A-Z][0-9]+$/.test(String(code))) return res.status(422).json({ error:'Código inválido' });
+    sets.push('code=?'); params.push(String(code).trim().toUpperCase());
   }
-  if (!/^[A-Z][0-9]+$/.test(code)) {
-    return res.status(422).json({ error: 'Código inválido' });
+  if (category !== undefined) {
+    if (!['OF','SO','PT'].includes(String(category))) return res.status(422).json({ error:'Categoría inválida' });
+    sets.push('category=?'); params.push(category);
   }
-  if (!['OF','SO','PT'].includes(category)) {
-    return res.status(422).json({ error: 'Categoría inválida' });
-  }
-  if (groupId) {
-    const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
-    if (!g) return res.status(404).json({ error: 'Grupo no existe' });
-  }
-  if (unitId) {
-    const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
-    if (!u) return res.status(404).json({ error: 'Unidad no existe' });
-  }
-  if (municipalityId) {
-    const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
-    if (!m) return res.status(404).json({ error: 'Municipio no existe' });
-  }
-  try {
-    const [r] = await pool.query(
-      `UPDATE agent SET code=?, category=?, groupId=?, unitId=?, status=?, municipalityId=? WHERE id=?`,
-      [code.trim(), category, groupId || null, unitId || null, status || 'LABORANDO', municipalityId || null, id]
-    );
-    if (r.affectedRows === 0) {
-      return res.status(404).json({ error: 'Agente no encontrado' });
+  if (groupId !== undefined) {
+    if (groupId) {
+      const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
+      if (!g) return res.status(404).json({ error:'Grupo no existe' });
     }
-    res.json({ ok: true });
+    sets.push('groupId=?'); params.push(groupId || null);
+  }
+  if (unitId !== undefined) {
+    if (unitId) {
+      const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
+      if (!u) return res.status(404).json({ error:'Unidad no existe' });
+    }
+    sets.push('unitId=?'); params.push(unitId || null);
+  }
+  if (status !== undefined) {
+    sets.push('status=?'); params.push(String(status));
+  }
+  if (municipalityId !== undefined) {
+    if (municipalityId) {
+      const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
+      if (!m) return res.status(404).json({ error:'Municipio no existe' });
+    }
+    sets.push('municipalityId=?'); params.push(municipalityId || null);
+  }
+
+  if (!sets.length) return res.status(400).json({ error:'Nada para actualizar' });
+
+  try {
+    params.push(id);
+    const [r] = await pool.query(`UPDATE agent SET ${sets.join(', ')} WHERE id=?`, params);
+    if (r.affectedRows === 0) return res.status(404).json({ error:'Agente no encontrado' });
+    res.json({ ok:true });
   } catch (e) {
-    res.status(500).json({ error: 'No se pudo actualizar', detail: e.message });
+    res.status(500).json({ error:'No se pudo actualizar', detail:e.message });
   }
 });
+
 
 // Eliminar agente
 app.delete('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
