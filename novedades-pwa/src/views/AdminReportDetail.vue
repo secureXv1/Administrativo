@@ -223,6 +223,8 @@
   </div>
 </template>
 
+
+
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -234,6 +236,13 @@ import 'vue-multiselect/dist/vue-multiselect.css'
 
 const route = useRoute()
 const router = useRouter()
+
+const BOGOTA_DC = {
+  id: 11001,
+  name: 'BOGOTÁ, D.C.',
+  dept: 'BOGOTÁ, D.C.',
+  label() { return `${this.name} (${this.dept})` }
+}
 
 // ===== user (permisos)
 const me = ref(null)
@@ -455,9 +464,11 @@ async function searchMunicipios(term){
 }
 
 // ===== Guardar
+// ===== Guardar
 async function saveEdit(){
   if (!editRow.value) return
-  // Validaciones mínimas
+
+  // Validaciones mínimas (igual que ya tenías)...
   if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipio?.id) {
     alert('Selecciona un municipio para Comisión del servicio')
     return
@@ -477,22 +488,47 @@ async function saveEdit(){
   try {
     await axios.put(`/admin/report-agents/${editRow.value.reportId}/${editRow.value.agentId}`, {
       state: form.value.state,
-      municipalityId: form.value.state === 'COMISIÓN DEL SERVICIO' ? (form.value.municipio?.id || null) : null,
+      municipalityId:
+        form.value.state === 'COMISIÓN DEL SERVICIO'
+          ? (form.value.municipio?.id || null)
+          : (['SERVICIO','SIN NOVEDAD'].includes(form.value.state) ? BOGOTA_DC.id : null),
       novelty_start: form.value.novelty_start || null,
       novelty_end: form.value.novelty_end || null,
       novelty_description: form.value.novelty_description || null
     }, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
 
-    // Actualiza en memoria
+    // 🔄 Refleja el cambio en la tabla SIN hardcodear "Bogotá (Cundinamarca)"
+    let mId = null, mName = null, mDept = null, mLabel = ''
+
+    if (form.value.state === 'COMISIÓN DEL SERVICIO') {
+      mId = form.value.municipio?.id || null
+      if (form.value.municipio?.label) {
+        // label: "Nombre (Depto)"
+        const parts = form.value.municipio.label.split(' (')
+        mName = parts[0] || null
+        mDept = parts[1] ? parts[1].replace(/\)$/, '') : null
+        mLabel = form.value.municipio.label
+      }
+    } else if (['SERVICIO','SIN NOVEDAD'].includes(form.value.state)) {
+      // En backend se fija a 11001; aquí mostramos el MISMO texto que hay en BD
+      mId = BOGOTA_DC.id
+      mName = BOGOTA_DC.name
+      mDept = BOGOTA_DC.dept
+      mLabel = BOGOTA_DC.label()
+    } else {
+      // Otros estados: municipio NULL
+      mId = null
+      mName = null
+      mDept = null
+      mLabel = ''
+    }
+
     Object.assign(editRow.value, {
       state: form.value.state,
-      municipalityId: form.value.municipio?.id || null,
-      municipalityName: form.value.municipio?.label?.split(' (')[0] || editRow.value.municipalityName || null,
-      municipalityDept: editRow.value.municipalityDept || null,
-      municipality: form.value.municipio?.label || (
-        form.value.state === 'SERVICIO' ? 'Bogotá (Cundinamarca)' :
-        form.value.state === 'SIN NOVEDAD' ? 'Bogotá (Cundinamarca)' : ''
-      ),
+      municipalityId: mId,
+      municipalityName: mName,
+      municipalityDept: mDept,
+      municipality: mLabel || (mName ? `${mName} (${mDept||''})` : 'N/A'),
       novelty_start: form.value.novelty_start || null,
       novelty_end: form.value.novelty_end || null,
       novelty_description: form.value.novelty_description || null
@@ -505,6 +541,7 @@ async function saveEdit(){
     saving.value = false
   }
 }
+
 
 // ===== Acciones varias
 async function reload(){ /* filtrado es client-side */ }
