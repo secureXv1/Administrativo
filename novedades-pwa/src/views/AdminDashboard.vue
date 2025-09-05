@@ -54,9 +54,9 @@
 
   <!-- KPIs -->
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-    <div class="kpi"><div class="card-body"><h4>FE total (OF/SO/PT)</h4><div class="value text-lg">{{ kpiFE }}</div></div></div>
-    <div class="kpi"><div class="card-body"><h4>FD total (OF/SO/PT)</h4><div class="value text-lg">{{ kpiFD }}</div></div></div>
-    <div class="kpi"><div class="card-body"><h4>Novedades totales (OF/SO/PT)</h4><div class="value text-lg">{{ kpiNOV }}</div></div></div>
+    <div class="kpi"><div class="card-body"><h4>FE total (OF/ME/PT)</h4><div class="value text-lg">{{ kpiFE }}</div></div></div>
+    <div class="kpi"><div class="card-body"><h4>FD total (OF/ME/PT)</h4><div class="value text-lg">{{ kpiFD }}</div></div></div>
+    <div class="kpi"><div class="card-body"><h4>Novedades totales (OF/ME/PT)</h4><div class="value text-lg">{{ kpiNOV }}</div></div></div>
   </div>
 
   <!-- Agentes sin grupo -->
@@ -207,9 +207,9 @@
               <th>{{ isAdminView ? 'Grupo' : 'Unidad' }}</th>
               <th>Fecha</th>
               <th>{{ isAdminView ? 'Hora de cierre' : 'Hora' }}</th>
-              <th>FE (OF/SO/PT)</th>
-              <th>FD (OF/SO/PT)</th>
-              <th>Novedades (OF/SO/PT)</th>
+              <th>FE (OF/ME/PT)</th>
+              <th>FD (OF/ME/PT)</th>
+              <th>Novedades (OF/ME/PT)</th>
             </tr>
           </thead>
           <tbody>

@@ -41,13 +41,14 @@
               />
               <datalist id="free-agents-list">
                 <option
-                  v-for="a in agentSearchResults"
-                  :key="a.id"
-                  :value="a.code"
-                  @click="onSelectAgent(a.code)"
-                >
-                  {{ a.code }} ({{ a.category }})
-                </option>
+                v-for="a in agentSearchResults"
+                :key="a.id"
+                :value="a.code"
+                @click="onSelectAgent(a.code)"
+              >
+                {{ a.code }} ({{ displayCategory(a.category) }})
+              </option>
+
               </datalist>
             </div>
             <button class="btn-primary" @click="addFreeAgent" :disabled="!selectedAgentToAdd">Agregar</button>
@@ -68,7 +69,7 @@
                   <tbody>
                     <tr v-for="(a, i) in agents" :key="a.id">
                       <td>{{ a.code }}</td>
-                      <td>{{ a.category }}</td>
+                      <td>{{ displayCategory(a.category) }}</td>
                       <td>
                         <select class="input" v-model="a.status" @change="onStateChange(a)">
                           <!-- ...options como tienes... -->
@@ -139,7 +140,7 @@
                 >
                   <div class="flex justify-between items-center mb-2">
                     <div>
-                      <div class="font-bold text-base">{{ a.code }} <span class="font-normal text-xs">({{ a.category }})</span></div>
+                      <div class="font-bold text-base">{{ a.code }} <span class="font-normal text-xs">({{ displayCategory(a.category) }})</span></div>
                       <div class="text-xs text-gray-500 mt-0.5">Estado</div>
                     </div>
                     <button class="text-red-600 text-xs underline" @click="removeAgent(a.id)">Quitar</button>
@@ -199,15 +200,15 @@
           <!-- KPIs calculados -->
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div class="kpi"><div class="card-body">
-              <h4>FE total (OF/SO/PT)</h4>
+              <h4>FE total (OF/ME/PT)</h4>
               <div class="value">{{ kpiFE }}</div>
             </div></div>
             <div class="kpi"><div class="card-body">
-              <h4>FD total (OF/SO/PT)</h4>
+              <h4>FD total (OF/ME/PT)</h4>
               <div class="value">{{ kpiFD }}</div>
             </div></div>
             <div class="kpi"><div class="card-body">
-              <h4>Novedades totales (OF/SO/PT)</h4>
+              <h4>Novedades totales (OF/ME/PT)</h4>
               <div class="value">{{ kpiNOV }}</div>
             </div></div>
           </div>
@@ -247,6 +248,12 @@ async function loadMe() {
 }
 
 const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
+
+// Mostrar "ME" cuando la categoría real sea "SO"
+function displayCategory(c) {
+  return String(c || '') === 'SO' ? 'ME' : c
+}
+
 
 
 async function loadAgents() {
