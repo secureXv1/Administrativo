@@ -140,42 +140,82 @@ async function main() {
 });
 
 // ===== Mis agentes (del líder de unidad) =====
-// ===== Mis agentes (líder de unidad o de grupo) =====
 app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (req, res) => {
   try {
     const role = String(req.user.role).toLowerCase();
-    const today = new Date().toISOString().slice(0,10);
+    const dateParam = (req.query.date || new Date().toISOString().slice(0,10)).slice(0,10);
 
     if (role === 'leader_unit') {
-      // --- Igual que tenías, por unidad ---
-      const unitId = req.user.unitId;
+  const unitId = req.user.unitId;
+  const dateParam = (req.query.date || new Date().toISOString().slice(0,10)).slice(0,10);
 
-      const [[report]] = await pool.query(
-        `SELECT id FROM dailyreport WHERE reportDate=? AND unitId=? LIMIT 1`,
-        [today, unitId]
-      );
-      const reportId = report?.id || null;
+  const [rows] = await pool.query(
+    `
+    SELECT 
+      a.id, a.code, a.category, a.status AS status_agent, a.groupId, a.unitId,
+      COALESCE(l.municipalityId, a.municipalityId) AS effectiveMunicipalityId,
 
-      const [rows] = await pool.query(
-        `SELECT 
-            a.id, a.code, a.category, a.status, a.groupId, a.unitId, a.municipalityId,
-            m.dept, m.name,
-            da.novelty_start, da.novelty_end, da.novelty_description, da.state
-         FROM agent a
-         LEFT JOIN municipality m ON a.municipalityId = m.id
-         LEFT JOIN dailyreport_agent da ON da.agentId=a.id AND da.reportId=?
-         WHERE a.unitId = ?
-         ORDER BY a.code`,
-        [reportId, unitId]
-      );
+      m_da.dept AS dept_da, m_da.name AS name_da,
+      m_ag.dept AS dept_ag, m_ag.name AS name_ag,
 
-      return res.json(rows.map(r => ({
-        ...r,
-        municipalityName: r.municipalityId ? `${r.name} (${r.dept})` : ''
-      })));
+      l.state AS da_state,
+      DATE_FORMAT(l.novelty_start,'%Y-%m-%d') AS novelty_start,
+      DATE_FORMAT(l.novelty_end  ,'%Y-%m-%d') AS novelty_end,
+      l.novelty_description
+
+    FROM agent a
+    LEFT JOIN (
+      SELECT da.*
+      FROM dailyreport_agent da
+      JOIN dailyreport dr ON dr.id = da.reportId
+      WHERE dr.reportDate <= ?
+        AND NOT EXISTS (
+          SELECT 1
+          FROM dailyreport_agent da2
+          JOIN dailyreport dr2 ON dr2.id = da2.reportId
+          WHERE da2.agentId = da.agentId
+            AND dr2.reportDate <= ?
+            AND dr2.reportDate > dr.reportDate
+        )
+    ) l ON l.agentId = a.id
+
+    LEFT JOIN municipality m_da ON m_da.id = l.municipalityId
+    LEFT JOIN municipality m_ag ON m_ag.id = a.municipalityId
+
+    WHERE a.unitId = ?
+    ORDER BY a.code
+    `,
+    [dateParam, dateParam, unitId]
+  );
+
+  const out = rows.map(r => {
+    const status = r.da_state || r.status_agent || null;
+    let municipalityName = '';
+    if (r.da_state) {
+      if (r.dept_da && r.name_da) municipalityName = `${r.dept_da} - ${r.name_da}`;
+    } else {
+      if (r.dept_ag && r.name_ag) municipalityName = `${r.dept_ag} - ${r.name_ag}`;
     }
+    return {
+      id: r.id,
+      code: r.code,
+      category: r.category,
+      status,
+      groupId: r.groupId,
+      unitId: r.unitId,
+      municipalityId: r.effectiveMunicipalityId || null,
+      municipalityName,
+      novelty_start: r.novelty_start || '',
+      novelty_end: r.novelty_end || '',
+      novelty_description: r.novelty_description || ''
+    };
+  });
 
-    // --- leader_group: todos los agentes de SU grupo, con unidad/municipio ---
+  return res.json(out);
+}
+
+
+    // --- leader_group: puedes dejarlo como lo tienes ---
     const groupId = req.user.groupId;
     const [rows] = await pool.query(
       `SELECT 
@@ -193,12 +233,14 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
 
     res.json(rows.map(r => ({
       ...r,
-      municipalityName: r.municipalityId ? `${r.name} (${r.dept})` : ''
+      municipalityName: r.municipalityId ? `${r.dept} - ${r.name}` : ''
     })));
   } catch (e) {
+    console.error('GET /my/agents error:', e);
     res.status(500).json({ error:'MyAgentsError', detail:e.message });
   }
 });
+
 
 
 // Cambiar solo la unidad de un agente (LÍDER DE GRUPO)

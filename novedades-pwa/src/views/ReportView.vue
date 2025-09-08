@@ -259,32 +259,25 @@ function displayCategory(c) {
 async function loadAgents() {
   try {
     const { data } = await axios.get('/my/agents', {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
+      params: { date: reportDate.value } // 👈 IMPORTANTE
     });
 
     agents.value = data
-      .map(a => {
-        let municipalityName = a.municipalityName || '';
-        if ((!municipalityName || municipalityName === '') && a.municipalityId && municipalities.value.length) {
-          const m = municipalities.value.find(m => m.id === a.municipalityId);
-          if (m) {
-            municipalityName = `${m.dept} - ${m.name}`;
-          }
-        }
-        return {
-          ...a,
-          municipalityName,
-          novelty_start: a.novelty_start ? a.novelty_start.slice(0, 10) : '', // YYYY-MM-DD
-          novelty_end: a.novelty_end ? a.novelty_end.slice(0, 10) : '',
-          novelty_description: a.novelty_description || '',
-        };
-      })
-      .sort((a, b) => (CATEG_ORDER[a.category] || 99) - (CATEG_ORDER[b.category] || 99)); // <--- ORDEN SIEMPRE
+      .map(a => ({
+        ...a,
+        municipalityName: a.municipalityName || '',
+        novelty_start: a.novelty_start ? a.novelty_start.slice(0, 10) : '',
+        novelty_end:   a.novelty_end   ? a.novelty_end.slice(0, 10)   : '',
+        novelty_description: a.novelty_description || '',
+      }))
+      .sort((x, y) => (CATEG_ORDER[x.category] || 99) - (CATEG_ORDER[y.category] || 99));
   } catch (e) {
-    msg.value = e.response?.data?.error || 'Error al cargar agentes'
-    agents.value = []
+    msg.value = e.response?.data?.error || 'Error al cargar agentes';
+    agents.value = [];
   }
 }
+
 
 
 async function getMunicipalityIdFromLabel(label) {
