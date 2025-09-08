@@ -626,7 +626,7 @@ if (prevReport) {
     if (
       r.novelty_start &&
       (!r.novelty_end || new Date(r.novelty_end) >= today) &&
-      ['VACACIONES','EXCUSA','PERMISO'].includes(r.state)
+      ['VACACIONES','EXCUSA','PERMISO','COMISIÓN EN EL EXTERIOR'].includes(r.state)
     ) {
       prevNovedades[r.agentId] = {
         novelty_start: r.novelty_start,
@@ -652,7 +652,7 @@ const estadosValidos = [
   "LICENCIA REMUNERADA",
   "LICENCIA NO REMUNERADA",
   "EXCUSA DEL SERVICIO",
-  "LICENCIA PATERNIDAD"
+  "LICENCIA PATERNIDAD","PERMISO","COMISIÓN EN EL EXTERIOR"
 ];
 
 for (const p of people) {
@@ -1389,7 +1389,7 @@ app.put('/admin/report-agents/:reportId/:agentId',
       "LICENCIA REMUNERADA",
       "LICENCIA NO REMUNERADA",
       "EXCUSA DEL SERVICIO",
-      "LICENCIA PATERNIDAD"
+      "LICENCIA PATERNIDAD",,"PERMISO","COMISIÓN EN EL EXTERIOR"
     ];
     const s = String(state || '').toUpperCase().trim();
     if (!estadosValidos.includes(s)) {

@@ -255,7 +255,6 @@ const estadosValidos = [
   'LICENCIA NO REMUNERADA',
   'EXCUSA DEL SERVICIO',
   'LICENCIA PATERNIDAD',
-  // nuevos
   'PERMISO',
   'COMISIÓN EXTERIOR'
 ]
@@ -452,6 +451,26 @@ function onMunicipalityInput(e){
 async function saveEdit(){
   msg.value = ''
   const id = form.value.id
+
+  // --- Validación frontend de novedad ---
+const requiereFechasYDescr = (s) =>
+  s === 'SERVICIO' || otrosRequierenFechas.includes(s)
+
+if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipalityId) {
+  msg.value = 'Selecciona un municipio válido para Comisión del servicio'
+  return
+}
+if (requiereFechasYDescr(form.value.state)) {
+  if (!form.value.novelty_start || !form.value.novelty_end) {
+    msg.value = 'Completa fecha inicio y fin'
+    return
+  }
+  if (!String(form.value.novelty_description || '').trim()) {
+    msg.value = 'La descripción es obligatoria'
+    return
+  }
+}
+
 
   // 1) Cambios de ubicación (unidad)
   if (isLeaderGroup.value) {

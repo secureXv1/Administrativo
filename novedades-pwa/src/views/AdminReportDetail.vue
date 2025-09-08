@@ -286,7 +286,9 @@ const estadosValidos = [
   'LICENCIA REMUNERADA',
   'LICENCIA NO REMUNERADA',
   'EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD'
+  'LICENCIA PATERNIDAD',
+  'PERMISO',
+  'COMISIÓN EN EL EXTERIOR'
 ]
 
 // ===== Helpers
@@ -417,8 +419,8 @@ const form     = ref({
   novelty_description:''
 })
 const needsMunicipio   = computed(() => form.value.state === 'COMISIÓN DEL SERVICIO')
-const needsFechas      = computed(() => ['SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD'].includes(form.value.state))
-const needsDescripcion = computed(() => ['SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD'].includes(form.value.state))
+const needsFechas      = computed(() => ['SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD', 'PERMISO','COMISIÓN EN EL EXTERIOR' ].includes(form.value.state))
+const needsDescripcion = computed(() => ['SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD', 'PERMISO','COMISIÓN EN EL EXTERIOR'].includes(form.value.state))
 
 function openEdit(a){
   if (!canEdit.value) return

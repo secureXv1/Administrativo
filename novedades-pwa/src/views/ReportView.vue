@@ -84,6 +84,8 @@
                           <option value="LICENCIA NO REMUNERADA">LICENCIA NO REMUNERADA</option>
                           <option value="EXCUSA DEL SERVICIO">EXCUSA DEL SERVICIO</option>
                           <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
+                          <option value="PERMISO">PERMISO</option>
+                          <option value="COMISIÓN EN EL EXTERIOR">COMISIÓN EN EL EXTERIOR</option>
                         </select>
                       </td>
                       <td>
@@ -157,6 +159,8 @@
                     <option value="LICENCIA NO REMUNERADA">LICENCIA NO REMUNERADA</option>
                     <option value="EXCUSA DEL SERVICIO">EXCUSA DEL SERVICIO</option>
                     <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
+                    <option value="PERMISO">PERMISO</option>
+                    <option value="COMISIÓN EN EL EXTERIOR">COMISIÓN EN EL EXTERIOR</option>
                   </select>
 
                   <!-- Campos dinámicos según estado -->
