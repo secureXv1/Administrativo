@@ -24,25 +24,19 @@ const routes = [
     component: AdminMenuLayout,
     meta: { requiresAuth: true },
     children: [
-      { path: '', name: 'AdminHome', component: AdminDashboard },
+  { path: '', name: 'AdminHome', component: AdminDashboard },
 
-      // Grupos: solo superadmin/supervision/supervisor
-      { path: 'groups', name: 'AdminGroups', component: AdminGroups, meta: { roles: ['superadmin', 'supervision', 'supervisor'] } },
+  { path: 'groups', name: 'AdminGroups', component: AdminGroups, meta: { roles: ['superadmin', 'supervision', 'supervisor'] } },
+  { path: 'units',  name: 'AdminUnits',  component: AdminUnits,  meta: { roles: ['leader_group', 'superadmin', 'supervision', 'supervisor'] } },
 
-      // Unidades: leader_group + admin + supervision + supervisor (UI controla edición)
-      { path: 'units', name: 'AdminUnits', component: AdminUnits, meta: { roles: ['leader_group', 'superadmin', 'supervision', 'supervisor'] } },
+  // 🔒 Solo superadmin
+  { path: 'users',  name: 'AdminUsers',  component: AdminUsers,  meta: { roles: ['superadmin'] } },
 
-      { path: 'users', name: 'AdminUsers', component: AdminUsers },
-      { path: 'agents', name: 'AdminAgents', component: AdminAgents },
-
-      { path: 'perfil', name: 'Perfil', component: Perfil },
-
-      // Detalle por UNIDAD (id de dailyreport)
-      { path: 'report/:id', name: 'ReportUnit', component: AdminReportDetail },
-
-      // Detalle por GRUPO (admin/supervision/supervisor) -> /admin/report?date=YYYY-MM-DD&groupId=123
-      { path: 'report', name: 'ReportGroup', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'supervisor'] } }
-    ]
+  { path: 'agents', name: 'AdminAgents', component: AdminAgents },
+  { path: 'perfil', name: 'Perfil', component: Perfil },
+  { path: 'report/:id', name: 'ReportUnit', component: AdminReportDetail },
+  { path: 'report', name: 'ReportGroup', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'supervisor'] } }
+  ]
   },
 
   // Fallback

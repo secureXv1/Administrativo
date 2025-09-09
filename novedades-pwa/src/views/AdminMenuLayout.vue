@@ -37,7 +37,6 @@
           <template v-else-if="me && me.role === 'leader_group'">
             <router-link to="/admin" class="btn-ghost" active-class="bg-slate-200">Dashboard</router-link>
             <router-link to="/admin/units" class="btn-ghost" active-class="bg-slate-200">Unidades</router-link>
-            <router-link to="/admin/users" class="btn-ghost" active-class="bg-slate-200">Usuarios</router-link>
             <router-link to="/admin/agents" class="btn-ghost" active-class="bg-slate-200">Agentes</router-link>
             <router-link to="/admin/perfil" class="btn-ghost" active-class="bg-slate-200">Perfil</router-link>
           </template>
@@ -46,7 +45,15 @@
             <router-link to="/admin" class="btn-ghost" active-class="bg-slate-200">Dashboard</router-link>
             <router-link to="/admin/groups" class="btn-ghost" active-class="bg-slate-200">Grupos</router-link>
             <router-link to="/admin/units" class="btn-ghost" active-class="bg-slate-200">Unidades</router-link>
-            <router-link to="/admin/users" class="btn-ghost" active-class="bg-slate-200">Usuarios</router-link>
+
+            <!-- Usuarios: SOLO superadmin -->
+            <router-link
+              v-if="me.role === 'superadmin'"
+              to="/admin/users"
+              class="btn-ghost"
+              active-class="bg-slate-200"
+            >Usuarios</router-link>
+
             <router-link to="/admin/agents" class="btn-ghost" active-class="bg-slate-200">Agentes</router-link>
             <router-link to="/admin/perfil" class="btn-ghost" active-class="bg-slate-200">Perfil</router-link>
           </template>
@@ -81,14 +88,24 @@
             <router-link to="/admin/perfil" class="btn-ghost w-full text-left" active-class="bg-slate-100">Perfil</router-link>
           </template>
           <!-- SUPERADMIN o SUPERVISION -->
-          <template v-else-if="me && (me.role === 'superadmin' || me.role === 'supervision')">
-            <router-link to="/admin" class="btn-ghost w-full text-left" active-class="bg-slate-100">Dashboard</router-link>
-            <router-link to="/admin/groups" class="btn-ghost w-full text-left" active-class="bg-slate-100">Grupos</router-link>
-            <router-link to="/admin/units" class="btn-ghost w-full text-left" active-class="bg-slate-100">Unidades</router-link>
-            <router-link to="/admin/users" class="btn-ghost w-full text-left" active-class="bg-slate-100">Usuarios</router-link>
-            <router-link to="/admin/agents" class="btn-ghost w-full text-left" active-class="bg-slate-100">Agentes</router-link>
-            <router-link to="/admin/perfil" class="btn-ghost w-full text-left" active-class="bg-slate-100">Perfil</router-link>
-          </template>
+         
+            <template v-else-if="me && (me.role === 'superadmin' || me.role === 'supervision')">
+              <router-link to="/admin" class="btn-ghost w-full text-left" active-class="bg-slate-100">Dashboard</router-link>
+              <router-link to="/admin/groups" class="btn-ghost w-full text-left" active-class="bg-slate-100">Grupos</router-link>
+              <router-link to="/admin/units" class="btn-ghost w-full text-left" active-class="bg-slate-100">Unidades</router-link>
+
+              <!-- Usuarios: SOLO superadmin -->
+              <router-link
+                v-if="me.role === 'superadmin'"
+                to="/admin/users"
+                class="btn-ghost w-full text-left"
+                active-class="bg-slate-100"
+              >Usuarios</router-link>
+
+              <router-link to="/admin/agents" class="btn-ghost w-full text-left" active-class="bg-slate-100">Agentes</router-link>
+              <router-link to="/admin/perfil" class="btn-ghost w-full text-left" active-class="bg-slate-100">Perfil</router-link>
+            </template>
+
           <button @click="logout" class="btn-ghost w-full text-left">Cerrar sesión</button>
         </nav>
       </div>

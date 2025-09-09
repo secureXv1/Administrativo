@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+  <div class="max-w-6xl mx-auto px-2 sm:px-4 py-6 space-y-6">
     <!-- Guard de rol -->
     <div v-if="!isSuperadmin" class="card">
       <div class="card-body text-red-600 font-semibold">
@@ -19,8 +19,10 @@
           <div class="grid md:grid-cols-2 gap-4">
             <div class="p-3 rounded-lg border">
               <div class="font-semibold mb-2">Grupos sin <span class="uppercase">líder de grupo</span></div>
-              <ul class="list-disc list-inside text-sm text-slate-700 max-h-40 overflow-auto"
-                  v-if="groupsMissingLeader.length">
+              <ul
+                class="list-disc list-inside text-sm text-slate-700 max-h-40 overflow-auto"
+                v-if="groupsMissingLeader.length"
+              >
                 <li v-for="g in groupsMissingLeader" :key="g.id">
                   {{ g.code }} — {{ g.name }}
                 </li>
@@ -30,8 +32,10 @@
 
             <div class="p-3 rounded-lg border">
               <div class="font-semibold mb-2">Unidades sin <span class="uppercase">líder de unidad</span></div>
-              <ul class="list-disc list-inside text-sm text-slate-700 max-h-40 overflow-auto"
-                  v-if="unitsMissingLeader.length">
+              <ul
+                class="list-disc list-inside text-sm text-slate-700 max-h-40 overflow-auto"
+                v-if="unitsMissingLeader.length"
+              >
                 <li v-for="u in unitsMissingLeader" :key="u.id">
                   {{ u.name }} <span class="text-slate-500">({{ groupCode(u.groupId) }})</span>
                 </li>
@@ -42,7 +46,7 @@
         </div>
       </div>
 
-      <!-- Listado + formulario -->
+      <!-- Formulario crear/editar -->
       <div class="card">
         <div class="card-body">
           <!-- Mensajes -->
@@ -50,16 +54,15 @@
             {{ msg }}
           </div>
 
-          <!-- Formulario crear/editar -->
-          <form class="mb-6 flex flex-wrap gap-3 items-end" @submit.prevent="onSubmit">
+          <form class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end mb-6" @submit.prevent="onSubmit">
             <div>
               <label class="label">Username</label>
-              <input class="input" v-model.trim="form.username" type="text" placeholder="username" required style="width:200px" />
+              <input class="input w-full" v-model.trim="form.username" type="text" placeholder="username" required />
             </div>
 
             <div>
               <label class="label">Rol</label>
-              <select class="input" v-model="form.role" required style="width:190px">
+              <select class="input w-full" v-model="form.role" required>
                 <option value="" disabled>Selecciona rol</option>
                 <option value="superadmin">superadmin</option>
                 <option value="supervision">supervision</option>
@@ -71,7 +74,7 @@
             <!-- Grupo (obligatorio para leader_group y leader_unit) -->
             <div v-if="showGroupSelect">
               <label class="label">Grupo</label>
-              <select class="input" v-model="form.groupId" :required="groupRequired" style="width:220px" @change="onChangeGroup">
+              <select class="input w-full" v-model="form.groupId" :required="groupRequired" @change="onChangeGroup">
                 <option value="">— Selecciona —</option>
                 <option v-for="g in groups" :key="g.id" :value="String(g.id)">
                   {{ g.code }} ({{ g.name }})
@@ -82,7 +85,7 @@
             <!-- Unidad (obligatorio para leader_unit) -->
             <div v-if="showUnitSelect">
               <label class="label">Unidad</label>
-              <select class="input" v-model="form.unitId" :required="unitRequired" style="width:240px">
+              <select class="input w-full" v-model="form.unitId" :required="unitRequired">
                 <option value="">— Selecciona —</option>
                 <option v-for="u in unitsOfSelectedGroup" :key="u.id" :value="String(u.id)">
                   {{ u.name }}
@@ -92,73 +95,106 @@
 
             <div>
               <label class="label">{{ form.id ? 'Nueva contraseña (opcional)' : 'Contraseña' }}</label>
-              <input class="input" type="password" v-model="form.password" :required="!form.id" style="width:230px" />
+              <input class="input w-full" type="password" v-model="form.password" :required="!form.id" />
             </div>
 
-            <div class="flex gap-2">
-              <button class="btn-primary" type="submit">
+            <div class="flex gap-2 sm:col-span-2 lg:col-span-1">
+              <button class="btn-primary w-full sm:w-auto" type="submit">
                 {{ form.id ? 'Actualizar' : 'Crear usuario' }}
               </button>
-              <button v-if="form.id" class="btn-ghost" @click.prevent="resetForm">Cancelar</button>
+              <button v-if="form.id" class="btn-ghost w-full sm:w-auto" @click.prevent="resetForm">Cancelar</button>
             </div>
           </form>
 
-          <!-- Tabla -->
-          <table class="table">
-            <thead>
-              <tr>
-                <th style="width:70px">ID</th>
-                <th>Username</th>
-                <th style="width:160px">Rol</th>
-                <th style="width:140px">Grupo</th>
-                <th style="width:180px">Unidad</th>
-                <th style="width:160px">Creado</th>
-                <th style="width:140px"></th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="u in users" :key="u.id">
-                <td>{{ u.id }}</td>
-                <td class="font-mono">{{ u.username }}</td>
-                <td class="uppercase">{{ u.role }}</td>
-                <td>{{ groupCode(u.groupId) || '—' }}</td>
-                <td>{{ unitName(u.unitId) || '—' }}</td>
-                <td>{{ formatDate(u.createdAt) }}</td>
-                <td>
-                  <div class="flex gap-1 items-center justify-center">
-                    <!-- Editar -->
-                    <button class="btn-ghost p-1" title="Editar" @click="editUser(u)">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/><path d="m15 5 4 4"/></svg>
-                    </button>
-                    <!-- Reset password -->
-                    <button class="btn-ghost p-1" title="Restablecer contraseña" @click="resetPassword(u)">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/></svg>
-                    </button>
-                    <!-- Eliminar -->
-                    <button class="btn-ghost p-1" title="Eliminar" @click="deleteUser(u)">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/><path d="M19 6V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="users.length===0">
-                <td colspan="7" class="text-center text-slate-500 py-6">Sin usuarios</td>
-              </tr>
-            </tbody>
-          </table>
+          <!-- Tabla (desktop) -->
+          <div class="overflow-x-auto hidden md:block">
+            <table class="table min-w-[800px]">
+              <thead>
+                <tr>
+                  <th class="w-[70px]">ID</th>
+                  <th>Username</th>
+                  <th class="w-[160px]">Rol</th>
+                  <th class="w-[140px]">Grupo</th>
+                  <th class="w-[180px]">Unidad</th>
+                  <th class="w-[160px]">Creado</th>
+                  <th class="w-[140px]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="u in users" :key="u.id">
+                  <td>{{ u.id }}</td>
+                  <td class="font-mono break-all">{{ u.username }}</td>
+                  <td class="uppercase">{{ u.role }}</td>
+                  <td>{{ groupCode(u.groupId) || '—' }}</td>
+                  <td>{{ unitName(u.unitId) || '—' }}</td>
+                  <td>{{ formatDate(u.createdAt) }}</td>
+                  <td>
+                    <div class="flex gap-1 items-center justify-center">
+                      <button class="btn-ghost p-1" title="Editar" @click="editUser(u)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/><path d="m15 5 4 4"/></svg>
+                      </button>
+                      <button class="btn-ghost p-1" title="Restablecer contraseña" @click="resetPassword(u)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/></svg>
+                      </button>
+                      <button class="btn-ghost p-1" title="Eliminar" @click="deleteUser(u)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-if="users.length===0">
+                  <td colspan="7" class="text-center text-slate-500 py-6">Sin usuarios</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Lista móvil (cards) -->
+          <div class="grid gap-3 md:hidden">
+            <div v-for="u in users" :key="u.id" class="rounded-lg border p-3 bg-white">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="text-xs text-slate-500">ID {{ u.id }}</div>
+                  <div class="font-mono break-all text-sm">{{ u.username }}</div>
+                  <div class="text-xs uppercase mt-1">Rol: <span class="font-semibold">{{ u.role }}</span></div>
+                </div>
+                <div class="flex gap-1">
+                  <button class="btn-ghost p-1" title="Editar" @click="editUser(u)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/><path d="m15 5 4 4"/></svg>
+                  </button>
+                  <button class="btn-ghost p-1" title="Reset pass" @click="resetPassword(u)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/></svg>
+                  </button>
+                  <button class="btn-ghost p-1" title="Eliminar" @click="deleteUser(u)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="mt-2 text-xs text-slate-600">
+                <div>Grupo: <span class="font-medium">{{ groupCode(u.groupId) || '—' }}</span></div>
+                <div>Unidad: <span class="font-medium">{{ unitName(u.unitId) || '—' }}</span></div>
+                <div>Creado: <span class="font-medium">{{ formatDate(u.createdAt) }}</span></div>
+              </div>
+            </div>
+
+            <div v-if="users.length===0" class="text-center text-slate-500 py-6">Sin usuarios</div>
+          </div>
         </div>
       </div>
     </template>
   </div>
 </template>
 
+
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import axios from 'axios'
 
 /* ===== state ===== */
-const me = ref(JSON.parse(localStorage.getItem('me') || '{}'))
-const isSuperadmin = computed(() => String(me.value?.role).toLowerCase() === 'superadmin')
+
+
+const me = ref(null)
+const isSuperadmin = computed(() => String(me.value?.role || '').toLowerCase() === 'superadmin')
 
 const users = ref([])
 const groups = ref([])
@@ -219,6 +255,21 @@ const unitsMissingLeader = computed(() => {
 })
 
 /* ===== load ===== */
+
+
+
+async function loadMe() {
+  try {
+    const { data } = await axios.get('/me', {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+    me.value = data
+  } catch {
+    me.value = null
+  }
+}
+
+
 async function loadAll() {
   if (!isSuperadmin.value) return
   msg.value = ''
@@ -350,5 +401,10 @@ async function deleteUser(u) {
 }
 
 /* ===== init ===== */
-onMounted(loadAll)
+onMounted(async () => {
+  await loadMe()
+  if (isSuperadmin.value) {
+    await loadAll()
+  }
+})
 </script>
