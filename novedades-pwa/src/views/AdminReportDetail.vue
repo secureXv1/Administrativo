@@ -41,7 +41,7 @@
                 <select v-model="filters.category" class="input">
                   <option value="ALL">Todas</option>
                   <option value="OF">OF</option>
-                  <option value="SO">SO</option>
+                  <option value="SO">ME</option>
                   <option value="PT">PT</option>
                 </select>
               </div>
@@ -102,7 +102,7 @@
               <tbody>
                 <tr v-for="a in agentesFiltrados" :key="a._key">
                   <td class="font-medium text-slate-900">{{ a.code }}</td>
-                  <td>{{ a.category }}</td>
+                  <td>{{ displayCat(a.category) }}</td>
                   <td v-if="isGroupMode"><span class="text-slate-700">{{ a.unitName || '—' }}</span></td>
                   <td>
                     <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border"
@@ -305,6 +305,23 @@ function formatDate(dateStr) {
   const year = d.getFullYear()
   return `${day}/${month}/${year}`
 }
+
+
+function displayCat(cat) {
+  const c = String(cat || '').toUpperCase()
+  return c === 'SO' ? 'ME' : cat
+}
+
+//ORDENAR OF ME PT
+
+const categoryOrder = { OF: 1, SO: 2, PT: 3 }
+
+function categorySort(cat) {
+  const c = String(cat || '').toUpperCase()
+  return categoryOrder[c] || 99
+}
+
+
 function badgeClass(state){
   const s = String(state || '').toUpperCase()
   if (s === 'SIN NOVEDAD') return 'bg-green-50 text-green-700 border-green-200'
@@ -386,8 +403,16 @@ const agentesFiltrados = computed(() => {
     const uName = unitsInGroup.value.find(u => String(u.id) === String(filters.value.unitId))?.name || ''
     list = list.filter(a => String(a.unitName||'') === uName)
   }
-  return list
+
+  // 👇 orden personalizado por categoría
+  return list.sort((a, b) => {
+    const ca = categorySort(a.category)
+    const cb = categorySort(b.category)
+    if (ca !== cb) return ca - cb
+    return String(a.code).localeCompare(String(b.code)) // desempate por código
+  })
 })
+
 
 // Resumen chips
 const resumenChips = computed(() => {
