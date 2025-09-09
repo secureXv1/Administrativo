@@ -49,7 +49,6 @@
       <!-- Formulario crear/editar -->
       <div class="card">
         <div class="card-body">
-          <!-- Mensajes -->
           <div v-if="msg" :class="[msgClass, 'mb-4', 'text-base', 'font-semibold']">
             {{ msg }}
           </div>
@@ -71,7 +70,6 @@
               </select>
             </div>
 
-            <!-- Grupo (obligatorio para leader_group y leader_unit) -->
             <div v-if="showGroupSelect">
               <label class="label">Grupo</label>
               <select class="input w-full" v-model="form.groupId" :required="groupRequired" @change="onChangeGroup">
@@ -82,7 +80,6 @@
               </select>
             </div>
 
-            <!-- Unidad (obligatorio para leader_unit) -->
             <div v-if="showUnitSelect">
               <label class="label">Unidad</label>
               <select class="input w-full" v-model="form.unitId" :required="unitRequired">
@@ -117,7 +114,7 @@
                   <th class="w-[140px]">Grupo</th>
                   <th class="w-[180px]">Unidad</th>
                   <th class="w-[160px]">Creado</th>
-                  <th class="w-[140px]"></th>
+                  <th class="w-[140px] text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,16 +125,30 @@
                   <td>{{ groupCode(u.groupId) || '—' }}</td>
                   <td>{{ unitName(u.unitId) || '—' }}</td>
                   <td>{{ formatDate(u.createdAt) }}</td>
-                  <td>
-                    <div class="flex gap-1 items-center justify-center">
-                      <button class="btn-ghost p-1" title="Editar" @click="editUser(u)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/><path d="m15 5 4 4"/></svg>
+                  <td class="text-center">
+                    <div class="inline-flex gap-2 items-center justify-center">
+                      <button class="btn-ghost p-1" title="Editar" @click="openEdit(u)">
+                        <!-- icon pencil -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path><path d="m16 5 3 3"></path>
+                        </svg>
                       </button>
                       <button class="btn-ghost p-1" title="Restablecer contraseña" @click="resetPassword(u)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/></svg>
+                        <!-- icon plus/rows -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/>
+                        </svg>
                       </button>
                       <button class="btn-ghost p-1" title="Eliminar" @click="deleteUser(u)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                        <!-- icon trash (unificado) -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/>
+                          <path d="M19 6V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2"/>
+                          <line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                        </svg>
                       </button>
                     </div>
                   </td>
@@ -157,31 +168,95 @@
                   <div class="text-xs text-slate-500">ID {{ u.id }}</div>
                   <div class="font-mono break-all text-sm">{{ u.username }}</div>
                   <div class="text-xs uppercase mt-1">Rol: <span class="font-semibold">{{ u.role }}</span></div>
+                  <div class="mt-2 text-xs text-slate-600">
+                    <div>Grupo: <span class="font-medium">{{ groupCode(u.groupId) || '—' }}</span></div>
+                    <div>Unidad: <span class="font-medium">{{ unitName(u.unitId) || '—' }}</span></div>
+                    <div>Creado: <span class="font-medium">{{ formatDate(u.createdAt) }}</span></div>
+                  </div>
                 </div>
                 <div class="flex gap-1">
-                  <button class="btn-ghost p-1" title="Editar" @click="editUser(u)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/><path d="m15 5 4 4"/></svg>
+                  <button class="btn-ghost p-1" title="Editar" @click="openEdit(u)">
+                    <!-- pencil -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path><path d="m16 5 3 3"></path>
+                    </svg>
                   </button>
                   <button class="btn-ghost p-1" title="Reset pass" @click="resetPassword(u)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/></svg>
+                    <!-- plus/rows -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/>
+                    </svg>
                   </button>
                   <button class="btn-ghost p-1" title="Eliminar" @click="deleteUser(u)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/></svg>
+                    <!-- trash (unificado) -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/>
+                      <path d="M19 6V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2"/>
+                      <line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                    </svg>
                   </button>
                 </div>
               </div>
-              <div class="mt-2 text-xs text-slate-600">
-                <div>Grupo: <span class="font-medium">{{ groupCode(u.groupId) || '—' }}</span></div>
-                <div>Unidad: <span class="font-medium">{{ unitName(u.unitId) || '—' }}</span></div>
-                <div>Creado: <span class="font-medium">{{ formatDate(u.createdAt) }}</span></div>
-              </div>
             </div>
-
             <div v-if="users.length===0" class="text-center text-slate-500 py-6">Sin usuarios</div>
           </div>
         </div>
       </div>
     </template>
+
+    <!-- Modal Edición -->
+    <div v-if="editing" class="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" @click.self="closeEdit">
+      <div class="bg-white rounded-xl shadow max-w-2xl w-full">
+        <div class="p-4 border-b flex items-center justify-between">
+          <div class="font-semibold text-slate-800">Editar usuario — {{ editing.username }}</div>
+          <button class="btn-ghost" @click="closeEdit">Cerrar</button>
+        </div>
+
+        <div class="p-4 space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="label">Username</label>
+              <input class="input" v-model="form.username" />
+            </div>
+            <div>
+              <label class="label">Rol</label>
+              <select class="input" v-model="form.role">
+                <option value="superadmin">superadmin</option>
+                <option value="supervision">supervision</option>
+                <option value="leader_group">leader_group</option>
+                <option value="leader_unit">leader_unit</option>
+              </select>
+            </div>
+            <div v-if="showGroupSelect">
+              <label class="label">Grupo</label>
+              <select class="input" v-model="form.groupId" @change="onChangeGroup">
+                <option value="">— Selecciona —</option>
+                <option v-for="g in groups" :key="g.id" :value="String(g.id)">{{ g.code }} ({{ g.name }})</option>
+              </select>
+            </div>
+            <div v-if="showUnitSelect">
+              <label class="label">Unidad</label>
+              <select class="input" v-model="form.unitId">
+                <option value="">— Selecciona —</option>
+                <option v-for="u in unitsOfSelectedGroup" :key="u.id" :value="String(u.id)">{{ u.name }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="label">Contraseña</label>
+              <input class="input" type="password" v-model="form.password" />
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button class="btn-ghost" @click="closeEdit">Cancelar</button>
+            <button class="btn-primary" @click="onSubmit">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -191,8 +266,6 @@ import { ref, computed, onMounted, watch } from 'vue'
 import axios from 'axios'
 
 /* ===== state ===== */
-
-
 const me = ref(null)
 const isSuperadmin = computed(() => String(me.value?.role || '').toLowerCase() === 'superadmin')
 
@@ -211,6 +284,8 @@ const form = ref({
   unitId: '',
   password: ''
 })
+
+const editing = ref(null)
 
 /* ===== derived ===== */
 const showGroupSelect = computed(() => ['leader_group','leader_unit'].includes(form.value.role))
@@ -255,9 +330,6 @@ const unitsMissingLeader = computed(() => {
 })
 
 /* ===== load ===== */
-
-
-
 async function loadMe() {
   try {
     const { data } = await axios.get('/me', {
@@ -268,7 +340,6 @@ async function loadMe() {
     me.value = null
   }
 }
-
 
 async function loadAll() {
   if (!isSuperadmin.value) return
@@ -299,7 +370,6 @@ function resetForm() {
   msg.value = ''
 }
 function onChangeGroup() {
-  // Si cambia de grupo, limpiar unidad si ya no pertenece
   if (form.value.unitId) {
     const found = unitsOfSelectedGroup.value.find(u => String(u.id) === String(form.value.unitId))
     if (!found) form.value.unitId = ''
@@ -311,7 +381,6 @@ watch(() => form.value.role, (r) => {
 })
 
 async function onSubmit() {
-  // Validaciones
   if (!form.value.username.trim()) { msg.value = 'El username es requerido'; return clearMsgAfterDelay() }
   if (!form.value.role) { msg.value = 'Selecciona el rol'; return clearMsgAfterDelay() }
   if (groupRequired.value && !form.value.groupId) { msg.value = 'Selecciona un grupo'; return clearMsgAfterDelay() }
@@ -322,7 +391,6 @@ async function onSubmit() {
     const headers = { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
 
     if (!form.value.id) {
-      // Crear
       await axios.post('/admin/users', {
         username: form.value.username.trim(),
         role: form.value.role,
@@ -332,7 +400,6 @@ async function onSubmit() {
       }, { headers })
       msg.value = 'Usuario creado ✅'
     } else {
-      // Actualizar
       const payload = {
         username: form.value.username.trim(),
         role: form.value.role,
@@ -346,6 +413,7 @@ async function onSubmit() {
 
     await loadAll()
     resetForm()
+    closeEdit()
     clearMsgAfterDelay()
   } catch (e) {
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'Error al guardar'
@@ -353,7 +421,8 @@ async function onSubmit() {
   }
 }
 
-function editUser(u) {
+function openEdit(u) {
+  editing.value = u
   form.value = {
     id: u.id,
     username: u.username || '',
@@ -363,6 +432,7 @@ function editUser(u) {
     password: ''
   }
 }
+function closeEdit() { editing.value = null }
 
 /* ===== actions per-row ===== */
 async function resetPassword(u) {
@@ -370,11 +440,9 @@ async function resetPassword(u) {
   if (!pwd) return
   try {
     const headers = { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-    // Preferir endpoint dedicado si existe
     try {
       await axios.post(`/admin/users/${u.id}/reset-password`, { password: pwd }, { headers })
     } catch {
-      // Fallback: usar PUT con password
       await axios.put(`/admin/users/${u.id}`, { password: pwd }, { headers })
     }
     msg.value = 'Contraseña restablecida ✅'
@@ -408,3 +476,13 @@ onMounted(async () => {
   }
 })
 </script>
+
+<style scoped>
+.input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500; }
+.btn-primary { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700; }
+.btn-ghost { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100; }
+.label { @apply text-sm text-slate-600; }
+.card { @apply bg-white rounded-xl shadow; }
+.card-body { @apply p-4; }
+.table th, .table td { @apply whitespace-nowrap; }
+</style>

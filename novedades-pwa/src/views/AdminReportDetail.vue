@@ -96,7 +96,7 @@
                   <th>Ubicación</th>
                   <th>Descripción</th>
                   <th>Novedad (inicio - fin)</th>
-                  <th v-if="canEdit" style="width: 56px">Acciones</th>
+                  <th v-if="canEdit" class="text-center">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -124,13 +124,13 @@
                     </template>
                   </td>
                   <td v-if="canEdit" class="text-right">
-                    <button class="icon-btn" title="Editar" @click="openEdit(a)">
-                      <!-- Lápiz -->
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M18.4 2.6a2 2 0 0 1 2.8 2.8L8.5 18.1a2 2 0 0 1-.9.5l-4 1a1 1 0 0 1-1.2-1.2l1-4a2 2 0 0 1 .5-.9Z"/>
-                        <path d="m15 5 4 4"/>
-                      </svg>
-                    </button>
+                    <button class="btn-ghost p-1" title="Editar" @click="openEdit(a)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path>
+                      <path d="m16 5 3 3"></path>
+                    </svg>
+                  </button>
                   </td>
                 </tr>
                 <tr v-if="!agentesFiltrados.length">
@@ -143,81 +143,84 @@
         </div>
 
         <!-- Modal edición -->
-        <div v-if="editOpen" class="modal-backdrop" @click.self="closeEdit">
-          <div class="modal">
-            <div class="modal-header">
-              <h3 class="font-semibold text-slate-800">Editar agente {{ editRow?.code }}</h3>
-              <button class="btn-ghost" @click="closeEdit">Cerrar</button>
+          <div v-if="editOpen" class="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4" @click.self="closeEdit">
+            <div class="bg-white rounded-xl shadow max-w-2xl w-full">
+              <div class="p-4 border-b flex items-center justify-between">
+                <div class="font-semibold text-slate-800">
+                  Editar agente — {{ editRow?.code }}
+                </div>
+                <button class="btn-ghost" @click="closeEdit">Cerrar</button>
+              </div>
+
+              <div class="p-4 space-y-4">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label class="label">Estado</label>
+                    <select v-model="form.state" class="input">
+                      <option v-for="s in estadosValidos" :key="s" :value="s">{{ s }}</option>
+                    </select>
+                  </div>
+
+                  <div v-if="needsMunicipio" class="sm:col-span-2">
+                    <label class="label">Municipio</label>
+                    <Multiselect
+                      v-model="form.municipio"
+                      :options="muniOptions"
+                      :loading="muniLoading"
+                      :internal-search="false"
+                      :clear-on-select="true"
+                      :close-on-select="true"
+                      :preserve-search="true"
+                      :show-labels="false"
+                      placeholder="Escribe para buscar…"
+                      label="label"
+                      track-by="id"
+                      @search-change="searchMunicipios"
+                      class="w-full"
+                    >
+                      <template #noResult>Ningún municipio encontrado</template>
+                      <template #option="{ option }">
+                        <div class="flex items-center justify-between w-full">
+                          <span>{{ option.label }}</span>
+                          <span class="text-xs text-slate-400">id: {{ option.id }}</span>
+                        </div>
+                      </template>
+                      <template #singleLabel="{ option }">
+                        <span>{{ option.label }}</span>
+                      </template>
+                    </Multiselect>
+                    <div class="text-xs text-slate-500 mt-1">Requerido para Comisión del servicio.</div>
+                  </div>
+
+                  <div v-if="needsFechas">
+                    <label class="label">Inicio</label>
+                    <input v-model="form.novelty_start" type="date" class="input" />
+                  </div>
+                  <div v-if="needsFechas">
+                    <label class="label">Fin</label>
+                    <input v-model="form.novelty_end" type="date" class="input" />
+                  </div>
+
+                  <div v-if="needsDescripcion" class="sm:col-span-3">
+                    <label class="label">Descripción</label>
+                    <textarea v-model="form.novelty_description" class="input" rows="2" placeholder="Motivo / detalle..."></textarea>
+                  </div>
+
+                  <div v-if="form.state === 'SERVICIO'" class="sm:col-span-3 text-xs text-slate-500">
+                    Para “SERVICIO” el municipio se fija automáticamente en Bogotá (11001).
+                  </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                  <button class="btn-ghost" @click="closeEdit">Cancelar</button>
+                  <button class="btn-primary" @click="saveEdit" :disabled="saving">
+                    {{ saving ? 'Guardando...' : 'Guardar' }}
+                  </button>
+                </div>
+              </div>
             </div>
+</div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label class="label">Estado</label>
-                <select v-model="form.state" class="input">
-                  <option v-for="s in estadosValidos" :key="s" :value="s">{{ s }}</option>
-                </select>
-              </div>
-
-              <!-- Autocomplete municipio (solo para Comisión del servicio) -->
-              <div v-if="needsMunicipio" class="sm:col-span-2">
-                <label class="label">Municipio</label>
-                <Multiselect
-                  v-model="form.municipio"
-                  :options="muniOptions"
-                  :loading="muniLoading"
-                  :internal-search="false"
-                  :clear-on-select="true"
-                  :close-on-select="true"
-                  :preserve-search="true"
-                  :show-labels="false"
-                  placeholder="Escribe para buscar…"
-                  label="label"
-                  track-by="id"
-                  @search-change="searchMunicipios"
-                  class="w-full"
-                >
-                  <template #noResult>Ningún municipio encontrado</template>
-                  <template #option="{ option }">
-                    <div class="flex items-center justify-between w-full">
-                      <span>{{ option.label }}</span>
-                      <span class="text-xs text-slate-400">id: {{ option.id }}</span>
-                    </div>
-                  </template>
-                  <template #singleLabel="{ option }">
-                    <span>{{ option.label }}</span>
-                  </template>
-                </Multiselect>
-                <div class="text-xs text-slate-500 mt-1">Requerido para Comisión del servicio.</div>
-              </div>
-
-              <!-- Fechas + descripción según estado -->
-              <div v-if="needsFechas" class="sm:col-span-1">
-                <label class="label">Inicio</label>
-                <input v-model="form.novelty_start" type="date" class="input" />
-              </div>
-              <div v-if="needsFechas" class="sm:col-span-1">
-                <label class="label">Fin</label>
-                <input v-model="form.novelty_end" type="date" class="input" />
-              </div>
-              <div v-if="needsDescripcion" class="sm:col-span-3">
-                <label class="label">Descripción</label>
-                <textarea v-model="form.novelty_description" class="input" rows="2" placeholder="Motivo / detalle..."></textarea>
-              </div>
-
-              <!-- Nota para SERVICIO -->
-              <div v-if="form.state === 'SERVICIO'" class="sm:col-span-3 text-xs text-slate-500">
-                Para “SERVICIO” el municipio se fija automáticamente en Bogotá (11001).
-              </div>
-            </div>
-
-            <div class="mt-4 flex justify-end gap-2">
-              <button class="btn-ghost" @click="closeEdit">Cancelar</button>
-              <button class="btn-primary" @click="saveEdit" :disabled="saving">
-                {{ saving ? 'Guardando...' : 'Guardar cambios' }}
-              </button>
-            </div>
-          </div>
-        </div>
       </template>
     </main>
   </div>
@@ -620,16 +623,7 @@ onMounted(async () => {
 .table { min-width: 780px; }
 
 /* Botón icono */
-.icon-btn{
-  @apply inline-flex items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700;
-  width: 32px; height: 32px;
-}
-.icon-btn:hover{ @apply bg-slate-100; }
 
-/* Modal */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.35); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
-.modal { width: 100%; max-width: 720px; background: white; border-radius: 14px; box-shadow: 0 20px 60px rgba(0,0,0,.25); padding: 16px; }
-.modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 
 @media (max-width: 640px) {
   .card-body { padding: 1rem !important; }
