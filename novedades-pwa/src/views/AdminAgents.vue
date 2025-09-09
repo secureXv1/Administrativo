@@ -1,12 +1,14 @@
 <template>
   <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
     <!-- Encabezado -->
-    <div class="card">
-      <div class="card-body flex items-center justify-between">
+    <div class="card-body flex items-center justify-between">
         <h2 class="font-semibold text-slate-800">Listado de agentes</h2>
-        <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
+        <div class="flex items-center gap-3">
+          <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
+          <button v-if="isSuperadmin" class="btn-primary" @click="openCreate">Nuevo agente</button>
+        </div>
       </div>
-    </div>
+
 
     <!-- Filtros -->
     <div class="card">
@@ -110,8 +112,10 @@
       <div class="bg-white rounded-xl shadow max-w-2xl w-full">
         <div class="p-4 border-b flex items-center justify-between">
           <div class="font-semibold text-slate-800">
-            Editar agente — {{ editing.code }} ({{ catLabel(editing.category) }})
+            <template v-if="isCreating">Crear agente</template>
+            <template v-else>Editar agente — {{ editing.code }} ({{ catLabel(editing.category) }})</template>
           </div>
+
           <button class="btn-ghost" @click="closeEdit">Cerrar</button>
         </div>
 
@@ -392,6 +396,8 @@ const unitsForSelect = computed(() => {
 })
 
 /* ===== Modal edición ===== */
+
+const isCreating = ref(false)
 const editing = ref(null) // row original
 const form = ref({
   id:null, code:'', categoryUi:'OF', groupId:null, unitId:null,
@@ -399,6 +405,28 @@ const form = ref({
   municipalityId:null, municipalityName:'',
   novelty_start:'', novelty_end:'', novelty_description:''
 })
+
+function openCreate(){
+  isCreating.value = true
+  editing.value = { id: null } // solo para mostrar el modal
+  form.value = {
+    id: null,
+    code: '',
+    categoryUi: 'OF',
+    groupId: null,
+    unitId: null,
+    state: 'SIN NOVEDAD',
+    municipalityId: null,
+    municipalityName: '',
+    novelty_start: '',
+    novelty_end: '',
+    novelty_description: ''
+  }
+}
+
+
+
+
 
 async function openEdit(a){
   editing.value = a
@@ -449,7 +477,8 @@ async function openEdit(a){
   onStateChange(true)  // ajusta reglas (fechas/descr/muni) según estado final
 }
 
-function closeEdit(){ editing.value = null }
+function closeEdit(){ editing.value = null; isCreating.value = false }
+
 
 function onStateChange(preserve = false){
   const s = form.value.state
@@ -502,33 +531,41 @@ async function saveEdit(){
   msg.value = ''
   const id = form.value.id
 
-  // --- Validación frontend de novedad ---
-const requiereFechasYDescr = (s) =>
-  s === 'SERVICIO' || otrosRequierenFechas.includes(s)
+  // --- Crear nuevo agente (solo superadmin) ---
+  if (isCreating.value) {
+    if (!isSuperadmin.value) { msg.value = 'No autorizado'; return }
+    const code = String(form.value.code || '').toUpperCase().trim()
+    if (!/^[A-Z][0-9]+$/.test(code)) { msg.value = 'Código inválido (LETRA+números)'; return }
 
-if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipalityId) {
-  msg.value = 'Selecciona un municipio válido para Comisión del servicio'
-  return
-}
-if (requiereFechasYDescr(form.value.state)) {
-  if (!form.value.novelty_start || !form.value.novelty_end) {
-    msg.value = 'Completa fecha inicio y fin'
+    try{
+      await axios.post('/admin/agents', {
+        code,
+        category: uiToApiCategory(form.value.categoryUi),
+        groupId: form.value.groupId || null,
+        unitId: form.value.unitId || null
+      }, authHeader())
+      msg.value = 'Agente creado ✅'
+      closeEdit()
+      await loadAgents()
+    } catch(e){
+      msg.value = e?.response?.data?.detail || e?.response?.data?.error || 'No se pudo crear'
+    }
     return
   }
-  if (!String(form.value.novelty_description || '').trim()) {
-    msg.value = 'La descripción es obligatoria'
-    return
+
+  // --- Edición existente ---
+  const requiereFechasYDescr = (s) => s === 'SERVICIO' || otrosRequierenFechas.includes(s)
+  if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipalityId) { msg.value = 'Selecciona un municipio válido para Comisión del servicio'; return }
+  if (requiereFechasYDescr(form.value.state)) {
+    if (!form.value.novelty_start || !form.value.novelty_end) { msg.value = 'Completa fecha inicio y fin'; return }
+    if (!String(form.value.novelty_description || '').trim()) { msg.value = 'La descripción es obligatoria'; return }
   }
-}
 
-
-  // 1) Cambios de ubicación (unidad)
   if (isLeaderGroup.value) {
     if ((editing.value.unitId || null) !== (form.value.unitId || null)) {
       await axios.put(`/my/agents/${id}/unit`, { unitId: form.value.unitId || null }, authHeader())
     }
   } else if (isAdminLike.value) {
-    // si también permites mover grupo/unidad desde admin:
     await axios.put(`/admin/agents/${id}`, {
       code: isSuperadmin.value ? form.value.code : undefined,
       category: isSuperadmin.value ? uiToApiCategory(form.value.categoryUi) : undefined,
@@ -537,7 +574,6 @@ if (requiereFechasYDescr(form.value.state)) {
     }, authHeader())
   }
 
-  // 2) ¿cambió la NOVEDAD?
   const novChanged =
     String(editing.value.status||'') !== String(form.value.state||'') ||
     String(editing.value.municipalityId||'') !== String(form.value.municipalityId||'') ||
@@ -546,7 +582,6 @@ if (requiereFechasYDescr(form.value.state)) {
     (editing.value.novelty_description||'') !== (form.value.novelty_description||'')
 
   if (novChanged) {
-    // guarda novedad del día seleccionado
     await axios.put(`/admin/agents/${id}/novelty`, {
       date: today.value,
       state: form.value.state,
@@ -561,6 +596,7 @@ if (requiereFechasYDescr(form.value.state)) {
   closeEdit()
   await loadAgents()
 }
+
 
 function authHeader(){
   return { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }

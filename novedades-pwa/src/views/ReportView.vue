@@ -41,11 +41,11 @@
               />
               <datalist id="free-agents-list">
                 <option
-                v-for="a in agentSearchResults"
-                :key="a.id"
-                :value="a.code"
-                @click="onSelectAgent(a.code)"
-              >
+                  v-for="a in agentSearchResults.filter(x => !agents.some(y => y.code === x.code))"
+                  :key="a.id"
+                  :value="a.code"
+                  @click="onSelectAgent(a.code)"
+                >
                 {{ a.code }} ({{ displayCategory(a.category) }})
               </option>
 
@@ -472,7 +472,8 @@ async function onAgentSearchInput() {
     params: { q, limit: 20 },
     headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
   })
-  agentSearchResults.value = (data || []).filter(a => a.groupId == null)
+  agentSearchResults.value = (data || []).filter(a => (a.groupId == null || a.groupId === 0) && (a.unitId == null || a.unitId === 0))
+
   const match = agentSearchResults.value.find(a => a.code === q)
   selectedAgentToAdd.value = match ? match.id : null
 }
@@ -486,23 +487,36 @@ function onSelectAgent(code) {
 async function addFreeAgent() {
   const q = agentSearch.value.trim().toUpperCase()
   const agent = agentSearchResults.value.find(a => a.code === q)
+
   if (!agent) {
-    msg.value = "Selecciona un agente libre válido";
+    msg.value = "Selecciona un agente libre válido"
     return
   }
+
+  // 🚫 Evitar duplicados: si ya está en la lista de agentes, no lo agregues
+  if (agents.value.some(x => String(x.code).toUpperCase().trim() === agent.code)) {
+    msg.value = `El agente ${agent.code} ya está en tu unidad`
+    return
+  }
+
   try {
     await axios.post('/my/agents/add', { agentId: agent.id }, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     })
     msg.value = "Agente agregado a tu grupo ✅"
+
+    // limpiar buscador
     agentSearch.value = ''
     agentSearchResults.value = []
     selectedAgentToAdd.value = null
+
+    // recargar listado
     await loadAgents()
   } catch (e) {
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo agregar'
   }
 }
+
 
 async function checkIfReportExists() {
   try {

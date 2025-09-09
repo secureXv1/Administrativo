@@ -151,7 +151,7 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
 
   const [rows] = await pool.query(
     `
-    SELECT 
+    SELECT DISTINCT
       a.id, a.code, a.category, a.status AS status_agent, a.groupId, a.unitId,
       COALESCE(l.municipalityId, a.municipalityId) AS effectiveMunicipalityId,
 
@@ -1147,6 +1147,8 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (
 // Crear agente
 app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { code, category, groupId, unitId, status, municipalityId } = req.body;
+
+  // Validaciones básicas
   if (!/^[A-Z][0-9]+$/.test(code)) {
     return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
   }
@@ -1161,17 +1163,45 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
     if (!u) return res.status(404).json({ error: 'Unidad no existe' });
   }
-  if (municipalityId) {
-    const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
+
+  // === Normalización de estado (usa tu catálogo real) ===
+  const estadosValidos = [
+    'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
+    'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
+    'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
+    'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR'
+  ];
+  let s = String(status || 'SIN NOVEDAD').toUpperCase().trim();
+  if (!estadosValidos.includes(s)) {
+    return res.status(422).json({ error: 'Estado inválido', detail: `Recibido: ${status}` });
+  }
+
+  // === Reglas de municipio según estado ===
+  let muniId = municipalityId ? Number(municipalityId) : null;
+  if (s === 'SIN NOVEDAD' || s === 'SERVICIO') {
+    // Bogotá fijo
+    muniId = 11001;
+  } else if (s === 'COMISIÓN DEL SERVICIO') {
+    if (!muniId) return res.status(422).json({ error: 'Falta municipalityId para Comisión del servicio' });
+  } else if (s === 'FRANCO FRANCO') {
+    muniId = null;
+  } else {
+    // Resto de novedades: el agente (tabla base) no requiere municipio
+    muniId = null;
+  }
+
+  // Validar municipio si viene distinto de null
+  if (muniId) {
+    const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [muniId]);
     if (!m) return res.status(404).json({ error: 'Municipio no existe' });
   }
+
   try {
     await pool.query(
-      'INSERT INTO agent (code,category,groupId,unitId,status,municipalityId) VALUES (?,?,?,?,?,?)',
-      [code.trim(), category, groupId || null, unitId || null, status || 'LABORANDO', municipalityId || null]
+      'INSERT INTO agent (code, category, groupId, unitId, status, municipalityId) VALUES (?,?,?,?,?,?)',
+      [code.trim(), category, groupId || null, unitId || null, s, muniId]
     );
     res.json({ ok: true });
-
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') {
       res.status(409).json({ error: 'El código ya existe' });
@@ -1180,6 +1210,7 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     }
   }
 });
+
 
 // Actualizar agente (parcial)
 app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
