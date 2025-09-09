@@ -357,45 +357,91 @@ const municipalitiesMap = ref([])
 async function loadMapData () {
   const params = { date: date.value }
   if (isLeaderGroup.value) {
-    const { data } = await axios.get('/admin/agent-municipalities', {
-      params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
-    let list = data || []
-    if (selectedLeaderUnitId.value !== 'all') {
-      list = list.filter(m => String(m.unitId) === String(selectedLeaderUnitId.value))
-    }
-    municipalitiesMap.value = list
+    // líder: el backend ya te limita a su grupo
   } else {
     if (selectedGroupId.value !== 'all') params.groups = selectedGroupId.value
     if (selectedUnitId.value  !== 'all') params.units  = selectedUnitId.value
-    const { data } = await axios.get('/admin/agent-municipalities', {
-      params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-    })
-    municipalitiesMap.value = data || []
   }
+
+  const { data } = await axios.get('/admin/agent-municipalities', {
+    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+
+  // Filtro adicional para líder: unidad concreta (si la eligió)
+  let list = data || []
+  if (isLeaderGroup.value && selectedLeaderUnitId.value !== 'all') {
+    list = list.filter(m => String(m.unitId) === String(selectedLeaderUnitId.value))
+  }
+
+  // 👉 arma estructura por municipio con desglose
+  const byMuni = new Map()
+  for (const r of list) {
+    if (!r.id) continue
+    let entry = byMuni.get(r.id)
+    if (!entry) {
+      entry = {
+        id: r.id, name: r.name, dept: r.dept, lat: r.lat, lon: r.lon,
+        total: 0,
+        breakdown: {} // { etiqueta -> cantidad }
+      }
+      byMuni.set(r.id, entry)
+    }
+
+    // clave de desglose según rol
+    const key = isLeaderGroup.value
+      ? (r.unitName || `Unidad ${r.unitId || '—'}`)
+      : (r.groupCode || `Grupo ${r.groupId || '—'}`)
+
+    const n = Number(r.agent_count || 0)
+    entry.total += n
+    entry.breakdown[key] = (entry.breakdown[key] || 0) + n
+  }
+
+  municipalitiesMap.value = [...byMuni.values()]
   setTimeout(drawMap, 100)
 }
+
+
 
 function drawMap () {
   if (window.myMap) { window.myMap.remove(); window.myMap = null }
   const hasFsPlugin = !!(L.Control && L.Control.Fullscreen)
-  window.myMap = L.map('mapa-agentes', { fullscreenControl: hasFsPlugin }).setView([6.25, -75.6], 7)
+  window.myMap = L.map('mapa-agentes', { fullscreenControl: hasFsPlugin })
+                 .setView([6.25, -75.6], 7)
   if (hasFsPlugin) window.myMap.addControl(new L.Control.Fullscreen())
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 15, attribution: 'Map data © OpenStreetMap contributors' }).addTo(window.myMap)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 15, attribution: 'Map data © OpenStreetMap contributors'
+  }).addTo(window.myMap)
 
   municipalitiesMap.value.forEach(m => {
-    if (m.lat && m.lon) {
-      L.marker([m.lat, m.lon], {
-        icon: L.icon({ iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png', iconSize:[25,41], iconAnchor:[12,41] })
-      }).addTo(window.myMap).bindPopup(`
-        <b>${m.name}</b><br/>
-        <span style="font-size:13px">${m.dept}</span><br/>
-        Agentes: <b>${m.agent_count}</b><br/>
-        ${m.groupCode}${m.unitName ? ' — ' + m.unitName : ''}
-      `)
-    }
+    if (!m.lat || !m.lon) return
+
+    // Ordena el desglose desc
+    const items = Object.entries(m.breakdown)
+      .sort((a,b) => b[1] - a[1]) // [label, count]
+
+    const labelTitulo = isLeaderGroup.value ? 'Unidades' : 'Grupos'
+    const listHtml = items.map(([k,v]) => `<li>${k}: <b>${v}</b></li>`).join('')
+
+    const popupHtml = `
+      <b>${m.name}</b><br/>
+      <span style="font-size:13px">${m.dept}</span><br/>
+      Total agentes: <b>${m.total}</b><br/>
+      <div style="margin-top:6px">
+        <span style="font-size:12px;color:#475569">${labelTitulo}:</span>
+        <ul style="margin:6px 0 0 16px; font-size:13px">${listHtml || '<li>—</li>'}</ul>
+      </div>
+    `
+
+    L.marker([m.lat, m.lon], {
+      icon: L.icon({
+        iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        iconSize:[25,41], iconAnchor:[12,41]
+      })
+    }).addTo(window.myMap).bindPopup(popupHtml)
   })
 }
+
 
 // Fullscreen (fallback nativo)
 function toggleFullscreen () {
