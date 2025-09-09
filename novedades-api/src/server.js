@@ -304,6 +304,54 @@ async function ensureDailyReport(conn, date, groupId, unitId, leaderUserId) {
   return row.id;
 }
 
+
+// --- Helper: recalcular KPIs (effective/available/nov) del dailyreport ---
+async function recalcDailyReport(reportId, connArg = null) {
+  const conn = connArg || pool;
+
+  // Totales por categoría a partir de dailyreport_agent
+  const [rows] = await conn.query(`
+    SELECT a.category AS cat,
+           COUNT(*) AS total,
+           SUM(CASE WHEN da.state = 'SIN NOVEDAD' THEN 1 ELSE 0 END) AS disponibles
+    FROM dailyreport_agent da
+    JOIN agent a ON a.id = da.agentId
+    WHERE da.reportId = ?
+    GROUP BY a.category
+  `, [reportId]);
+
+  let feOF = 0, feSO = 0, fePT = 0;
+  let fdOF = 0, fdSO = 0, fdPT = 0;
+
+  for (const r of rows) {
+    if (r.cat === 'OF') { feOF = r.total; fdOF = r.disponibles; }
+    if (r.cat === 'SO') { feSO = r.total; fdSO = r.disponibles; }
+    if (r.cat === 'PT') { fePT = r.total; fdPT = r.disponibles; }
+  }
+
+  const { OF_nov, SO_nov, PT_nov } = computeNovelties({
+    OF_effective: feOF, SO_effective: feSO, PT_effective: fePT,
+    OF_available: fdOF, SO_available: fdSO, PT_available: fdPT
+  });
+
+  await conn.query(`
+    UPDATE dailyreport
+       SET OF_effective=? , SO_effective=? , PT_effective=?,
+           OF_available=? , SO_available=? , PT_available=?,
+           OF_nov=?       , SO_nov=?       , PT_nov=?,
+           updatedAt=CURRENT_TIMESTAMP(3)
+     WHERE id=?
+  `, [feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov, reportId]);
+}
+
+
+
+
+
+
+
+
+
 app.put('/admin/agents/:id/novelty',
   auth,
   requireRole('superadmin','supervision','leader_group'),
@@ -413,6 +461,8 @@ app.put('/admin/agents/:id/novelty',
 
       // Estado actual del agente
       await conn.query(`UPDATE agent SET status=?, municipalityId=? WHERE id=?`, [s, muniId, ag.id]);
+
+      await recalcDailyReport(reportId, conn);
 
       await conn.commit();
       res.json({ ok: true, reportId });
@@ -1440,7 +1490,11 @@ app.put('/admin/report-agents/:reportId/:agentId',
       UPDATE agent SET status=?, municipalityId=? WHERE id=?
     `, [s, muniId, agentId]);
 
+    await recalcDailyReport(reportId);
+
     res.json({ ok: true });
+
+
   }
 );
 
