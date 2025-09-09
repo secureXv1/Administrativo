@@ -285,6 +285,18 @@ async function loadUnits(){
     myUnits.value = data || []
   }
 }
+
+
+async function loadAgentNovelty(agentId){
+  const { data } = await axios.get(`/admin/agents/${agentId}/novelty`, {
+    params: { date: today.value },   // usa la fecha seleccionada en el filtro
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  return data || null
+}
+
+
+
 async function loadMunicipalities(q=''){
   const params = q && q.length>=2 ? { q, limit: 50 } : { limit: 50 }
   const { data } = await axios.get('/catalogs/municipalities', {
@@ -388,8 +400,9 @@ const form = ref({
   novelty_start:'', novelty_end:'', novelty_description:''
 })
 
-function openEdit(a){
+async function openEdit(a){
   editing.value = a
+  // valores base (por si no hay novedad previa)
   form.value = {
     id: a.id,
     code: a.code,
@@ -400,21 +413,54 @@ function openEdit(a){
     municipalityId: a.municipalityId || null,
     municipalityName: a.municipalityName || '',
     novelty_start: a.novelty_start ? String(a.novelty_start).slice(0,10) : '',
-    novelty_end:   a.novelty_end ? String(a.novelty_end).slice(0,10) : '',
+    novelty_end:   a.novelty_end ? String(a.novelty_end).slice(0,10)   : '',
     novelty_description: a.novelty_description || ''
   }
-  onStateChange()
+
+  try {
+    // 👉 pide la última novedad (o la válida hasta la fecha seleccionada)
+    const det = await loadAgentNovelty(a.id)
+    if (det) {
+      form.value.state = det.state || form.value.state
+      form.value.novelty_start = det.novelty_start || ''
+      form.value.novelty_end   = det.novelty_end   || ''
+      form.value.novelty_description = det.novelty_description || ''
+
+      // municipio mostrado en el input tipo datalist
+      if (det.municipalityId) {
+        form.value.municipalityId = det.municipalityId
+        // el datalist usa formato "Depto - Municipio"
+        form.value.municipalityName = det.dept && det.municipalityName
+          ? `${det.dept} - ${det.municipalityName}`
+          : form.value.municipalityName
+      } else if (['SERVICIO','SIN NOVEDAD'].includes(form.value.state)) {
+        // coherente con tu UI actual
+        form.value.municipalityId = 11001
+        form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
+      } else {
+        form.value.municipalityId = null
+        form.value.municipalityName = ''
+      }
+    }
+  } catch(e) {
+    msg.value = e?.response?.data?.detail || e?.message || 'No se pudo cargar la novedad'
+  }
+
+  onStateChange(true)  // ajusta reglas (fechas/descr/muni) según estado final
 }
+
 function closeEdit(){ editing.value = null }
 
-function onStateChange(){
+function onStateChange(preserve = false){
   const s = form.value.state
   if (s === 'SIN NOVEDAD') {
     form.value.municipalityId = 11001
     form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
-    form.value.novelty_start = ''
-    form.value.novelty_end = ''
-    form.value.novelty_description = ''
+    if (!preserve) {
+     form.value.novelty_start = ''
+     form.value.novelty_end = ''
+     form.value.novelty_description = ''
+   }
   } else if (s === 'SERVICIO') {
     form.value.municipalityId = 11001
     form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
@@ -422,15 +468,19 @@ function onStateChange(){
   } else if (s === 'COMISIÓN DEL SERVICIO') {
     form.value.municipalityId = null
     form.value.municipalityName = ''
-    form.value.novelty_start = ''
-    form.value.novelty_end = ''
-    form.value.novelty_description = ''
+    if (!preserve) {
+     form.value.novelty_start = ''
+     form.value.novelty_end = ''
+     form.value.novelty_description = ''
+   }
   } else if (s === 'FRANCO FRANCO') {
     form.value.municipalityId = null
     form.value.municipalityName = ''
-    form.value.novelty_start = ''
-    form.value.novelty_end = ''
-    form.value.novelty_description = ''
+   if (!preserve) {
+     form.value.novelty_start = ''
+     form.value.novelty_end = ''
+     form.value.novelty_description = ''
+   }
   } else {
     // VACACIONES / LICENCIAS / EXCUSA / PERMISO / COMISIÓN EXTERIOR
     form.value.municipalityId = null

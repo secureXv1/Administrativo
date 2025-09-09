@@ -478,6 +478,7 @@ app.put('/admin/agents/:id/novelty',
 
 // Leer la ÚLTIMA novedad registrada del agente.
 
+// Leer la ÚLTIMA novedad registrada del agente (opcionalmente hasta una fecha)
 app.get('/admin/agents/:id/novelty',
   auth,
   requireRole('superadmin','supervision','leader_group'),
@@ -495,15 +496,12 @@ app.get('/admin/agents/:id/novelty',
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    // arma filtro opcional por fecha (límite superior)
-    let whereExtra = '';
+    // filtro opcional por fecha (límite superior)
     const params = [id];
-    if (date) {
-      whereExtra = ' AND dr.reportDate <= ?';
-      params.push(date);
-    }
+    let whereExtra = '';
+    if (date) { whereExtra = ' AND dr.reportDate <= ?'; params.push(date); }
 
-    // última novedad registrada (más reciente por fecha y luego updatedAt)
+    // 👉 ¡sin da.updatedAt!
     const [rows] = await pool.query(`
       SELECT 
         da.state,
@@ -518,20 +516,17 @@ app.get('/admin/agents/:id/novelty',
       JOIN dailyreport dr ON dr.id = da.reportId
       LEFT JOIN municipality m ON m.id = da.municipalityId
       WHERE da.agentId = ? ${whereExtra}
-      ORDER BY dr.reportDate DESC, da.updatedAt DESC
+      ORDER BY dr.reportDate DESC, da.reportId DESC
       LIMIT 1
     `, params);
 
-    if (rows.length) {
-      return res.json(rows[0]);
-    }
+    if (rows.length) return res.json(rows[0]);
 
-    // Fallback: si nunca ha tenido novedad registrada, responde con el estado/municipio actual del agente
+    // Fallback si nunca tuvo novedad
     const [[mun]] = await pool.query(
       'SELECT name, dept FROM municipality WHERE id=? LIMIT 1',
       [ag.municipalityId || 0]
     );
-
     return res.json({
       state: ag.status || null,
       municipalityId: ag.municipalityId || null,
@@ -546,7 +541,6 @@ app.get('/admin/agents/:id/novelty',
     });
   }
 );
-
 
 
 
