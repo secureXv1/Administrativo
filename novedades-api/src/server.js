@@ -1767,6 +1767,17 @@ app.delete('/admin/units/:id', auth, requireRole('superadmin'), async (req, res)
   res.json({ ok: true });
 });
 
+// POST /admin/users/:id/reset-password
+app.post('/admin/users/:id/reset-password', auth, requireRole('superadmin'), async (req, res) => {
+  const { id } = req.params
+  const { password } = req.body
+  if (!password || password.length < 6) return res.status(422).json({ error: 'Password inválido' })
+  const hash = await bcrypt.hash(password, 10)
+  await pool.query('UPDATE `user` SET passwordHash=? WHERE id=? LIMIT 1', [hash, id])
+  res.json({ ok: true })
+})
+
+
 
 
 
