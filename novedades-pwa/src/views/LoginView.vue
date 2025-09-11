@@ -25,7 +25,7 @@
               </button>
             </div>
             <p class="text-xs text-slate-500 mt-1">
-              Demo: <b>SUPERADMIN</b> / <b>123456</b> ó <b>LIDER_GRISE</b> / <b>123456</b>
+             
             </p>
           </div>
         </div>
