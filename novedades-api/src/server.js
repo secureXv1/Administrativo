@@ -20,6 +20,12 @@ async function main() {
   app.use(helmet());
   app.use(express.json());
 
+  function isStrongPassword(pw) {
+  // >=8, al menos 1 minúscula, 1 mayúscula, 1 dígito y 1 especial
+  return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^\w\s]).{8,}$/.test(String(pw || ''));
+}
+
+
   // ---------- AUTH ----------
   app.post('/auth/login', async (req, res) => {
     const { username, password } = req.body;
@@ -86,17 +92,38 @@ async function main() {
     res.json(user);
   });
 
+// Cambiar contraseña del usuario autenticado
   app.post('/me/change-password', auth, async (req, res) => {
     const { oldPassword, newPassword } = req.body;
-    if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Campos requeridos' });
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ error: 'Campos requeridos' });
+    }
+
+    if (!isStrongPassword(newPassword)) {
+      return res.status(422).json({
+        error: 'Password débil',
+        detail: 'Debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y carácter especial.'
+      });
+    }
+
     const [[user]] = await pool.query(
-      'SELECT passwordHash FROM user WHERE id=? LIMIT 1', [req.user.uid]
+      'SELECT passwordHash FROM user WHERE id=? LIMIT 1',
+      [req.user.uid]
     );
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
     const ok = await bcrypt.compare(oldPassword, user.passwordHash);
-    if (!ok) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+    if (!ok) {
+      return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+    }
+
     const hash = await bcrypt.hash(newPassword, 10);
-    await pool.query('UPDATE user SET passwordHash=? WHERE id=?', [hash, req.user.uid]);
+    await pool.query(
+      'UPDATE user SET passwordHash=? WHERE id=?',
+      [hash, req.user.uid]
+    );
+
     res.json({ ok: true });
   });
 
@@ -1063,6 +1090,12 @@ app.post('/admin/users', auth, requireRole('superadmin'), async (req, res) => {
   if (!username || !password || !role) {
     return res.status(400).json({ error: 'Campos requeridos: username, password, role' });
   }
+  if (!isStrongPassword(password)) {
+    return res.status(422).json({
+      error: 'Password débil',
+      detail: 'Debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y carácter especial.'
+    });
+  }
   // Opcional: verifica que el grupo exista
   if (groupId) {
     const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
@@ -1093,9 +1126,11 @@ app.post('/admin/users', auth, requireRole('superadmin'), async (req, res) => {
 app.put('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) => {
   const { id } = req.params;
   const { username, role, groupId, unitId, password } = req.body;
+
   if (!username || !role) {
     return res.status(400).json({ error: 'Campos requeridos: username, role' });
   }
+
   // Opcional: verifica que el grupo exista
   if (groupId) {
     const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
@@ -1106,14 +1141,25 @@ app.put('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) =>
     const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
     if (!u) return res.status(404).json({ error: 'Unidad no existe' });
   }
+
   let setFields = 'username=?, role=?, groupId=?, unitId=?';
-  let params = [username.trim(), role, groupId || null, unitId || null];
-  if (password) {
+  const params = [username.trim(), role, groupId || null, unitId || null];
+
+  // ✅ si viene password, validar fortaleza y actualizar hash
+  if (password !== undefined && password !== null && password !== '') {
+    if (!isStrongPassword(password)) {
+      return res.status(422).json({
+        error: 'Password débil',
+        detail: 'Debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y carácter especial.'
+      });
+    }
     const hash = await bcrypt.hash(password, 10);
     setFields += ', passwordHash=?';
     params.push(hash);
   }
+
   params.push(id);
+
   try {
     const [r] = await pool.query(
       `UPDATE \`user\` SET ${setFields} WHERE id=?`,
@@ -1127,6 +1173,7 @@ app.put('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) =>
     res.status(500).json({ error: 'No se pudo actualizar', detail: e.message });
   }
 });
+
 
 // Eliminar usuario
 app.delete('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) => {
@@ -1826,15 +1873,30 @@ app.delete('/admin/units/:id', auth, requireRole('superadmin'), async (req, res)
   res.json({ ok: true });
 });
 
-// POST /admin/users/:id/reset-password
 app.post('/admin/users/:id/reset-password', auth, requireRole('superadmin'), async (req, res) => {
-  const { id } = req.params
-  const { password } = req.body
-  if (!password || password.length < 6) return res.status(422).json({ error: 'Password inválido' })
-  const hash = await bcrypt.hash(password, 10)
-  await pool.query('UPDATE `user` SET passwordHash=? WHERE id=? LIMIT 1', [hash, id])
-  res.json({ ok: true })
-})
+  const { id } = req.params;
+  const { password } = req.body;
+
+  if (!password) {
+    return res.status(422).json({ error: 'Password requerido' });
+  }
+
+  if (!isStrongPassword(password)) {
+    return res.status(422).json({
+      error: 'Password débil',
+      detail: 'Debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y carácter especial.'
+    });
+  }
+
+  const hash = await bcrypt.hash(password, 10);
+
+  await pool.query(
+    'UPDATE `user` SET passwordHash=? WHERE id=? LIMIT 1',
+    [hash, id]
+  );
+
+  res.json({ ok: true });
+});
 
 
 
