@@ -345,6 +345,21 @@ async function recalcDailyReport(reportId, connArg = null) {
 }
 
 
+// Elimina cualquier fila de dailyreport_agent del mismo agente y misma fecha (en otros reportes)
+async function deleteAgentRowsSameDate(conn, reportDate, agentId, keepReportId = null) {
+  const params = [reportDate, agentId];
+  let extra = '';
+  if (keepReportId) { // opcional: conserva una fila concreta si ya existe
+    extra = ' AND da.reportId <> ?';
+    params.push(keepReportId);
+  }
+  await conn.query(`
+    DELETE da
+    FROM dailyreport_agent da
+    JOIN dailyreport dr ON dr.id = da.reportId
+    WHERE dr.reportDate = ? AND da.agentId = ? ${extra}
+  `, params);
+}
 
 
 
@@ -446,18 +461,25 @@ app.put('/admin/agents/:id/novelty',
         reportId = dr.id;
       }
 
-      // UPSERT de la fila del agente
-      await conn.query(`
-        INSERT INTO dailyreport_agent
-          (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          state=VALUES(state),
-          municipalityId=VALUES(municipalityId),
-          novelty_start=VALUES(novelty_start),
-          novelty_end=VALUES(novelty_end),
-          novelty_description=VALUES(novelty_description)
-      `, [reportId, ag.id, useGroupId, useUnitId, s, muniId, nStart, nEnd, nDesc]);
+
+         // UPSERT de la fila del agente
+
+        // 💡 Borra cualquier otra fila del MISMO agente y MISMA fecha en otros reportes,
+        // conservando la del reporte actual (reportId)
+        await deleteAgentRowsSameDate(conn, date, ag.id, reportId);
+
+        await conn.query(`
+          INSERT INTO dailyreport_agent
+            (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            state=VALUES(state),
+            municipalityId=VALUES(municipalityId),
+            novelty_start=VALUES(novelty_start),
+            novelty_end=VALUES(novelty_end),
+            novelty_description=VALUES(novelty_description)
+        `, [reportId, ag.id, useGroupId, useUnitId, s, muniId, nStart, nEnd, nDesc]);
+
 
       // Estado actual del agente
       await conn.query(`UPDATE agent SET status=?, municipalityId=? WHERE id=?`, [s, muniId, ag.id]);
@@ -828,6 +850,7 @@ const [[daily]] = await conn.query(
 );
 const reportId = daily?.id;
 
+// ... después de obtener reportId y de hacer el DELETE del propio reportId:
 await conn.query('DELETE FROM dailyreport_agent WHERE reportId=?', [reportId]);
 
 for (const p of people) {
@@ -835,15 +858,19 @@ for (const p of people) {
   const ag = agentMap[code];
   const { state, muniId, novelty_start, novelty_end, novelty_description } = p._resolved;
 
+  // 🔥 Nuevo: limpia duplicados del MISMO día en otros reportes,
+  // preservando el registro del reportId actual
+  await deleteAgentRowsSameDate(conn, reportDate, ag.id, reportId);
+
   await conn.query(
     `INSERT INTO dailyreport_agent 
       (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       reportId,
       ag.id,
-      groupId,
-      ag.unitId,
+      groupId,    // del reporte actual
+      ag.unitId,  // unidad actual del agente (esto está bien si ese es tu diseño)
       state,
       muniId,
       novelty_start,
@@ -857,6 +884,7 @@ for (const p of people) {
     [state, muniId, ag.id]
   );
 }
+
 
 
 
@@ -1464,7 +1492,7 @@ app.put('/admin/report-agents/:reportId/:agentId',
       "LICENCIA REMUNERADA",
       "LICENCIA NO REMUNERADA",
       "EXCUSA DEL SERVICIO",
-      "LICENCIA PATERNIDAD",,"PERMISO","COMISIÓN EN EL EXTERIOR"
+      "LICENCIA PATERNIDAD","PERMISO","COMISIÓN EN EL EXTERIOR"
     ];
     const s = String(state || '').toUpperCase().trim();
     if (!estadosValidos.includes(s)) {
