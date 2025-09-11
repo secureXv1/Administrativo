@@ -5,7 +5,7 @@
         <div class="flex items-center gap-3">
           <div class="h-10 w-10 rounded-xl bg-brand-600 text-white flex items-center justify-center font-bold">N</div>
           <div>
-            <h1 class="text-lg font-semibold text-slate-900 leading-tight">Ingresar a Novedades</h1>
+            <h1 class="text-lg font-semibold text-slate-900 leading-tight">Ingresar a Reporte</h1>
             <p class="text-xs text-slate-500">Usa tu usuario y clave</p>
           </div>
         </div>
@@ -38,7 +38,7 @@
         </div>
 
         <p class="text-[11px] text-slate-400 text-center">
-          Al continuar aceptas las políticas internas de uso de la app.
+          Recuerda la seguridad de la información.
         </p>
       </div>
     </div>
