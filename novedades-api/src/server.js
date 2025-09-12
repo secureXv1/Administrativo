@@ -32,37 +32,117 @@ async function main() {
 
 
   // ---------- AUTH ----------
- app.post('/auth/login', async (req, res) => {
+ // ---------- AUTH ----------
+app.post('/auth/login', async (req, res) => {
   try {
     const username = String(req.body.username || '').trim();
     const password = String(req.body.password || '');
 
+    // Trae los campos de seguridad
     const [rows] = await pool.query(
-      'SELECT id, username, passwordHash, role, groupId, unitId FROM `user` WHERE username=? LIMIT 1',
+      `SELECT id, username, passwordHash, role, groupId, unitId,
+              failed_login_count, lock_until, lock_strikes, hard_locked
+         FROM \`user\`
+        WHERE username=? LIMIT 1`,
       [username]
     );
     const user = rows[0];
+
+    // Usuario inexistente → respuesta genérica
     if (!user) {
-      // opcional: loguear intento fallido
-      // await logEvent({ req, userId: null, action: 'LOGIN_FAIL', details: { username } });
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // 1) ¿Bloqueo duro?
+    if (Number(user.hard_locked) === 1) {
+      try { await logEvent({ req, userId: user.id, action: (Actions?.ACCOUNT_HARD_LOCK || 'ACCOUNT_HARD_LOCK'), details: { username } }); } catch {}
+      return res.status(423).json({ error: 'HardLocked', detail: 'Cuenta bloqueada. Contacte al administrador.' });
+    }
+
+    // 2) ¿Bloqueo temporal vigente?
+    const now = new Date();
+    const lockUntil = user.lock_until ? new Date(user.lock_until) : null;
+    if (lockUntil && lockUntil > now) {
+      const secondsLeft = Math.max(1, Math.ceil((lockUntil - now) / 1000));
+      try { await logEvent({ req, userId: user.id, action: (Actions?.LOGIN_BLOCKED || 'LOGIN_BLOCKED'), details: { username, secondsLeft } }); } catch {}
+      return res.status(429).json({
+        error: 'TemporarilyLocked',
+        detail: `Cuenta bloqueada temporalmente. Intente nuevamente en ${secondsLeft} s.`
+      });
+    }
+
+    // 3) Verificación de password
     const ok = await bcrypt.compare(password, user.passwordHash).catch(() => false);
+
     if (!ok) {
-      // opcional: loguear intento fallido
-      // await logEvent({ req, userId: user.id, action: 'LOGIN_FAIL', details: { username } });
-      return res.status(401).json({ error: 'Invalid credentials' });
+      // Falla de contraseña
+      let newFailed = Number(user.failed_login_count || 0) + 1;
+      let updates = { failed_login_count: newFailed };
+      let statusMsg = '';
+
+      // ¿alcanzó 5 intentos?
+      if (newFailed >= 5) {
+        // Bloqueo 1 minuto
+        updates.failed_login_count = 0;
+        updates.lock_until = new Date(Date.now() + 60 * 1000);
+        // Marca que ya ocurrió un bloqueo temporal (para escalar a hard lock si vuelve a fallar)
+        updates.lock_strikes = Number(user.lock_strikes || 0) + 1;
+
+        await pool.query(
+          'UPDATE `user` SET failed_login_count=?, lock_until=?, lock_strikes=? WHERE id=? LIMIT 1',
+          [updates.failed_login_count, updates.lock_until, updates.lock_strikes, user.id]
+        );
+
+        statusMsg = 'Cuenta bloqueada por 1 minuto por múltiples intentos fallidos.';
+        try { await logEvent({ req, userId: user.id, action: (Actions?.ACCOUNT_LOCK || 'ACCOUNT_LOCK'), details: { username, reason: '5_failed_attempts' } }); } catch {}
+        return res.status(429).json({ error: 'TemporarilyLocked', detail: statusMsg });
+      }
+
+      // Si ya tuvo un lock temporal antes (lock_strikes >= 1) y la contraseña vuelve a fallar
+      // DESPUÉS de haber podido volver a intentar (lock_until ya pasó), escalamos a hard lock.
+      if (Number(user.lock_strikes || 0) >= 1) {
+        // Esta es la primera falla tras el cooldown → hard lock
+        await pool.query(
+          'UPDATE `user` SET failed_login_count=0, hard_locked=1, lock_until=NULL WHERE id=? LIMIT 1',
+          [user.id]
+        );
+        try { await logEvent({ req, userId: user.id, action: (Actions?.ACCOUNT_HARD_LOCK || 'ACCOUNT_HARD_LOCK'), details: { username, reason: 'fail_after_cooldown' } }); } catch {}
+        return res.status(423).json({ error: 'HardLocked', detail: 'Cuenta bloqueada. Contacte al administrador.' });
+      }
+
+      // Aún dentro del primer ciclo (antes de llegar a 5)
+      await pool.query(
+        'UPDATE `user` SET failed_login_count=? WHERE id=? LIMIT 1',
+        [newFailed, user.id]
+      );
+      const remaining = Math.max(0, 5 - newFailed);
+      try { await logEvent({ req, userId: user.id, action: (Actions?.LOGIN_FAIL || 'LOGIN_FAIL'), details: { username, remaining } }); } catch {}
+
+      return res.status(401).json({
+        error: 'Invalid credentials',
+        detail: remaining > 0
+          ? `Credenciales inválidas. Intentos restantes: ${remaining}/5`
+          : 'Credenciales inválidas.'
+      });
     }
 
-    // ✅ Log de inicio de sesión (apertura)
-    await logEvent({
-      req,
-      userId: user.id,
-      action: Actions.LOGIN,
-      details: { username: user.username, role: user.role }
-    });
+    // 4) Login OK → reset contadores y bloqueos
+    await pool.query(
+      'UPDATE `user` SET failed_login_count=0, lock_until=NULL, lock_strikes=0 WHERE id=? LIMIT 1',
+      [user.id]
+    );
 
+    // Log de inicio exitoso
+    try {
+      await logEvent({
+        req,
+        userId: user.id,
+        action: Actions?.LOGIN || 'LOGIN',
+        details: { username: user.username, role: user.role }
+      });
+    } catch {}
+
+    // Emite token
     const token = jwt.sign(
       {
         uid: user.id,
@@ -81,6 +161,7 @@ async function main() {
     return res.status(500).json({ error: 'Server error' });
   }
 });
+
 
   function auth(req, res, next) {
     const h = req.headers.authorization || '';
@@ -1153,9 +1234,15 @@ app.delete('/admin/groups/:id', auth, requireRole('superadmin'), async (req, res
 // ---------- CRUD Usuarios Admin ----------
 
 // Listar todos los usuarios
+
 app.get('/admin/users', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const [rows] = await pool.query(`
-    SELECT u.id, u.username, u.role, u.groupId, u.unitId, g.code AS groupCode, un.name AS unitName
+    SELECT 
+      u.id, u.username, u.role, u.groupId, u.unitId,
+      u.createdAt,                          -- (si lo tienes en tu tabla)
+      u.failed_login_count, u.lock_until,   -- ▼ campos de seguridad
+      u.lock_strikes, u.hard_locked,        -- ▲
+      g.code AS groupCode, un.name AS unitName
     FROM user u
     LEFT JOIN \`group\` g ON g.id = u.groupId
     LEFT JOIN unit un ON un.id = u.unitId
@@ -1163,6 +1250,7 @@ app.get('/admin/users', auth, requireRole('superadmin', 'supervision'), async (r
   `);
   res.json(rows);
 });
+
 
 // Crear usuario
 app.post('/admin/users', auth, requireRole('superadmin'), async (req, res) => {
@@ -1283,6 +1371,26 @@ app.delete('/admin/users/:id', auth, requireRole('superadmin'), async (req, res)
     res.status(500).json({ error: 'No se pudo eliminar', detail: e.message });
   }
 });
+
+
+// Desbloquear cuenta (superadmin)
+app.post('/admin/users/:id/unlock', auth, requireRole('superadmin'), async (req, res) => {
+  const { id } = req.params;
+  await pool.query(
+    'UPDATE `user` SET failed_login_count=0, lock_until=NULL, lock_strikes=0, hard_locked=0 WHERE id=? LIMIT 1',
+    [id]
+  );
+  try {
+    await logEvent({
+      req, userId: req.user.uid,
+      action: (Actions?.ACCOUNT_UNLOCK || 'ACCOUNT_UNLOCK'),
+      details: { targetUserId: Number(id) }
+    });
+  } catch {}
+  res.json({ ok: true });
+});
+
+
 
 // ---------- CRUD Agentes Admin ----------
 

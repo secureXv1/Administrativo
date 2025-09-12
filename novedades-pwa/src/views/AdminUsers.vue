@@ -127,22 +127,40 @@
                   <td>{{ formatDate(u.createdAt) }}</td>
                   <td class="text-center">
                     <div class="inline-flex gap-2 items-center justify-center">
+                      <!-- Indicador de bloqueo -->
+                      <span v-if="isHardLocked(u) || isTempLocked(u)"
+                            class="px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700"
+                            :title="u.lock_until ? ('Hasta: ' + formatDate(u.lock_until)) : ''">
+                        {{ lockedLabel(u) }}
+                      </span>
+
+                      <!-- Editar -->
                       <button class="btn-ghost p-1" title="Editar" @click="openEdit(u)">
-                        <!-- icon pencil -->
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
                           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                           <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path><path d="m16 5 3 3"></path>
                         </svg>
                       </button>
+
+                      <!-- Reset pass -->
                       <button class="btn-ghost p-1" title="Restablecer contraseña" @click="resetPassword(u)">
-                        <!-- icon plus/rows -->
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
                           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                           <path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/>
                         </svg>
                       </button>
+
+                      <!-- Desbloquear (solo si está bloqueado) -->
+                      <button v-if="isHardLocked(u) || isTempLocked(u)" class="btn-ghost p-1" title="Desbloquear" @click="unlockUser(u)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M3 11V7a5 5 0 0 1 10 0"/><rect x="3" y="11" width="18" height="10" rx="2"/>
+                          <path d="M7 15h.01M11 15h6"/>
+                        </svg>
+                      </button>
+
+                      <!-- Eliminar -->
                       <button class="btn-ghost p-1" title="Eliminar" @click="deleteUser(u)">
-                        <!-- icon trash (unificado) -->
                         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
                           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                           <path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/>
@@ -152,6 +170,7 @@
                       </button>
                     </div>
                   </td>
+
                 </tr>
                 <tr v-if="users.length===0">
                   <td colspan="7" class="text-center text-slate-500 py-6">Sin usuarios</td>
@@ -189,6 +208,15 @@
                       <path d="M12 4v4"/><path d="M12 12v8"/><path d="M8 8h8"/><path d="M8 16h8"/>
                     </svg>
                   </button>
+
+                  <button v-if="isHardLocked(u) || isTempLocked(u)" class="btn-ghost p-1" title="Desbloquear" @click="unlockUser(u)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 11V7a5 5 0 0 1 10 0"/><rect x="3" y="11" width="18" height="10" rx="2"/>
+                      <path d="M7 15h.01M11 15h6"/>
+                    </svg>
+                  </button>
+
                   <button class="btn-ghost p-1" title="Eliminar" @click="deleteUser(u)">
                     <!-- trash (unificado) -->
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -314,6 +342,21 @@ function formatDate(d) {
   if (!d) return '—'
   try { return new Date(d).toLocaleString() } catch { return String(d) }
 }
+
+function isHardLocked(u) { return Number(u?.hard_locked || 0) === 1 }
+function isTempLocked(u) { 
+  if (!u?.lock_until) return false
+  try { return new Date(u.lock_until) > new Date() } catch { return false }
+}
+function lockedLabel(u) {
+  if (isHardLocked(u)) return 'Bloqueado'
+  if (isTempLocked(u)) {
+    const secs = Math.max(1, Math.ceil((new Date(u.lock_until) - new Date())/1000))
+    return `Bloqueada (${secs}s)`
+  }
+  return ''
+}
+
 
 /* ===== cobertura de roles ===== */
 const groupsMissingLeader = computed(() => {
@@ -452,6 +495,21 @@ async function resetPassword(u) {
     clearMsgAfterDelay()
   }
 }
+
+async function unlockUser(u) {
+  if (!confirm(`¿Desbloquear la cuenta de ${u.username}?`)) return
+  try {
+    const headers = { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    await axios.post(`/admin/users/${u.id}/unlock`, {}, { headers })
+    msg.value = 'Cuenta desbloqueada ✅'
+    await loadAll()
+    clearMsgAfterDelay()
+  } catch (e) {
+    msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo desbloquear'
+    clearMsgAfterDelay()
+  }
+}
+
 
 async function deleteUser(u) {
   if (!confirm(`¿Eliminar usuario ${u.username}?`)) return

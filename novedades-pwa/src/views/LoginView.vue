@@ -62,28 +62,33 @@ async function login () {
   msg.value = ''
   loading.value = true
   try {
-    // 1) obtener token
     const { data } = await axios.post('/auth/login', { username: username.value, password: password.value })
     localStorage.setItem('token', data.token)
 
-    // 2) preguntar rol y redirigir según el tipo de usuario
     const me = await axios.get('/me', { headers: { Authorization: 'Bearer ' + data.token } }).then(r => r.data)
-    console.log('ME:', me)   // <-- para debug
 
     if (me?.role === 'superadmin' || me?.role === 'supervision') {
-      router.push('/admin') // acceso total
+      router.push('/admin')
     } else if (me?.role === 'leader_group') {
-      router.push('/dashboard-grupo') // dashboard solo para lider de grupo (ajusta la ruta real si la tienes)
+      router.push('/dashboard-grupo')
     } else if (me?.role === 'leader_unit') {
-      router.push('/report') // solo acceso a módulo de reportes
+      router.push('/report')
     } else {
       msg.value = 'Rol de usuario no reconocido.'
     }
   } catch (e) {
-    msg.value = 'Credenciales inválidas'
+    const err = e?.response?.data || {}
+    if (e?.response?.status === 429 && err.detail) {
+      msg.value = err.detail
+    } else if (e?.response?.status === 423) {
+      msg.value = err.detail || 'Cuenta bloqueada. Contacte al administrador.'
+    } else {
+      msg.value = err.detail || 'Credenciales inválidas'
+    }
   } finally {
     loading.value = false
   }
 }
+
 </script>
 
