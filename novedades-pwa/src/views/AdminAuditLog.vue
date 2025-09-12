@@ -28,7 +28,7 @@
           </div>
           <div>
             <label class="label">Usuario</label>
-            <input type="text" v-model="filters.username" class="input" placeholder="Ej. juan.perez" />
+            <input type="text" v-model="filters.username" class="input" placeholder="Usuario a buscar" />
           </div>
 
           <div class="sm:col-span-6 flex gap-2">
