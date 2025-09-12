@@ -2022,13 +2022,14 @@ app.post('/admin/users/:id/reset-password', auth, requireRole('superadmin'), asy
 
 // === Listado de auditoría (solo superadmin) ===
 // GET /admin/audit?from=YYYY-MM-DD&to=YYYY-MM-DD&action=LOGIN&userId=123&search=texto&page=1&pageSize=50
+// GET /admin/audit?from=YYYY-MM-DD&to=YYYY-MM-DD&action=LOGIN&username=juan&page=1&pageSize=50
 app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const pageSize = Math.min(parseInt(req.query.pageSize, 10) || 50, 200);
     const offset = (page - 1) * pageSize;
 
-    const { from, to, action, userId, search } = req.query;
+    const { from, to, action, username } = req.query;
 
     const where = [];
     const args = [];
@@ -2036,21 +2037,24 @@ app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
     if (from)   { where.push('el.created_at >= ?'); args.push(`${from} 00:00:00`); }
     if (to)     { where.push('el.created_at <= ?'); args.push(`${to} 23:59:59`); }
     if (action) { where.push('el.action = ?');      args.push(action); }
-    if (userId) { where.push('el.userId = ?');      args.push(Number(userId)); }
-    if (search) {
-      // Compatible con MySQL/MariaDB (evita JSON_SEARCH)
-      where.push('(CAST(el.details AS CHAR) LIKE ? OR el.user_agent LIKE ? OR el.ip LIKE ?)');
-      args.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    if (username) {                                  // 🔎 por nombre de usuario
+      where.push('u.username LIKE ?');
+      args.push(`%${username}%`);
     }
     const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
 
     const [[{ total }]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM event_log el ${whereSql}`, args
+      `SELECT COUNT(*) AS total
+         FROM event_log el
+         LEFT JOIN \`user\` u ON u.id = el.userId
+       ${whereSql}`, args
     );
 
     const [rows] = await pool.query(
       `SELECT 
-         el.id, el.userId, el.action, el.details, el.ip, el.user_agent, el.created_at,
+         el.id, el.userId, el.action, el.details, el.ip, el.user_agent,
+         -- ✅ timestamp exacto en milisegundos
+         UNIX_TIMESTAMP(el.created_at) * 1000 AS created_at_ts,
          u.username, u.role
        FROM event_log el
        LEFT JOIN \`user\` u ON u.id = el.userId
@@ -2061,24 +2065,18 @@ app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
     );
 
     res.json({
-      page,
-      pageSize,
-      total,
+      page, pageSize, total,
       items: rows.map(r => ({
         id: r.id,
         userId: r.userId,
         username: r.username,
         userRole: r.role,
         action: r.action,
-        details: (()=>{
-          try {
-            if (r.details == null) return null;
-            return typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
-          } catch { return null; }
-        })(),
+        details: (() => { try { return r.details && typeof r.details === 'string' ? JSON.parse(r.details) : r.details } catch { return null } })(),
         ip: r.ip,
         user_agent: r.user_agent,
-        created_at: r.created_at,
+        created_at_ts: Number(r.created_at_ts),              // ← usar en el front
+        created_at: new Date(Number(r.created_at_ts)).toISOString(), // extra, por si lo necesitas
       }))
     });
   } catch (e) {
@@ -2086,6 +2084,7 @@ app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
     res.status(500).json({ error: 'AuditListError', detail: e.message });
   }
 });
+
 
 // === Logout (registra cierre de sesión) ===
 // ⚠️ Deja SOLO ESTE endpoint para /auth/logout (elimina duplicados)

@@ -8,7 +8,7 @@
     </header>
 
     <main class="max-w-6xl mx-auto px-2 sm:px-4 py-6 space-y-4">
-      <!-- Filtros -->
+      <!-- Filtros (mismo layout) -->
       <div class="card">
         <div class="card-body grid grid-cols-1 sm:grid-cols-6 gap-3">
           <div>
@@ -27,13 +27,10 @@
             </select>
           </div>
           <div>
-            <label class="label">Usuario (ID)</label>
-            <input type="number" v-model="filters.userId" class="input" placeholder="Ej. 12" />
+            <label class="label">Usuario</label>
+            <input type="text" v-model="filters.username" class="input" placeholder="Ej. juan.perez" />
           </div>
-          <div class="sm:col-span-2">
-            <label class="label">Buscar texto</label>
-            <input v-model="filters.search" class="input" placeholder="IP, UA, contenido de details..." />
-          </div>
+
           <div class="sm:col-span-6 flex gap-2">
             <button class="btn-primary" @click="fetchData(1)">Aplicar filtros</button>
             <button class="btn-ghost" @click="resetFilters">Limpiar</button>
@@ -49,28 +46,43 @@
               <tr>
                 <th class="whitespace-nowrap">Fecha/Hora</th>
                 <th>Acción</th>
+                <th>Resumen</th>
                 <th>Usuario</th>
                 <th>IP</th>
                 <th class="whitespace-nowrap">User Agent</th>
-                <th>Detalles</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="item in items" :key="item.id">
-                <td class="align-top">{{ formatDate(item.created_at) }}</td>
-                <td class="align-top font-semibold">{{ item.action }}</td>
+                <td class="align-top text-slate-700">{{ formatDate(item.created_at_ts ?? item.created_at) }}</td>
+
+                <td class="align-top">
+                  <span :class="['badge', actionStyle(item.action)]">
+                    <span class="mr-1">{{ actionIcon(item.action) }}</span>{{ mapAction(item.action).label }}
+                  </span>
+                </td>
+
+                <td class="align-top">
+                  <div class="text-slate-900">{{ summarize(item) }}</div>
+                  <div class="text-xs text-slate-500" v-if="extraLine(item)">{{ extraLine(item) }}</div>
+                </td>
+
                 <td class="align-top">
                   <div class="text-slate-900">{{ item.username || '—' }}</div>
-                  <div class="text-xs text-slate-500">ID: {{ item.userId || '—' }} · Rol: {{ item.userRole || '—' }}</div>
+                  <div class="text-xs text-slate-500">Rol: {{ item.userRole || '—' }}</div>
                 </td>
+
                 <td class="align-top">{{ item.ip || '—' }}</td>
                 <td class="align-top truncate max-w-[220px]">{{ item.user_agent || '—' }}</td>
-                <td class="align-top">
+
+                <td class="align-top text-right">
                   <button class="btn-ghost" @click="openDetails(item)">Ver</button>
                 </td>
               </tr>
+
               <tr v-if="!loading && !items.length">
-                <td colspan="6" class="text-center py-6 text-slate-500">Sin resultados</td>
+                <td colspan="7" class="text-center py-6 text-slate-500">Sin resultados</td>
               </tr>
             </tbody>
           </table>
@@ -92,10 +104,10 @@
     <div v-if="detailsItem" class="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
       <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full p-4">
         <div class="flex items-center justify-between mb-2">
-          <div class="font-semibold">Detalles ({{ detailsItem.action }})</div>
+          <div class="font-semibold">Detalles ({{ mapAction(detailsItem.action).label }})</div>
           <button class="btn-ghost" @click="detailsItem=null">Cerrar</button>
         </div>
-        <pre class="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-[60vh]">{{ pretty(detailsItem.details) }}</pre>
+        <pre class="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-[60vh]">{{ pretty(details(detailsItem)) }}</pre>
       </div>
     </div>
   </div>
@@ -103,22 +115,27 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { http as axios } from '@/lib/http' // tu wrapper
+import { http as axios } from '@/lib/http'
 
-const actions = [
-  'LOGIN','LOGOUT','REPORT_CREATE','REPORT_UPDATE','EXCEL_DOWNLOAD',
-  'USER_CREATE','USER_PASSWORD_CHANGE','USER_ROLE_CHANGE',
-  'AGENT_CREATE','AGENT_UPDATE','GROUP_CREATE','UNIT_CREATE'
+const actionOptions = [
+  { value: '',                 label: 'Todas',                 icon: '•'   },
+  { value: 'LOGIN',            label: 'Inicio de sesión',      icon: '🔑'  },
+  { value: 'LOGOUT',           label: 'Cierre de sesión',      icon: '⎋'   },
+  { value: 'REPORT_CREATE',    label: 'Registro de reporte',   icon: '📝'  },
+  { value: 'REPORT_UPDATE',    label: 'Edición de reporte',    icon: '✏️'  },
+  { value: 'EXCEL_DOWNLOAD',   label: 'Descarga Excel',        icon: '📊'  },
+  { value: 'USER_CREATE',      label: 'Creación de usuario',   icon: '👤➕' },
+  { value: 'USER_PASSWORD_CHANGE', label: 'Cambio de contraseña', icon: '🔒' },
+  { value: 'USER_ROLE_CHANGE', label: 'Cambio de rol',         icon: '🎛'  },
+  { value: 'AGENT_CREATE',     label: 'Creación de agente',    icon: '🧑‍✈️➕' },
+  { value: 'AGENT_UPDATE',     label: 'Edición de agente',     icon: '🧑‍✈️✏' },
+  { value: 'GROUP_CREATE',     label: 'Creación de grupo',     icon: '🧩'  },
+  { value: 'UNIT_CREATE',      label: 'Creación de unidad',    icon: '🏷️'  },
 ]
+/* para el <select> clásico del layout */
+const actions = actionOptions.filter(o => o.value).map(o => o.value)
 
-const filters = ref({
-  from: '',
-  to: '',
-  action: '',
-  userId: '',
-  search: ''
-})
-
+const filters = ref({ from:'', to:'', action:'', username:'' })
 const items = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -126,30 +143,102 @@ const pageSize = ref(50)
 const loading = ref(false)
 const detailsItem = ref(null)
 
-function formatDate(s) {
-  if (!s) return '—'
-  const d = new Date(s)
+function mapAction(value) { return actionOptions.find(o => o.value === value) || actionOptions[0] }
+function actionStyle(a){
+  switch (a) {
+    case 'LOGIN': return 'badge-green'
+    case 'LOGOUT': return 'badge-slate'
+    case 'REPORT_CREATE': return 'badge-blue'
+    case 'REPORT_UPDATE': return 'badge-amber'
+    case 'EXCEL_DOWNLOAD': return 'badge-emerald'
+    case 'USER_CREATE': return 'badge-purple'
+    case 'USER_PASSWORD_CHANGE': return 'badge-orange'
+    case 'USER_ROLE_CHANGE': return 'badge-violet'
+    case 'AGENT_CREATE': return 'badge-teal'
+    case 'AGENT_UPDATE': return 'badge-cyan'
+    case 'GROUP_CREATE': return 'badge-indigo'
+    case 'UNIT_CREATE': return 'badge-indigo'
+    default: return 'badge-slate'
+  }
+}
+function actionIcon(a){ return mapAction(a).icon }
+
+function formatDate(val){
+  if (!val && val !== 0) return '—'
+  const d = typeof val === 'number' ? new Date(val) : new Date(String(val))
   return d.toLocaleString()
 }
+function pretty(obj){ try{ return JSON.stringify(obj||{}, null, 2)}catch{ return String(obj)} }
+function resetFilters(){ filters.value = { from:'', to:'', action:'', username:'' }; fetchData(1) }
+function openDetails(item){ detailsItem.value = item }
 
-function pretty(obj) {
-  try { return JSON.stringify(obj || {}, null, 2) } catch { return String(obj) }
+// details & resúmenes
+function safeParse(v){ try{ return typeof v==='string' ? JSON.parse(v) : (v||null) }catch{ return null } }
+function details(item){ return safeParse(item?.details) }
+
+function summarize(item) {
+  const d = details(item) || {}
+  const actor = item.username ? `@${item.username}` : 'usuario'
+  switch (item.action) {
+    case 'LOGIN':  return `Inicio de sesión de ${actor}`
+    case 'LOGOUT': return `Cierre de sesión de ${actor}`
+    case 'REPORT_CREATE': {
+      const rid = d.reportId ? `#${d.reportId}` : ''
+      const date = d.reportDate || ''
+      const g = d.groupId != null ? `grupo ${d.groupId}` : ''
+      const u = d.unitId  != null ? `unidad ${d.unitId}` : ''
+      const n = Array.isArray(d.agents) ? d.agents.length : (d.agentsCount ?? '')
+      const parts = [rid, date, g, u, n ? `${n} agentes` : ''].filter(Boolean)
+      return `Registro de reporte ${parts.join(' · ')}`
+    }
+    case 'REPORT_UPDATE': {
+      const rid = d.reportId ? `#${d.reportId}` : ''
+      const code = d.agentCode || d.code || ''
+      const st = d.state || d?.changes?.state
+      const base = `Actualizó reporte ${rid}${code ? ` para agente ${code}` : ''}`
+      return st ? `${base} · estado: ${st}` : base
+    }
+    case 'EXCEL_DOWNLOAD': {
+      const date = d.date || ''
+      const g = d.groupId != null ? `grupo ${d.groupId}` : ''
+      const u = d.unitId  != null ? `unidad ${d.unitId}` : ''
+      const parts = [date, g, u].filter(Boolean)
+      return `Descargó Excel${parts.length ? ' · ' + parts.join(' · ') : ''}`
+    }
+    case 'USER_CREATE':           return `Creó usuario ${d.username ? '@'+d.username : 'nuevo usuario'}${d.role ? ' · rol '+d.role : ''}`
+    case 'USER_PASSWORD_CHANGE':  return `Cambio de contraseña de usuario${d.by ? ` (${d.by})` : ''}`
+    case 'USER_ROLE_CHANGE':      return `Cambio de rol de usuario${d.oldRole || d.newRole ? `: ${d.oldRole || '—'} → ${d.newRole || '—'}` : ''}`
+    case 'AGENT_CREATE':          return `Creó agente ${d.code || 'sin código'}${d.category ? ' · '+d.category : ''}`
+    case 'AGENT_UPDATE': {
+      const code = d?.changes?.code || d.code
+      const keys = d?.changes ? Object.keys(d.changes).filter(k => k !== 'code') : []
+      return `Editó agente ${code || ''}${keys.length ? ` · campos: ${keys.join(', ')}` : ''}`
+    }
+    case 'GROUP_CREATE':          return `Creó grupo ${d.code || 'nuevo'}`
+    case 'UNIT_CREATE':           return `Creó unidad ${d.name || 'nueva'}${d.groupId != null ? ' · grupo '+d.groupId : ''}`
+    default:                      return 'Evento'
+  }
+}
+function extraLine(item) {
+  const d = details(item) || {}
+  if (item.action === 'REPORT_UPDATE') {
+    const segs = []
+    if (d.municipalityId) segs.push(`municipio ${d.municipalityId}`)
+    if (d.novelty_start) segs.push(`inicio ${d.novelty_start}`)
+    if (d.novelty_end) segs.push(`fin ${d.novelty_end}`)
+    if (d.novelty_description) segs.push(`"${String(d.novelty_description).slice(0,50)}${String(d.novelty_description).length>50?'…':''}"`)
+    return segs.join(' · ') || null
+  }
+  return null
 }
 
-function resetFilters() {
-  filters.value = { from: '', to: '', action: '', userId: '', search: '' }
-  fetchData(1)
-}
-
+// fetch
 async function fetchData(p = 1) {
   loading.value = true
   page.value = p
   try {
-    const params = {
-      page: page.value,
-      pageSize: pageSize.value
-    }
-    Object.entries(filters.value).forEach(([k,v]) => { if (v !== '' && v != null) params[k]=v })
+    const params = { page: page.value, pageSize: pageSize.value }
+    Object.entries(filters.value).forEach(([k, v]) => { if (v !== '' && v != null) params[k] = v })
     const { data } = await axios.get('/admin/audit', { params })
     items.value = data.items || []
     total.value = data.total || 0
@@ -162,9 +251,26 @@ async function fetchData(p = 1) {
   }
 }
 
-function openDetails(item) {
-  detailsItem.value = item
-}
-
-onMounted(() => fetchData(1))
+// por defecto: últimos 7 días
+onMounted(() => {
+  const t = new Date()
+  const from = new Date(t); from.setDate(from.getDate() - 6)
+  filters.value.from = from.toISOString().slice(0,10)
+  filters.value.to   = t.toISOString().slice(0,10)
+  fetchData(1)
+})
 </script>
+
+<style scoped>
+.badge { @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium; }
+.badge-slate   { @apply bg-slate-100 text-slate-700; }
+.badge-green   { @apply bg-green-100 text-green-700; }
+.badge-blue    { @apply bg-blue-100 text-blue-700; }
+.badge-amber   { @apply bg-amber-100 text-amber-800; }
+.badge-emerald { @apply bg-emerald-100 text-emerald-700; }
+.badge-purple  { @apply bg-purple-100 text-purple-700; }
+.badge-violet  { @apply bg-violet-100 text-violet-700; }
+.badge-teal    { @apply bg-teal-100 text-teal-700; }
+.badge-cyan    { @apply bg-cyan-100 text-cyan-700; }
+.badge-indigo  { @apply bg-indigo-100 text-indigo-700; }
+</style>
