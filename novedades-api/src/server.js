@@ -1609,102 +1609,126 @@ app.put('/admin/report-agents/:reportId/:agentId',
   auth,
   requireRole('superadmin', 'supervision', 'leader_group'),
   async (req, res) => {
-    const { reportId, agentId } = req.params;
-    const { state, municipalityId, novelty_start, novelty_end, novelty_description } = req.body;
+    try {
+      const { reportId, agentId } = req.params;
+      const { state, municipalityId, novelty_start, novelty_end, novelty_description } = req.body;
 
-    if (!reportId || !agentId) return res.status(400).json({ error: 'Parámetros requeridos' });
-
-    // Si es líder de grupo, solo puede editar reportes de SU grupo
-    if (req.user.role === 'leader_group') {
-      const [[rep]] = await pool.query('SELECT groupId FROM dailyreport WHERE id=? LIMIT 1', [reportId]);
-      if (!rep || rep.groupId !== req.user.groupId) {
-        return res.status(403).json({ error: 'No autorizado' });
+      if (!reportId || !agentId) {
+        return res.status(400).json({ error: 'Parámetros requeridos' });
       }
-    }
 
-    const estadosValidos = [
-      "SIN NOVEDAD",
-      "SERVICIO",
-      "COMISIÓN DEL SERVICIO",
-      "FRANCO FRANCO",
-      "VACACIONES",
-      "LICENCIA DE MATERNIDAD",
-      "LICENCIA DE LUTO",
-      "LICENCIA REMUNERADA",
-      "LICENCIA NO REMUNERADA",
-      "EXCUSA DEL SERVICIO",
-      "LICENCIA PATERNIDAD","PERMISO","COMISIÓN EN EL EXTERIOR"
-    ];
-    const s = String(state || '').toUpperCase().trim();
-    if (!estadosValidos.includes(s)) {
-      return res.status(422).json({ error: 'Estado inválido' });
-    }
-
-    // Normalización/validación según estado
-    let muniId = municipalityId ? Number(municipalityId) : null;
-    let novStart = novelty_start || null;
-    let novEnd   = novelty_end   || null;
-    let novDesc  = novelty_description || null;
-
-    if (s === 'SIN NOVEDAD') {
-      muniId = 11001; novStart = null; novEnd = null; novDesc = null;
-    } else if (s === 'SERVICIO') {
-      muniId = 11001;
-      if (!novStart) return res.status(422).json({ error: 'Falta fecha de inicio (SERVICIO)' });
-      if (!novEnd)   return res.status(422).json({ error: 'Falta fecha de fin (SERVICIO)' });
-      if (!novDesc)  return res.status(422).json({ error: 'Falta descripción (SERVICIO)' });
-    } else if (s === 'COMISIÓN DEL SERVICIO') {
-      if (!muniId) return res.status(422).json({ error: 'Falta municipio (COMISIÓN DEL SERVICIO)' });
-      novStart = null; novEnd = null; novDesc = null;
-    } else if (s === 'FRANCO FRANCO') {
-      muniId = null; novStart = null; novEnd = null; novDesc = null;
-    } else {
-      // VACACIONES, LICENCIAS, EXCUSA, PATERNIDAD...
-      if (!novStart) return res.status(422).json({ error: `Falta fecha de inicio (${s})` });
-      if (!novEnd)   return res.status(422).json({ error: `Falta fecha de fin (${s})` });
-      if (!novDesc)  return res.status(422).json({ error: `Falta descripción (${s})` });
-      muniId = null;
-    }
-
-    // Verifica que exista la fila
-    const [[exists]] = await pool.query(
-      'SELECT 1 FROM dailyreport_agent WHERE reportId=? AND agentId=? LIMIT 1',
-      [reportId, agentId]
-    );
-    if (!exists) return res.status(404).json({ error: 'Fila no encontrada' });
-
-    // Actualiza dailyreport_agent y el agente
-    await pool.query(`
-      UPDATE dailyreport_agent
-      SET state=?, municipalityId=?, novelty_start=?, novelty_end=?, novelty_description=?
-      WHERE reportId=? AND agentId=?
-    `, [s, muniId, novStart, novEnd, novDesc, reportId, agentId]);
-
-    await pool.query(`
-      UPDATE agent SET status=?, municipalityId=? WHERE id=?
-    `, [s, muniId, agentId]);
-
-    await recalcDailyReport(reportId);
-
-    await logEvent({
-  req, userId: req.user.uid,
-  action: Actions.REPORT_UPDATE,
-  details: {
-    reportId: Number(reportId),
-    agentId: Number(agentId),
-    changes: {
-      state: s,
-      municipalityId: muniId,
-      novelty_start: novStart,
-      novelty_end: novEnd,
-      novelty_description: novDesc
-    }
+      // Si es líder de grupo, solo puede editar reportes de SU grupo
+      if (req.user.role === 'leader_group') {
+        const [[repCheck]] = await pool.query(
+          'SELECT groupId FROM dailyreport WHERE id=? LIMIT 1',
+          [reportId]
+        );
+        if (!repCheck || repCheck.groupId !== req.user.groupId) {
+          return res.status(403).json({ error: 'No autorizado' });
+        }
       }
-    });
 
-res.json({ ok: true });
+      const estadosValidos = [
+        "SIN NOVEDAD","SERVICIO","COMISIÓN DEL SERVICIO","FRANCO FRANCO",
+        "VACACIONES","LICENCIA DE MATERNIDAD","LICENCIA DE LUTO",
+        "LICENCIA REMUNERADA","LICENCIA NO REMUNERADA","EXCUSA DEL SERVICIO",
+        "LICENCIA PATERNIDAD","PERMISO","COMISIÓN EN EL EXTERIOR"
+      ];
+      const s = String(state || '').toUpperCase().trim();
+      if (!estadosValidos.includes(s)) {
+        return res.status(422).json({ error: 'Estado inválido' });
+      }
 
+      // Normalización/validación según estado
+      let muniId = municipalityId ? Number(municipalityId) : null;
+      let novStart = novelty_start || null;
+      let novEnd   = novelty_end   || null;
+      let novDesc  = novelty_description || null;
 
+      if (s === 'SIN NOVEDAD') {
+        muniId = 11001; novStart = null; novEnd = null; novDesc = null;
+      } else if (s === 'SERVICIO') {
+        muniId = 11001;
+        if (!novStart) return res.status(422).json({ error: 'Falta fecha de inicio (SERVICIO)' });
+        if (!novEnd)   return res.status(422).json({ error: 'Falta fecha de fin (SERVICIO)' });
+        if (!novDesc)  return res.status(422).json({ error: 'Falta descripción (SERVICIO)' });
+      } else if (s === 'COMISIÓN DEL SERVICIO') {
+        if (!muniId) return res.status(422).json({ error: 'Falta municipio (COMISIÓN DEL SERVICIO)' });
+        novStart = null; novEnd = null; novDesc = null;
+      } else if (s === 'FRANCO FRANCO') {
+        muniId = null; novStart = null; novEnd = null; novDesc = null;
+      } else {
+        // VACACIONES, LICENCIAS, EXCUSA, PATERNIDAD...
+        if (!novStart) return res.status(422).json({ error: `Falta fecha de inicio (${s})` });
+        if (!novEnd)   return res.status(422).json({ error: `Falta fecha de fin (${s})` });
+        if (!novDesc)  return res.status(422).json({ error: `Falta descripción (${s})` });
+        muniId = null;
+      }
+
+      // Verifica que exista la fila
+      const [[exists]] = await pool.query(
+        'SELECT 1 FROM dailyreport_agent WHERE reportId=? AND agentId=? LIMIT 1',
+        [reportId, agentId]
+      );
+      if (!exists) return res.status(404).json({ error: 'Fila no encontrada' });
+
+      // Actualiza dailyreport_agent y el agente
+      await pool.query(`
+        UPDATE dailyreport_agent
+           SET state=?, municipalityId=?, novelty_start=?, novelty_end=?, novelty_description=?
+         WHERE reportId=? AND agentId=?
+      `, [s, muniId, novStart, novEnd, novDesc, reportId, agentId]);
+
+      await pool.query(`
+        UPDATE agent SET status=?, municipalityId=? WHERE id=?
+      `, [s, muniId, agentId]);
+
+      await recalcDailyReport(reportId);
+
+      // 🔎 Snapshot para el log: código/categoría del agente y meta del reporte
+      const [[agSnap]] = await pool.query(
+        'SELECT code, category FROM agent WHERE id=? LIMIT 1',
+        [agentId]
+      );
+      const [[repMeta]] = await pool.query(
+        `SELECT DATE_FORMAT(reportDate,'%Y-%m-%d') AS reportDate, groupId, unitId
+           FROM dailyreport WHERE id=? LIMIT 1`,
+        [reportId]
+      );
+
+      // 📝 Log enriquecido (incluye agentCode/agentCategory)
+      try {
+        await logEvent({
+          req,
+          userId: req.user.uid,
+          action: Actions.REPORT_UPDATE,
+          details: {
+            reportId: Number(reportId),
+            reportDate: repMeta?.reportDate || null,
+            groupId: repMeta?.groupId ?? null,
+            unitId:  repMeta?.unitId  ?? null,
+            agentId: Number(agentId),
+            agentCode: agSnap?.code || null,
+            agentCategory: agSnap?.category || null,
+            changes: {
+              state: s,
+              municipalityId: muniId,
+              novelty_start: novStart,
+              novelty_end: novEnd,
+              novelty_description: novDesc
+            }
+          }
+        });
+      } catch (e) {
+        // no bloquear la operación por fallos de logging
+        console.warn('logEvent REPORT_UPDATE error:', e?.message);
+      }
+
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error('PUT /admin/report-agents error:', e);
+      return res.status(500).json({ error: 'ReportAgentUpdateError', detail: e.message });
+    }
   }
 );
 
@@ -2023,6 +2047,7 @@ app.post('/admin/users/:id/reset-password', auth, requireRole('superadmin'), asy
 // === Listado de auditoría (solo superadmin) ===
 // GET /admin/audit?from=YYYY-MM-DD&to=YYYY-MM-DD&action=LOGIN&userId=123&search=texto&page=1&pageSize=50
 // GET /admin/audit?from=YYYY-MM-DD&to=YYYY-MM-DD&action=LOGIN&username=juan&page=1&pageSize=50
+// GET /admin/audit?from=...&to=...&action=...&username=...
 app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -2034,13 +2059,10 @@ app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
     const where = [];
     const args = [];
 
-    if (from)   { where.push('el.created_at >= ?'); args.push(`${from} 00:00:00`); }
-    if (to)     { where.push('el.created_at <= ?'); args.push(`${to} 23:59:59`); }
-    if (action) { where.push('el.action = ?');      args.push(action); }
-    if (username) {                                  // 🔎 por nombre de usuario
-      where.push('u.username LIKE ?');
-      args.push(`%${username}%`);
-    }
+    if (from)     { where.push('el.created_at >= ?'); args.push(`${from} 00:00:00`); }
+    if (to)       { where.push('el.created_at <= ?'); args.push(`${to} 23:59:59`); }
+    if (action)   { where.push('el.action = ?');      args.push(action); }
+    if (username) { where.push('u.username LIKE ?');  args.push(`%${username}%`); }
     const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
 
     const [[{ total }]] = await pool.query(
@@ -2053,11 +2075,17 @@ app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
     const [rows] = await pool.query(
       `SELECT 
          el.id, el.userId, el.action, el.details, el.ip, el.user_agent,
-         -- ✅ timestamp exacto en milisegundos
-         UNIX_TIMESTAMP(el.created_at) * 1000 AS created_at_ts,
-         u.username, u.role
+         UNIX_TIMESTAMP(el.created_at)*1000 AS created_at_ts,
+         u.username, u.role,
+
+         -- 💡 extrae agentId del JSON y júntalo para traer el code cuando exista
+         CAST(JSON_UNQUOTE(JSON_EXTRACT(el.details,'$.agentId')) AS UNSIGNED) AS agentIdFromDetails,
+         a.code   AS agentCodeFromDetails,
+         a.category AS agentCategoryFromDetails
        FROM event_log el
        LEFT JOIN \`user\` u ON u.id = el.userId
+       LEFT JOIN agent a
+         ON a.id = CAST(JSON_UNQUOTE(JSON_EXTRACT(el.details,'$.agentId')) AS UNSIGNED)
        ${whereSql}
        ORDER BY el.created_at DESC
        LIMIT ? OFFSET ?`,
@@ -2066,24 +2094,35 @@ app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
 
     res.json({
       page, pageSize, total,
-      items: rows.map(r => ({
-        id: r.id,
-        userId: r.userId,
-        username: r.username,
-        userRole: r.role,
-        action: r.action,
-        details: (() => { try { return r.details && typeof r.details === 'string' ? JSON.parse(r.details) : r.details } catch { return null } })(),
-        ip: r.ip,
-        user_agent: r.user_agent,
-        created_at_ts: Number(r.created_at_ts),              // ← usar en el front
-        created_at: new Date(Number(r.created_at_ts)).toISOString(), // extra, por si lo necesitas
-      }))
+      items: rows.map(r => {
+        let det = null;
+        try { det = r.details && typeof r.details === 'string' ? JSON.parse(r.details) : r.details; } catch {}
+        if (det && r.agentCodeFromDetails && !det.agentCode) {
+          det.agentCode = r.agentCodeFromDetails;
+        }
+        if (det && r.agentCategoryFromDetails && !det.agentCategory) {
+          det.agentCategory = r.agentCategoryFromDetails;
+        }
+        return {
+          id: r.id,
+          userId: r.userId,
+          username: r.username,
+          userRole: r.role,
+          action: r.action,
+          details: det,
+          ip: r.ip,
+          user_agent: r.user_agent,
+          created_at_ts: Number(r.created_at_ts),
+          created_at: new Date(Number(r.created_at_ts)).toISOString()
+        };
+      })
     });
   } catch (e) {
     console.error('/admin/audit error:', e);
     res.status(500).json({ error: 'AuditListError', detail: e.message });
   }
 });
+
 
 
 // === Logout (registra cierre de sesión) ===

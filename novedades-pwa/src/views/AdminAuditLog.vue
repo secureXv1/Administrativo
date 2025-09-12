@@ -54,37 +54,69 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in items" :key="item.id">
-                <td class="align-top text-slate-700">{{ formatDate(item.created_at_ts ?? item.created_at) }}</td>
+  <tr v-for="item in items" :key="item.id">
+    <td class="align-top text-slate-700">
+      {{ formatDate(item.created_at_ts ?? item.created_at) }}
+            </td>
 
-                <td class="align-top">
-                  <span :class="['badge', actionStyle(item.action)]">
-                    <span class="mr-1">{{ actionIcon(item.action) }}</span>{{ mapAction(item.action).label }}
-                  </span>
-                </td>
+            <td class="align-top">
+            <span :class="['badge', actionStyle(item.action)]">
+                <span class="mr-1">{{ actionIcon(item.action) }}</span>
+                {{ mapAction(item.action).label }}
+            </span>
+            </td>
 
-                <td class="align-top">
-                  <div class="text-slate-900">{{ summarize(item) }}</div>
-                  <div class="text-xs text-slate-500" v-if="extraLine(item)">{{ extraLine(item) }}</div>
-                </td>
+            <td class="align-top">
+            <!-- Resumen principal -->
+            <div class="text-slate-900">{{ summarize(item) }}</div>
 
-                <td class="align-top">
-                  <div class="text-slate-900">{{ item.username || '—' }}</div>
-                  <div class="text-xs text-slate-500">Rol: {{ item.userRole || '—' }}</div>
-                </td>
+            <!-- Pill con agente (si viene en details) -->
+            <div v-if="details(item)?.agentCode" class="mt-1">
+                <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 10a4 4 0 100-8 4 4 0 000 8zm-7 8a7 7 0 1114 0H3z"/></svg>
+                Agente: {{ details(item).agentCode }}
+                <span v-if="details(item).agentCategory" class="opacity-70">· {{ details(item).agentCategory }}</span>
+                </span>
+            </div>
 
-                <td class="align-top">{{ item.ip || '—' }}</td>
-                <td class="align-top truncate max-w-[220px]">{{ item.user_agent || '—' }}</td>
+            <!-- Chips con contexto del reporte (opcionales) -->
+            <div
+                v-if="details(item)?.reportDate || details(item)?.groupId || details(item)?.unitId"
+                class="mt-1 flex flex-wrap gap-1.5"
+            >
+                <span v-if="details(item).reportDate" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+                Fecha: {{ details(item).reportDate }}
+                </span>
+                <span v-if="details(item).groupId != null" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+                Grupo: {{ details(item).groupId }}
+                </span>
+                <span v-if="details(item).unitId != null" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+                Unidad: {{ details(item).unitId }}
+                </span>
+            </div>
 
-                <td class="align-top text-right">
-                  <button class="btn-ghost" @click="openDetails(item)">Ver</button>
-                </td>
-              </tr>
+            <!-- Línea extra específica (tu lógica actual) -->
+            <div class="text-xs text-slate-500 mt-1" v-if="extraLine(item)">{{ extraLine(item) }}</div>
+            </td>
 
-              <tr v-if="!loading && !items.length">
-                <td colspan="7" class="text-center py-6 text-slate-500">Sin resultados</td>
-              </tr>
-            </tbody>
+            <td class="align-top">
+            <div class="text-slate-900">{{ item.username || '—' }}</div>
+            <div class="text-xs text-slate-500">Rol: {{ item.userRole || '—' }}</div>
+            </td>
+
+            <td class="align-top">{{ item.ip || '—' }}</td>
+            <td class="align-top truncate max-w-[220px]">{{ item.user_agent || '—' }}</td>
+
+            <td class="align-top text-right">
+            <button class="btn-ghost" @click="openDetails(item)">Ver</button>
+            </td>
+        </tr>
+
+        <tr v-if="!loading && !items.length">
+            <td colspan="7" class="text-center py-6 text-slate-500">Sin resultados</td>
+        </tr>
+</tbody>
+
           </table>
         </div>
 
