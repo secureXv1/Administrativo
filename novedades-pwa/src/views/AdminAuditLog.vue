@@ -153,6 +153,9 @@ const actionOptions = [
   { value: '',                 label: 'Todas',                 icon: '•'   },
   { value: 'LOGIN',            label: 'Inicio de sesión',      icon: '🔑'  },
   { value: 'LOGOUT',           label: 'Cierre de sesión',      icon: '⎋'   },
+  { value: 'ACCOUNT_LOCK',     label: 'Bloqueo temporal',      icon: '⏳'  },
+  { value: 'ACCOUNT_HARD_LOCK',label: 'Bloqueo',          icon: '🔒'  },
+  { value: 'ACCOUNT_UNLOCK',   label: 'Desbloqueo de cuenta',  icon: '🔓'  },
   { value: 'REPORT_CREATE',    label: 'Registro de reporte',   icon: '📝'  },
   { value: 'REPORT_UPDATE',    label: 'Edición de reporte',    icon: '✏️'  },
   { value: 'EXCEL_DOWNLOAD',   label: 'Descarga Excel',        icon: '📊'  },
@@ -180,6 +183,9 @@ function actionStyle(a){
   switch (a) {
     case 'LOGIN': return 'badge-green'
     case 'LOGOUT': return 'badge-slate'
+    case 'ACCOUNT_LOCK': return 'badge-amber'
+    case 'ACCOUNT_HARD_LOCK': return 'badge-red'
+    case 'ACCOUNT_UNLOCK': return 'badge-lime'
     case 'REPORT_CREATE': return 'badge-blue'
     case 'REPORT_UPDATE': return 'badge-amber'
     case 'EXCEL_DOWNLOAD': return 'badge-emerald'
@@ -214,6 +220,21 @@ function summarize(item) {
   switch (item.action) {
     case 'LOGIN':  return `Inicio de sesión de ${actor}`
     case 'LOGOUT': return `Cierre de sesión de ${actor}`
+
+     case 'ACCOUNT_LOCK': {
+      const mins = d.minutes ? `${d.minutes} min` : (d.lock_until ? 'hasta ' + d.lock_until : '')
+      const who  = d.targetUserId ? `ID ${d.targetUserId}` : (d.username ? '@' + d.username : 'cuenta')
+      return `Bloqueo temporal de ${who}${mins ? ' · ' + mins : ''}${d.reason ? ' · ' + d.reason : ''}`
+    }
+    case 'ACCOUNT_HARD_LOCK': {
+      const who  = d.targetUserId ? `ID ${d.targetUserId}` : (d.username ? '@' + d.username : 'cuenta')
+      return `Bloqueo de ${who}${d.reason ? ' · ' + d.reason : ''}`
+    }
+        case 'ACCOUNT_UNLOCK': {
+        const who = d.username ? `@${d.username}` 
+                    : (d.targetUserId ? `ID ${d.targetUserId}` : 'cuenta')
+        return `Desbloqueo de ${who}`
+        }
     case 'REPORT_CREATE': {
       const rid = d.reportId ? `#${d.reportId}` : ''
       const date = d.reportDate || ''
@@ -305,4 +326,6 @@ onMounted(() => {
 .badge-teal    { @apply bg-teal-100 text-teal-700; }
 .badge-cyan    { @apply bg-cyan-100 text-cyan-700; }
 .badge-indigo  { @apply bg-indigo-100 text-indigo-700; }
+.badge-red   { @apply bg-red-100 text-red-700; }
+.badge-lime  { @apply bg-lime-100 text-lime-700; }
 </style>
