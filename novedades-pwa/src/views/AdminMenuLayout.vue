@@ -8,8 +8,7 @@
           <!-- Botón hamburguesa solo móvil -->
           <button class="md:hidden p-2 -ml-2" @click="drawerOpen = true" aria-label="Abrir menú">
             <svg class="h-7 w-7 text-brand-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 6h16M4 12h16M4 18h16"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
           </button>
 
@@ -17,13 +16,13 @@
           <div>
             <h1 class="text-slate-900 font-semibold leading-tight text-base sm:text-lg">
               Dashboard de Novedades
-              <template v-if="me && me.role === 'leader_group'">- Grupo</template>
+              <template v-if="isLeaderGroup">- Grupo</template>
             </h1>
             <p class="text-slate-500 text-xs">
-              <template v-if="me && me.role === 'superadmin'">Administrador</template>
-              <template v-else-if="me && me.role === 'supervision'">Supervisión</template>
-              <template v-else-if="me && me.role === 'leader_group'">Líder de Grupo</template>
-              <template v-else-if="me && me.role === 'leader_unit'">Líder de Unidad</template>
+              <template v-if="isSuperadmin">Administrador</template>
+              <template v-else-if="isSupervision">Supervisión</template>
+              <template v-else-if="isLeaderGroup">Líder de Grupo</template>
+              <template v-else-if="isLeaderUnit">Líder de Unidad</template>
             </p>
           </div>
         </div>
@@ -31,13 +30,13 @@
         <!-- Menú Desktop -->
         <nav class="hidden md:flex items-center gap-2">
           <!-- SOLO leader_unit -->
-          <template v-if="me && me.role === 'leader_unit'">
+          <template v-if="isLeaderUnit">
             <router-link to="/report" class="btn-ghost" active-class="bg-slate-200">Reporte</router-link>
             <router-link to="/admin/perfil" class="btn-ghost" active-class="bg-slate-200">Perfil</router-link>
           </template>
 
           <!-- SOLO leader_group -->
-          <template v-else-if="me && me.role === 'leader_group'">
+          <template v-else-if="isLeaderGroup">
             <router-link to="/admin" class="btn-ghost" active-class="bg-slate-200">Dashboard</router-link>
             <router-link to="/admin/units" class="btn-ghost" active-class="bg-slate-200">Unidades</router-link>
             <router-link to="/admin/agents" class="btn-ghost" active-class="bg-slate-200">Agentes</router-link>
@@ -45,23 +44,23 @@
           </template>
 
           <!-- SUPERADMIN o SUPERVISION -->
-          <template v-else-if="me && (me.role === 'superadmin' || me.role === 'supervision')">
+          <template v-else-if="isSuperadmin || isSupervision">
             <router-link to="/admin" class="btn-ghost" active-class="bg-slate-200">Dashboard</router-link>
             <router-link to="/admin/groups" class="btn-ghost" active-class="bg-slate-200">Grupos</router-link>
             <router-link to="/admin/units" class="btn-ghost" active-class="bg-slate-200">Unidades</router-link>
 
             <!-- Usuarios: SOLO superadmin -->
-            <router-link
-              v-if="me.role === 'superadmin'"
-              to="/admin/users"
-              class="btn-ghost"
-              active-class="bg-slate-200"
-            >
+            <router-link v-if="isSuperadmin" to="/admin/users" class="btn-ghost" active-class="bg-slate-200">
               Usuarios
             </router-link>
 
             <router-link to="/admin/agents" class="btn-ghost" active-class="bg-slate-200">Agentes</router-link>
             <router-link to="/admin/perfil" class="btn-ghost" active-class="bg-slate-200">Perfil</router-link>
+
+            <!-- Log de eventos: SOLO superadmin -->
+            <router-link v-if="isSuperadmin" to="/admin/audit" class="btn-ghost" active-class="bg-slate-200">
+              Log de eventos
+            </router-link>
           </template>
 
           <button @click="logout" class="btn-ghost">Cerrar sesión</button>
@@ -97,13 +96,13 @@
             <!-- Navegación -->
             <nav class="flex-1 overflow-y-auto p-2">
               <!-- SOLO leader_unit -->
-              <template v-if="me && me.role === 'leader_unit'">
+              <template v-if="isLeaderUnit">
                 <router-link to="/report" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Reporte</router-link>
                 <router-link to="/admin/perfil" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Perfil</router-link>
               </template>
 
               <!-- SOLO leader_group -->
-              <template v-else-if="me && me.role === 'leader_group'">
+              <template v-else-if="isLeaderGroup">
                 <router-link to="/admin" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Dashboard</router-link>
                 <router-link to="/admin/units" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Unidades</router-link>
                 <router-link to="/admin/agents" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Agentes</router-link>
@@ -111,13 +110,27 @@
               </template>
 
               <!-- SUPERADMIN o SUPERVISION -->
-              <template v-else-if="me && (me.role === 'superadmin' || me.role === 'supervision')">
+              <template v-else-if="isSuperadmin || isSupervision">
                 <router-link to="/admin" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Dashboard</router-link>
                 <router-link to="/admin/groups" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Grupos</router-link>
                 <router-link to="/admin/units" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Unidades</router-link>
-                <router-link v-if="me.role==='superadmin'" to="/admin/users" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Usuarios</router-link>
+
+                <!-- Usuarios: SOLO superadmin -->
+                <router-link v-if="isSuperadmin" to="/admin/users" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Usuarios</router-link>
+
                 <router-link to="/admin/agents" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Agentes</router-link>
                 <router-link to="/admin/perfil" class="btn-ghost w-full text-left" active-class="bg-slate-100" @click="closeDrawer">Perfil</router-link>
+
+                <!-- Log de eventos: SOLO superadmin -->
+                <router-link
+                  v-if="isSuperadmin"
+                  to="/admin/audit"
+                  class="btn-ghost w-full text-left"
+                  active-class="bg-slate-100"
+                  @click="closeDrawer"
+                >
+                  Log de eventos
+                </router-link>
               </template>
             </nav>
 
@@ -138,13 +151,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 
 const drawerOpen = ref(false)
 const me = ref(null)
 const router = useRouter()
+
+// Roles comodín
+const isSuperadmin   = computed(() => me.value?.role === 'superadmin')
+const isSupervision  = computed(() => me.value?.role === 'supervision')
+const isLeaderGroup  = computed(() => me.value?.role === 'leader_group')
+const isLeaderUnit   = computed(() => me.value?.role === 'leader_unit')
 
 // Cerrar drawer tras cualquier navegación
 router.afterEach(() => { drawerOpen.value = false })
@@ -161,8 +180,9 @@ watch(drawerOpen, (open) => {
 // Cargar usuario para menú
 async function loadMe() {
   try {
+    const token = localStorage.getItem('token') || ''
     const { data } = await axios.get('/me', {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+      headers: { Authorization: 'Bearer ' + token }
     })
     me.value = data
   } catch {
@@ -171,9 +191,19 @@ async function loadMe() {
 }
 onMounted(loadMe)
 
-function logout() {
-  localStorage.removeItem('token')
-  window.location.href = '/login'
+// Logout con auditoría (POST /auth/logout) y luego limpiar token
+async function logout() {
+  try {
+    const token = localStorage.getItem('token') || ''
+    if (token) {
+      await axios.post('/auth/logout', {}, { headers: { Authorization: 'Bearer ' + token } })
+    }
+  } catch {
+    // continuar de todos modos
+  } finally {
+    localStorage.removeItem('token')
+    window.location.href = '/login'
+  }
 }
 </script>
 

@@ -8,6 +8,11 @@ import cron from 'node-cron';
 import bcrypt from 'bcryptjs';
 import { initDb, pool } from './db.js'; // Si tu db.js NO tiene initDb, ignora y solo importa pool.
 import { computeNovelties } from './utils.js';
+import { logEvent, Actions } from './audit.js';
+import { requireSuperadmin } from './middlewares.js';
+
+
+
 
 // === INICIALIZACIÓN SEGURA DE LA DB ===
 async function main() {
@@ -27,25 +32,55 @@ async function main() {
 
 
   // ---------- AUTH ----------
-  app.post('/auth/login', async (req, res) => {
-    const { username, password } = req.body;
+ app.post('/auth/login', async (req, res) => {
+  try {
+    const username = String(req.body.username || '').trim();
+    const password = String(req.body.password || '');
+
     const [rows] = await pool.query(
       'SELECT id, username, passwordHash, role, groupId, unitId FROM `user` WHERE username=? LIMIT 1',
       [username]
     );
     const user = rows[0];
-    if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!user) {
+      // opcional: loguear intento fallido
+      // await logEvent({ req, userId: null, action: 'LOGIN_FAIL', details: { username } });
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
 
     const ok = await bcrypt.compare(password, user.passwordHash).catch(() => false);
-    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    if (!ok) {
+      // opcional: loguear intento fallido
+      // await logEvent({ req, userId: user.id, action: 'LOGIN_FAIL', details: { username } });
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    // ✅ Log de inicio de sesión (apertura)
+    await logEvent({
+      req,
+      userId: user.id,
+      action: Actions.LOGIN,
+      details: { username: user.username, role: user.role }
+    });
 
     const token = jwt.sign(
-      { uid: user.id, username: user.username, role: user.role, groupId: user.groupId, unitId: user.unitId },
+      {
+        uid: user.id,
+        username: user.username,
+        role: user.role,
+        groupId: user.groupId,
+        unitId: user.unitId,
+      },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
-    res.json({ token });
-  });
+
+    return res.json({ token });
+  } catch (err) {
+    console.error('LOGIN error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
 
   function auth(req, res, next) {
     const h = req.headers.authorization || '';
@@ -94,38 +129,37 @@ async function main() {
 
 // Cambiar contraseña del usuario autenticado
   app.post('/me/change-password', auth, async (req, res) => {
-    const { oldPassword, newPassword } = req.body;
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) {
+    return res.status(400).json({ error: 'Campos requeridos' });
+  }
+  if (!isStrongPassword(newPassword)) {
+    return res.status(422).json({
+      error: 'Password débil',
+      detail: 'Debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y carácter especial.'
+    });
+  }
 
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ error: 'Campos requeridos' });
-    }
+  const [[user]] = await pool.query(
+    'SELECT passwordHash FROM user WHERE id=? LIMIT 1', [req.user.uid]
+  );
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
-    if (!isStrongPassword(newPassword)) {
-      return res.status(422).json({
-        error: 'Password débil',
-        detail: 'Debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y carácter especial.'
-      });
-    }
+  const ok = await bcrypt.compare(oldPassword, user.passwordHash);
+  if (!ok) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
 
-    const [[user]] = await pool.query(
-      'SELECT passwordHash FROM user WHERE id=? LIMIT 1',
-      [req.user.uid]
-    );
-    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const hash = await bcrypt.hash(newPassword, 10);
+  await pool.query('UPDATE user SET passwordHash=? WHERE id=?', [hash, req.user.uid]);
 
-    const ok = await bcrypt.compare(oldPassword, user.passwordHash);
-    if (!ok) {
-      return res.status(401).json({ error: 'Contraseña actual incorrecta' });
-    }
-
-    const hash = await bcrypt.hash(newPassword, 10);
-    await pool.query(
-      'UPDATE user SET passwordHash=? WHERE id=?',
-      [hash, req.user.uid]
-    );
-
-    res.json({ ok: true });
+  await logEvent({
+    req, userId: req.user.uid,
+    action: Actions.USER_PASSWORD_CHANGE,
+    details: { targetUserId: req.user.uid, by: 'self' }
   });
+
+  res.json({ ok: true });
+});
+
 
   app.get('/catalogs/agents', auth, async (req, res) => {
   try {
@@ -514,7 +548,25 @@ app.put('/admin/agents/:id/novelty',
       await recalcDailyReport(reportId, conn);
 
       await conn.commit();
-      res.json({ ok: true, reportId });
+      try {
+          await logEvent({
+            req, userId: req.user.uid,
+            action: Actions.REPORT_UPDATE,
+            details: {
+              mode: 'byAgent',
+              reportId,
+              date,
+              agentId: ag.id,
+              state: s,
+              municipalityId: muniId,
+              novelty_start: nStart,
+              novelty_end: nEnd,
+              novelty_description: nDesc
+            }
+          });
+        } catch (_) {}
+
+        res.json({ ok: true, reportId });
     } catch (e) {
       await conn.rollback();
       res.status(500).json({ error:'NoveltySaveError', detail:e.message });
@@ -916,6 +968,29 @@ for (const p of people) {
 
 
    await conn.commit();
+
+    try {
+      await logEvent({
+        req, userId: req.user.uid,
+        action: Actions.REPORT_CREATE,
+        details: {
+          reportId,
+          reportDate,
+          groupId,
+          unitId,
+          agents: people.map(p => String(p.agentCode || '').toUpperCase().trim())
+        }
+      });
+    } catch (_) {}
+
+    res.json({
+      action: 'upserted',
+      reportId,
+      totals: { feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov }
+    });
+
+
+
 res.json({
   action: 'upserted',
   reportId,
@@ -1035,17 +1110,22 @@ app.get('/admin/groups', auth, requireRole('superadmin', 'supervision', 'leader_
 });
 
 
+
 // Crear grupo
 app.post('/admin/groups', auth, requireRole('superadmin'), async (req, res) => {
   const { code, name } = req.body;
   if (!code) return res.status(422).json({ error: 'Falta código' });
   try {
-    await pool.query('INSERT INTO `group` (code, name) VALUES (?, ?)', [code, name]);
+    const [r] = await pool.query('INSERT INTO `group` (code, name) VALUES (?, ?)', [code, name]);
+    await logEvent({ req, userId: req.user.uid, action: Actions.GROUP_CREATE, details: { groupId: r.insertId, code, name } });
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: 'No se pudo crear', detail: e?.message });
   }
 });
+
+
+
 
 // Editar grupo
 app.put('/admin/groups/:id', auth, requireRole('superadmin'), async (req, res) => {
@@ -1096,47 +1176,50 @@ app.post('/admin/users', auth, requireRole('superadmin'), async (req, res) => {
       detail: 'Debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y carácter especial.'
     });
   }
-  // Opcional: verifica que el grupo exista
   if (groupId) {
     const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
     if (!g) return res.status(404).json({ error: 'Grupo no existe' });
   }
-  // Opcional: verifica que la unidad exista
   if (unitId) {
     const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
     if (!u) return res.status(404).json({ error: 'Unidad no existe' });
   }
+
   const hash = await bcrypt.hash(password, 10);
   try {
-    await pool.query(
-      'INSERT INTO `user` (username, passwordHash, role, groupId, unitId) VALUES (?, ?, ?, ?, ?)',
+    const [r] = await pool.query(
+      'INSERT INTO `user` (username, passwordHash, role, groupId, unitId) VALUES (?,?,?,?,?)',
       [username.trim(), hash, role, groupId || null, unitId || null]
     );
+    await logEvent({
+      req, userId: req.user.uid,
+      action: Actions.USER_CREATE,
+      details: { newUserId: r.insertId, username: username.trim(), role, groupId: groupId || null, unitId: unitId || null }
+    });
     res.json({ ok: true });
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') {
-      res.status(409).json({ error: 'El usuario ya existe' });
-    } else {
-      res.status(500).json({ error: 'No se pudo crear', detail: e.message });
-    }
+    if (e.code === 'ER_DUP_ENTRY') res.status(409).json({ error: 'El usuario ya existe' });
+    else res.status(500).json({ error: 'No se pudo crear', detail: e.message });
   }
 });
+
 
 // Actualizar usuario
 app.put('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) => {
   const { id } = req.params;
   const { username, role, groupId, unitId, password } = req.body;
-
   if (!username || !role) {
     return res.status(400).json({ error: 'Campos requeridos: username, role' });
   }
 
-  // Opcional: verifica que el grupo exista
+  // rol previo para detectar cambio de rol
+  const [[prev]] = await pool.query('SELECT role FROM `user` WHERE id=? LIMIT 1', [id]);
+  if (!prev) return res.status(404).json({ error: 'Usuario no encontrado' });
+
   if (groupId) {
     const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
     if (!g) return res.status(404).json({ error: 'Grupo no existe' });
   }
-  // Opcional: verifica que la unidad exista
   if (unitId) {
     const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
     if (!u) return res.status(404).json({ error: 'Unidad no existe' });
@@ -1145,7 +1228,7 @@ app.put('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) =>
   let setFields = 'username=?, role=?, groupId=?, unitId=?';
   const params = [username.trim(), role, groupId || null, unitId || null];
 
-  // ✅ si viene password, validar fortaleza y actualizar hash
+  let passwordChanged = false;
   if (password !== undefined && password !== null && password !== '') {
     if (!isStrongPassword(password)) {
       return res.status(422).json({
@@ -1156,23 +1239,35 @@ app.put('/admin/users/:id', auth, requireRole('superadmin'), async (req, res) =>
     const hash = await bcrypt.hash(password, 10);
     setFields += ', passwordHash=?';
     params.push(hash);
+    passwordChanged = true;
   }
-
   params.push(id);
 
   try {
-    const [r] = await pool.query(
-      `UPDATE \`user\` SET ${setFields} WHERE id=?`,
-      params
-    );
-    if (r.affectedRows === 0) {
-      return res.status(404).json({ error: 'Usuario no encontrado' });
+    const [r] = await pool.query(`UPDATE \`user\` SET ${setFields} WHERE id=?`, params);
+    if (r.affectedRows === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    if (prev.role !== role) {
+      await logEvent({
+        req, userId: req.user.uid,
+        action: Actions.USER_ROLE_CHANGE,
+        details: { targetUserId: Number(id), oldRole: prev.role, newRole: role }
+      });
     }
+    if (passwordChanged) {
+      await logEvent({
+        req, userId: req.user.uid,
+        action: Actions.USER_PASSWORD_CHANGE,
+        details: { targetUserId: Number(id), by: 'admin' }
+      });
+    }
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'No se pudo actualizar', detail: e.message });
   }
 });
+
 
 
 // Eliminar usuario
@@ -1222,14 +1317,9 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (
 // Crear agente
 app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { code, category, groupId, unitId, status, municipalityId } = req.body;
+  if (!/^[A-Z][0-9]+$/.test(code)) return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
+  if (!['OF','SO','PT'].includes(category)) return res.status(422).json({ error: 'Categoría inválida' });
 
-  // Validaciones básicas
-  if (!/^[A-Z][0-9]+$/.test(code)) {
-    return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
-  }
-  if (!['OF','SO','PT'].includes(category)) {
-    return res.status(422).json({ error: 'Categoría inválida' });
-  }
   if (groupId) {
     const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
     if (!g) return res.status(404).json({ error: 'Grupo no existe' });
@@ -1239,7 +1329,6 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     if (!u) return res.status(404).json({ error: 'Unidad no existe' });
   }
 
-  // === Normalización de estado (usa tu catálogo real) ===
   const estadosValidos = [
     'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
     'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
@@ -1247,44 +1336,36 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR'
   ];
   let s = String(status || 'SIN NOVEDAD').toUpperCase().trim();
-  if (!estadosValidos.includes(s)) {
-    return res.status(422).json({ error: 'Estado inválido', detail: `Recibido: ${status}` });
-  }
+  if (!estadosValidos.includes(s)) return res.status(422).json({ error: 'Estado inválido', detail: `Recibido: ${status}` });
 
-  // === Reglas de municipio según estado ===
   let muniId = municipalityId ? Number(municipalityId) : null;
-  if (s === 'SIN NOVEDAD' || s === 'SERVICIO') {
-    // Bogotá fijo
-    muniId = 11001;
-  } else if (s === 'COMISIÓN DEL SERVICIO') {
-    if (!muniId) return res.status(422).json({ error: 'Falta municipalityId para Comisión del servicio' });
-  } else if (s === 'FRANCO FRANCO') {
-    muniId = null;
-  } else {
-    // Resto de novedades: el agente (tabla base) no requiere municipio
-    muniId = null;
-  }
+  if (s === 'SIN NOVEDAD' || s === 'SERVICIO') muniId = 11001;
+  else if (s === 'COMISIÓN DEL SERVICIO' && !muniId) return res.status(422).json({ error: 'Falta municipalityId para Comisión del servicio' });
+  else if (s === 'FRANCO FRANCO') muniId = null;
+  else muniId = null;
 
-  // Validar municipio si viene distinto de null
   if (muniId) {
     const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [muniId]);
     if (!m) return res.status(404).json({ error: 'Municipio no existe' });
   }
 
   try {
-    await pool.query(
+    const [r] = await pool.query(
       'INSERT INTO agent (code, category, groupId, unitId, status, municipalityId) VALUES (?,?,?,?,?,?)',
       [code.trim(), category, groupId || null, unitId || null, s, muniId]
     );
+    await logEvent({
+      req, userId: req.user.uid,
+      action: Actions.AGENT_CREATE,
+      details: { agentId: r.insertId, code: code.trim(), category, groupId: groupId || null, unitId: unitId || null }
+    });
     res.json({ ok: true });
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') {
-      res.status(409).json({ error: 'El código ya existe' });
-    } else {
-      res.status(500).json({ error: 'No se pudo crear', detail: e.message });
-    }
+    if (e.code === 'ER_DUP_ENTRY') res.status(409).json({ error: 'El código ya existe' });
+    else res.status(500).json({ error: 'No se pudo crear', detail: e.message });
   }
 });
+
 
 
 // Actualizar agente (parcial)
@@ -1292,16 +1373,18 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
   const { id } = req.params;
   const { code, category, groupId, unitId, status, municipalityId } = req.body;
 
-  const sets = [];
-  const params = [];
+  const sets = [], params = [];
+  const changes = {};
 
   if (code !== undefined) {
     if (!/^[A-Z][0-9]+$/.test(String(code))) return res.status(422).json({ error:'Código inválido' });
     sets.push('code=?'); params.push(String(code).trim().toUpperCase());
+    changes.code = String(code).trim().toUpperCase();
   }
   if (category !== undefined) {
     if (!['OF','SO','PT'].includes(String(category))) return res.status(422).json({ error:'Categoría inválida' });
     sets.push('category=?'); params.push(category);
+    changes.category = category;
   }
   if (groupId !== undefined) {
     if (groupId) {
@@ -1309,6 +1392,7 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
       if (!g) return res.status(404).json({ error:'Grupo no existe' });
     }
     sets.push('groupId=?'); params.push(groupId || null);
+    changes.groupId = groupId || null;
   }
   if (unitId !== undefined) {
     if (unitId) {
@@ -1316,9 +1400,11 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
       if (!u) return res.status(404).json({ error:'Unidad no existe' });
     }
     sets.push('unitId=?'); params.push(unitId || null);
+    changes.unitId = unitId || null;
   }
   if (status !== undefined) {
     sets.push('status=?'); params.push(String(status));
+    changes.status = String(status);
   }
   if (municipalityId !== undefined) {
     if (municipalityId) {
@@ -1326,6 +1412,7 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
       if (!m) return res.status(404).json({ error:'Municipio no existe' });
     }
     sets.push('municipalityId=?'); params.push(municipalityId || null);
+    changes.municipalityId = municipalityId || null;
   }
 
   if (!sets.length) return res.status(400).json({ error:'Nada para actualizar' });
@@ -1334,6 +1421,13 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     params.push(id);
     const [r] = await pool.query(`UPDATE agent SET ${sets.join(', ')} WHERE id=?`, params);
     if (r.affectedRows === 0) return res.status(404).json({ error:'Agente no encontrado' });
+
+    await logEvent({
+      req, userId: req.user.uid,
+      action: Actions.AGENT_UPDATE,
+      details: { agentId: Number(id), changes }
+    });
+
     res.json({ ok:true });
   } catch (e) {
     res.status(500).json({ error:'No se pudo actualizar', detail:e.message });
@@ -1592,7 +1686,23 @@ app.put('/admin/report-agents/:reportId/:agentId',
 
     await recalcDailyReport(reportId);
 
-    res.json({ ok: true });
+    await logEvent({
+  req, userId: req.user.uid,
+  action: Actions.REPORT_UPDATE,
+  details: {
+    reportId: Number(reportId),
+    agentId: Number(agentId),
+    changes: {
+      state: s,
+      municipalityId: muniId,
+      novelty_start: novStart,
+      novelty_end: novEnd,
+      novelty_description: novDesc
+    }
+      }
+    });
+
+res.json({ ok: true });
 
 
   }
@@ -1788,7 +1898,18 @@ app.get('/reports/export', auth, requireRole('superadmin', 'supervision', 'leade
     ORDER BY a.code
   `, params);
 
-  res.json(rows);
+  await logEvent({
+  req, userId: req.user.uid,
+  action: Actions.EXCEL_DOWNLOAD,
+  details: {
+    date,
+    groupId: groupId || (req.user.role === 'leader_group' ? req.user.groupId : null),
+    unitId: unitId  || (req.user.role === 'leader_unit'  ? req.user.unitId  : null),
+    format: 'json-export' // o 'xlsx' si sirves archivo
+  }
+});
+
+res.json(rows);
 });
 
 
@@ -1831,18 +1952,18 @@ app.get('/admin/units', auth, requireRole('superadmin', 'supervision'), async (r
 });
 
 // Crear (solo superadmin)
+
 app.post('/admin/units', auth, requireRole('superadmin'), async (req, res) => {
   const { name, description, groupId } = req.body;
-  if (!name || !groupId) {
-    return res.status(400).json({ error: 'Nombre y groupId requeridos' });
-  }
+  if (!name || !groupId) return res.status(400).json({ error: 'Nombre y groupId requeridos' });
   const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
   if (!g) return res.status(404).json({ error: 'Grupo no existe' });
 
-  await pool.query(
+  const [r] = await pool.query(
     'INSERT INTO unit (name, description, groupId) VALUES (?, ?, ?)',
     [name.trim(), description || null, groupId]
   );
+  await logEvent({ req, userId: req.user.uid, action: Actions.UNIT_CREATE, details: { unitId: r.insertId, groupId, name } });
   res.json({ ok: true });
 });
 
@@ -1877,26 +1998,117 @@ app.post('/admin/users/:id/reset-password', auth, requireRole('superadmin'), asy
   const { id } = req.params;
   const { password } = req.body;
 
-  if (!password) {
-    return res.status(422).json({ error: 'Password requerido' });
-  }
-
+  if (!password) return res.status(422).json({ error: 'Password requerido' });
   if (!isStrongPassword(password)) {
     return res.status(422).json({
       error: 'Password débil',
       detail: 'Debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y carácter especial.'
     });
   }
-
   const hash = await bcrypt.hash(password, 10);
+  await pool.query('UPDATE `user` SET passwordHash=? WHERE id=? LIMIT 1', [hash, id]);
 
-  await pool.query(
-    'UPDATE `user` SET passwordHash=? WHERE id=? LIMIT 1',
-    [hash, id]
-  );
+  await logEvent({
+    req, userId: req.user.uid,
+    action: Actions.USER_PASSWORD_CHANGE,
+    details: { targetUserId: Number(id), by: 'admin' }
+  });
 
   res.json({ ok: true });
 });
+
+
+// ================== ENDPOINTS PARA LOG DE EVENTOS ==================
+
+// === Listado de auditoría (solo superadmin) ===
+// GET /admin/audit?from=YYYY-MM-DD&to=YYYY-MM-DD&action=LOGIN&userId=123&search=texto&page=1&pageSize=50
+app.get('/admin/audit', auth, requireSuperadmin, async (req, res) => {
+  try {
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(parseInt(req.query.pageSize, 10) || 50, 200);
+    const offset = (page - 1) * pageSize;
+
+    const { from, to, action, userId, search } = req.query;
+
+    const where = [];
+    const args = [];
+
+    if (from)   { where.push('el.created_at >= ?'); args.push(`${from} 00:00:00`); }
+    if (to)     { where.push('el.created_at <= ?'); args.push(`${to} 23:59:59`); }
+    if (action) { where.push('el.action = ?');      args.push(action); }
+    if (userId) { where.push('el.userId = ?');      args.push(Number(userId)); }
+    if (search) {
+      // Compatible con MySQL/MariaDB (evita JSON_SEARCH)
+      where.push('(CAST(el.details AS CHAR) LIKE ? OR el.user_agent LIKE ? OR el.ip LIKE ?)');
+      args.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM event_log el ${whereSql}`, args
+    );
+
+    const [rows] = await pool.query(
+      `SELECT 
+         el.id, el.userId, el.action, el.details, el.ip, el.user_agent, el.created_at,
+         u.username, u.role
+       FROM event_log el
+       LEFT JOIN \`user\` u ON u.id = el.userId
+       ${whereSql}
+       ORDER BY el.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [...args, pageSize, offset]
+    );
+
+    res.json({
+      page,
+      pageSize,
+      total,
+      items: rows.map(r => ({
+        id: r.id,
+        userId: r.userId,
+        username: r.username,
+        userRole: r.role,
+        action: r.action,
+        details: (()=>{
+          try {
+            if (r.details == null) return null;
+            return typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
+          } catch { return null; }
+        })(),
+        ip: r.ip,
+        user_agent: r.user_agent,
+        created_at: r.created_at,
+      }))
+    });
+  } catch (e) {
+    console.error('/admin/audit error:', e);
+    res.status(500).json({ error: 'AuditListError', detail: e.message });
+  }
+});
+
+// === Logout (registra cierre de sesión) ===
+// ⚠️ Deja SOLO ESTE endpoint para /auth/logout (elimina duplicados)
+app.post('/auth/logout', auth, async (req, res) => {
+  try {
+    await logEvent({
+      req,
+      userId: req.user?.uid || null,
+      action: Actions.LOGOUT,
+      details: {}
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    // No bloquear por errores de log
+    res.json({ ok: true });
+  }
+});
+
+
+
+
+
+
 
 
 
