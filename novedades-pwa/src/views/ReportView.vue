@@ -19,13 +19,18 @@
 
       <div class="card">
         <div class="card-body space-y-6">
-          <!-- Fecha -->
-          <div>
-            <label class="label">Fecha</label>
-            <div class="input bg-slate-100 text-slate-600 cursor-not-allowed select-none">
-              {{ reportDate }}
-            </div>
-          </div>
+        <!-- Fecha -->
+        <div>
+          <label class="label">Fecha</label>
+          <input
+            type="date"
+            class="input"
+            v-model="reportDate"
+          />
+          <p class="text-xs text-slate-500 mt-1">
+            Selecciona una fecha para consultar/editar el reporte de ese día.
+          </p>
+        </div>
 
           <!-- Buscar y agregar agente libre -->
           <div class="mb-4 flex gap-2 items-end">
@@ -230,10 +235,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import axios from 'axios'
 
-const reportDate = ref(new Date().toISOString().slice(0, 10))
+import axios from 'axios'
+import { ref, computed, onMounted, watch } from 'vue'
+
+
+function tomorrowStr() {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+const reportDate = ref(tomorrowStr())
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
 
@@ -257,6 +269,8 @@ const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
 function displayCategory(c) {
   return String(c || '') === 'SO' ? 'ME' : c
 }
+
+
 
 
 
@@ -348,6 +362,8 @@ function onStateChange(agent) {
   agent.novelty_end = ''
   agent.novelty_description = ''
 }
+
+
 
 
 
@@ -528,10 +544,20 @@ async function checkIfReportExists() {
   } catch { existeReporte.value = false }
 }
 
+watch(reportDate, async () => {
+  msg.value = ''
+  await loadAgents()
+  await checkIfReportExists()
+})
+
 onMounted(async () => {
   await loadMe() // <--- Carga el usuario y unidad
   await loadMunicipalities();
   await loadAgents();
   await checkIfReportExists();
 });
+
+
+
+
 </script>

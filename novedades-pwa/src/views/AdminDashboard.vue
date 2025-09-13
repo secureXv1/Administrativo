@@ -273,8 +273,13 @@ const isAdminView   = computed(() => ['superadmin','supervision','supervisor'].i
 const isLeaderGroup = computed(() => roleLc.value === 'leader_group')
 
 // ===== Filtros
-const today = new Date().toISOString().slice(0,10)
-const date = ref(today)
+function tomorrowStr () {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+const date = ref(tomorrowStr())
+
 const selectedGroupId = ref('all')
 const selectedUnitId  = ref('all')
 const selectedLeaderUnitId = ref('all')

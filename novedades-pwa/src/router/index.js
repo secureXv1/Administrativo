@@ -27,8 +27,12 @@ const routes = [
   // Vista simple para líder de unidad
   { path: '/report', component: ReportView, meta: { requiresAuth: true, roles: ['leader_unit'] } },
 
-  // Alias de perfil
-  { path: '/perfil', redirect: '/admin/perfil' },
+  // Perfil accesible para cualquier rol autenticado
+  {
+    path: '/perfil',
+    component: Perfil,
+    meta: { requiresAuth: true, roles: ['superadmin','supervision','leader_group','leader_unit'] }
+  },
 
   // Todo lo de admin bajo el layout
   {
@@ -51,8 +55,8 @@ const routes = [
       // Agentes (superadmin/supervision/leader_group)
       { path: 'agents', name: 'AdminAgents', component: AdminAgents, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
 
-      // Perfil (todos los autenticados)
-      { path: 'perfil', name: 'Perfil', component: Perfil },
+      // (Opcional) Perfil también bajo /admin, pero con roles explícitos (incluye leader_unit)
+      { path: 'perfil', name: 'PerfilAdmin', component: Perfil, meta: { roles: ['superadmin','supervision','leader_group','leader_unit'] } },
 
       // Detalle de reporte: permitido a superadmin/supervision/leader_group
       { path: 'report/:id', name: 'ReportUnit', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },

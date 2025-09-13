@@ -14,6 +14,7 @@ import { requireSuperadmin } from './middlewares.js';
 
 
 
+
 // === INICIALIZACIÓN SEGURA DE LA DB ===
 async function main() {
   if (typeof initDb === "function") {
@@ -46,6 +47,8 @@ app.post('/auth/login', async (req, res) => {
       [username]
     );
     const user = rows[0];
+
+   
 
     if (!user) {
       // No revelamos existencia del usuario
@@ -153,6 +156,9 @@ app.post('/auth/login', async (req, res) => {
     return res.status(500).json({ error: 'Server error' });
   }
 });
+
+
+
 
 
 
