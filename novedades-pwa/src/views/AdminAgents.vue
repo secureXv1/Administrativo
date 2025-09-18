@@ -185,7 +185,7 @@
             </p>
           </div>
 
-          <div v-if="form.state === 'SERVICIO' || otrosRequierenFechas.includes(form.state)">
+          <div v-if="form.state === 'SERVICIO' || form.state === 'COMISIÓN DEL SERVICIO' || otrosRequierenFechas.includes(form.state)">
             <label class="label">Descripción</label>
             <textarea class="input" rows="2" v-model="form.novelty_description"
                       placeholder="Motivo / detalle..."></textarea>
@@ -247,26 +247,17 @@ const today = ref(new Date().toISOString().slice(0,10))
 const filters = ref({ q:'', cat:'ALL', groupId:'ALL' })
 
 /* ===== Estados ===== */
-const estadosValidos = [
-  'SIN NOVEDAD',
-  'SERVICIO',
-  'COMISIÓN DEL SERVICIO',
-  'FRANCO FRANCO',
-  'VACACIONES',
-  'LICENCIA DE MATERNIDAD',
-  'LICENCIA DE LUTO',
-  'LICENCIA REMUNERADA',
-  'LICENCIA NO REMUNERADA',
-  'EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD',
-  'PERMISO',
-  'COMISIÓN EXTERIOR'
-]
-const otrosRequierenFechas = [
+ const estadosValidos = [
+  'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
   'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EXTERIOR'
-]
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR'
+ ]
+ const otrosRequierenFechas = [
+  'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
+  'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR'
+ ]
 
 /* ===== Cargas ===== */
 async function loadGroups(){
@@ -527,75 +518,102 @@ function onMunicipalityInput(e){
   form.value.municipalityId = m ? m.id : null
 }
 
-async function saveEdit(){
+async function saveEdit () {
   msg.value = ''
   const id = form.value.id
 
-  // --- Crear nuevo agente (solo superadmin) ---
-  if (isCreating.value) {
-    if (!isSuperadmin.value) { msg.value = 'No autorizado'; return }
-    const code = String(form.value.code || '').toUpperCase().trim()
-    if (!/^[A-Z][0-9]+$/.test(code)) { msg.value = 'Código inválido (LETRA+números)'; return }
+  try {
+    // --- Crear nuevo agente (solo superadmin) ---
+    if (isCreating.value) {
+      if (!isSuperadmin.value) { msg.value = 'No autorizado'; return }
+      const code = String(form.value.code || '').toUpperCase().trim()
+      if (!/^[A-Z][0-9]+$/.test(code)) { msg.value = 'Código inválido (LETRA+números)'; return }
 
-    try{
       await axios.post('/admin/agents', {
         code,
         category: uiToApiCategory(form.value.categoryUi),
         groupId: form.value.groupId || null,
         unitId: form.value.unitId || null
       }, authHeader())
+
       msg.value = 'Agente creado ✅'
       closeEdit()
       await loadAgents()
-    } catch(e){
-      msg.value = e?.response?.data?.detail || e?.response?.data?.error || 'No se pudo crear'
+      return
     }
-    return
-  }
 
-  // --- Edición existente ---
-  const requiereFechasYDescr = (s) => s === 'SERVICIO' || otrosRequierenFechas.includes(s)
-  if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipalityId) { msg.value = 'Selecciona un municipio válido para Comisión del servicio'; return }
-  if (requiereFechasYDescr(form.value.state)) {
-    if (!form.value.novelty_start || !form.value.novelty_end) { msg.value = 'Completa fecha inicio y fin'; return }
-    if (!String(form.value.novelty_description || '').trim()) { msg.value = 'La descripción es obligatoria'; return }
-  }
+    // --- Edición existente ---
+    const requiereFechasYDescr = (s) => s === 'SERVICIO' || otrosRequierenFechas.includes(s)
 
-  if (isLeaderGroup.value) {
-    if ((editing.value.unitId || null) !== (form.value.unitId || null)) {
-      await axios.put(`/my/agents/${id}/unit`, { unitId: form.value.unitId || null }, authHeader())
+    if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipalityId) {
+      msg.value = 'Selecciona un municipio válido para Comisión del servicio'
+      return
     }
-  } else if (isAdminLike.value) {
-    await axios.put(`/admin/agents/${id}`, {
-      code: isSuperadmin.value ? form.value.code : undefined,
-      category: isSuperadmin.value ? uiToApiCategory(form.value.categoryUi) : undefined,
-      groupId: form.value.groupId || null,
-      unitId: form.value.unitId || null
-    }, authHeader())
+    if (form.value.state === 'COMISIÓN DEL SERVICIO' && !String(form.value.novelty_description||'').trim()) {
+      msg.value = 'La descripción es obligatoria para Comisión del servicio'
+      return
+    }
+    if (requiereFechasYDescr(form.value.state)) {
+      if (!form.value.novelty_start || !form.value.novelty_end) {
+        msg.value = 'Completa fecha inicio y fin'
+        return
+      }
+      if (!String(form.value.novelty_description || '').trim()) {
+        msg.value = 'La descripción es obligatoria'
+        return
+      }
+    }
+
+    // Actualizar grupo/unidad/código/categoría según rol
+    if (isLeaderGroup.value) {
+      if ((editing.value.unitId || null) !== (form.value.unitId || null)) {
+        await axios.put(`/my/agents/${id}/unit`, { unitId: form.value.unitId || null }, authHeader())
+      }
+    } else if (isAdminLike.value) {
+      await axios.put(`/admin/agents/${id}`, {
+        code: isSuperadmin.value ? form.value.code : undefined,
+        category: isSuperadmin.value ? uiToApiCategory(form.value.categoryUi) : undefined,
+        groupId: form.value.groupId || null,
+        unitId: form.value.unitId || null
+      }, authHeader())
+    }
+
+    // ¿Cambió la novedad?
+    const novChanged =
+      String(editing.value.status||'') !== String(form.value.state||'') ||
+      String(editing.value.municipalityId||'') !== String(form.value.municipalityId||'') ||
+      (editing.value.novelty_start||'') !== (form.value.novelty_start||'') ||
+      (editing.value.novelty_end||'')   !== (form.value.novelty_end||'') ||
+      (editing.value.novelty_description||'') !== (form.value.novelty_description||'')
+
+    if (novChanged) {
+      await axios.put(`/admin/agents/${id}/novelty`, {
+        date: today.value,
+        state: form.value.state,
+        municipalityId:
+          form.value.state === 'COMISIÓN DEL SERVICIO'
+            ? form.value.municipalityId
+            : (['SERVICIO','SIN NOVEDAD'].includes(form.value.state) ? 11001 : null),
+        novelty_start: (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_start : null,
+        novelty_end:   (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_end   : null,
+        novelty_description: (
+          form.value.state === 'COMISIÓN DEL SERVICIO' ||
+          form.value.state === 'SERVICIO' ||
+          otrosRequierenFechas.includes(form.value.state)
+        ) ? form.value.novelty_description : null
+      }, authHeader())
+    }
+
+    msg.value = 'Cambios guardados ✅'
+    closeEdit()
+    await loadAgents()
+
+  } catch (e) {
+    console.error('saveEdit error:', e)
+    msg.value = e?.response?.data?.detail || e?.response?.data?.error || 'Error al guardar'
   }
-
-  const novChanged =
-    String(editing.value.status||'') !== String(form.value.state||'') ||
-    String(editing.value.municipalityId||'') !== String(form.value.municipalityId||'') ||
-    (editing.value.novelty_start||'') !== (form.value.novelty_start||'') ||
-    (editing.value.novelty_end||'')   !== (form.value.novelty_end||'') ||
-    (editing.value.novelty_description||'') !== (form.value.novelty_description||'')
-
-  if (novChanged) {
-    await axios.put(`/admin/agents/${id}/novelty`, {
-      date: today.value,
-      state: form.value.state,
-      municipalityId: form.value.state === 'COMISIÓN DEL SERVICIO' ? form.value.municipalityId : null,
-      novelty_start: (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_start : null,
-      novelty_end:   (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_end   : null,
-      novelty_description: (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_description : null
-    }, authHeader())
-  }
-
-  msg.value = 'Cambios guardados ✅'
-  closeEdit()
-  await loadAgents()
 }
+
 
 
 function authHeader(){

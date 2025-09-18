@@ -91,6 +91,7 @@
                           <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
                           <option value="PERMISO">PERMISO</option>
                           <option value="COMISIÓN EN EL EXTERIOR">COMISIÓN EN EL EXTERIOR</option>
+                          <option value="COMISIÓN DE ESTUDIO">COMISIÓN DE ESTUDIO</option>
                         </select>
                       </td>
                       <td>
@@ -115,6 +116,7 @@
                           <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
                             Debe seleccionar un municipio válido
                           </span>
+                          <textarea class="input mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                         </template>
                         <template v-else-if="a.status === 'FRANCO FRANCO'">
                           <span class="text-xs text-slate-400">Sin datos adicionales</span>
@@ -166,6 +168,7 @@
                     <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
                     <option value="PERMISO">PERMISO</option>
                     <option value="COMISIÓN EN EL EXTERIOR">COMISIÓN EN EL EXTERIOR</option>
+                    <option value="COMISIÓN DE ESTUDIO">COMISIÓN DE ESTUDIO</option>
                   </select>
 
                   <!-- Campos dinámicos según estado -->
@@ -188,6 +191,7 @@
                     <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
                       Debe seleccionar un municipio válido
                     </span>
+                    <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                   </div>
                   <div v-else-if="a.status === 'FRANCO FRANCO'">
                     <span class="text-xs text-slate-400">Sin datos adicionales</span>
@@ -384,7 +388,7 @@ async function save() {
       if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SERVICIO)`; return }
     } else if (a.status === 'COMISIÓN DEL SERVICIO') {
       if (!a.municipalityId) { msg.value = `Falta municipio para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
-      // No requiere fechas ni descripción
+      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
     } else if (a.status === 'FRANCO FRANCO') {
       // Nada requerido
     } else {
@@ -411,8 +415,9 @@ async function save() {
             (a.status === 'SERVICIO' || !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
               ? a.novelty_end : null,
           novelty_description:
-            (a.status === 'SERVICIO' || !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
-              ? a.novelty_description : null,
+          (a.status === 'SERVICIO' || a.status === 'COMISIÓN DEL SERVICIO' ||
+          !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
+          ? a.novelty_description : null,
         }))
 
     }, {

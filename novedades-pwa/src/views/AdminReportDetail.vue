@@ -189,7 +189,9 @@
                         <span>{{ option.label }}</span>
                       </template>
                     </Multiselect>
-                    <div class="text-xs text-slate-500 mt-1">Requerido para Comisión del servicio.</div>
+                    <div class="text-xs text-slate-500 mt-1">
+                    Para “Comisión del servicio” el municipio es obligatorio (sin fechas).
+                    </div>
                   </div>
 
                   <div v-if="needsFechas">
@@ -291,7 +293,8 @@ const estadosValidos = [
   'EXCUSA DEL SERVICIO',
   'LICENCIA PATERNIDAD',
   'PERMISO',
-  'COMISIÓN EN EL EXTERIOR'
+  'COMISIÓN EN EL EXTERIOR',
+  'COMISIÓN DE ESTUDIO' 
 ]
 
 // ===== Helpers
@@ -446,9 +449,21 @@ const form     = ref({
   novelty_end:'',
   novelty_description:''
 })
-const needsMunicipio   = computed(() => form.value.state === 'COMISIÓN DEL SERVICIO')
-const needsFechas      = computed(() => ['SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD', 'PERMISO','COMISIÓN EN EL EXTERIOR' ].includes(form.value.state))
-const needsDescripcion = computed(() => ['SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD', 'PERMISO','COMISIÓN EN EL EXTERIOR'].includes(form.value.state))
+const needsFechas      = computed(() => [
+  'SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
+  'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR',
+  'COMISIÓN DE ESTUDIO'              
+].includes(form.value.state))
+const needsDescripcion = computed(() => [
+  'SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
+  'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR',
+  'COMISIÓN DE ESTUDIO',              
+  'COMISIÓN DEL SERVICIO'           
+].includes(form.value.state))
+
+const needsMunicipio = computed(() => form.value.state === 'COMISIÓN DEL SERVICIO')
 
 function openEdit(a){
   if (!canEdit.value) return
@@ -502,6 +517,11 @@ async function saveEdit(){
   if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipio?.id) {
     alert('Selecciona un municipio para Comisión del servicio')
     return
+  }
+
+  if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.novelty_description?.trim()) {
+  alert('La descripción es requerida para Comisión del servicio')
+  return
   }
   if (needsFechas.value) {
     if (!form.value.novelty_start || !form.value.novelty_end) {
