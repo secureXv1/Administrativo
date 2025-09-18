@@ -241,7 +241,13 @@ const groups = ref([])         // grupos (admin)
 const units = ref([])          // todas las unidades (admin)
 const myUnits = ref([])        // unidades de mi grupo (líder grupo)
 const municipalities = ref([]) // catálogo
-const today = ref(new Date().toISOString().slice(0,10))
+/* ===== Fecha por defecto (mañana) ===== */
+function formatDateISO(d) {
+  return d.toISOString().slice(0,10)
+}
+const tomorrow = new Date()
+tomorrow.setDate(tomorrow.getDate() + 1)
+const today = ref(formatDateISO(tomorrow))
 
 /* ===== Filtros ===== */
 const filters = ref({ q:'', cat:'ALL', groupId:'ALL' })
@@ -251,12 +257,12 @@ const filters = ref({ q:'', cat:'ALL', groupId:'ALL' })
   'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
   'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR'
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR', 'COMISIÓN DE ESTUDIO'
  ]
  const otrosRequierenFechas = [
   'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR'
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR', 'COMISIÓN DE ESTUDIO'
  ]
 
 /* ===== Cargas ===== */
