@@ -52,12 +52,33 @@
     </div>
   </div>
 
-  <!-- KPIs -->
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-    <div class="kpi"><div class="card-body"><h4>FE total (OF/ME/PT)</h4><div class="value text-lg">{{ kpiFE }}</div></div></div>
-    <div class="kpi"><div class="card-body"><h4>FD total (OF/ME/PT)</h4><div class="value text-lg">{{ kpiFD }}</div></div></div>
-    <div class="kpi"><div class="card-body"><h4>Novedades totales (OF/ME/PT)</h4><div class="value text-lg">{{ kpiNOV }}</div></div></div>
-  </div>
+    <!-- KPIs -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="kpi">
+        <div class="card-body">
+          <h4>FE total (OF/ME/PT)</h4>
+          <div class="value text-lg">{{ kpiFE }}</div>
+        </div>
+      </div>
+
+      <div class="kpi">
+        <div class="card-body">
+          <h4>FD total (OF/ME/PT)</h4>
+          <div class="value text-lg">{{ kpiFD }}</div>
+        </div>
+      </div>
+
+      <div class="kpi">
+        <div class="card-body">
+          <div class="flex items-center justify-between gap-2">
+            <h4>Novedades totales (OF/ME/PT)</h4>
+            <button class="btn-ghost h-8 px-2 text-xs" @click="openNovModal">Detalles</button>
+          </div>
+          <div class="value text-lg">{{ kpiNOV }}</div>
+        </div>
+      </div>
+    </div>
+
 
   <!-- Agentes sin grupo -->
   <div class="flex flex-col sm:flex-row gap-3">
@@ -241,13 +262,118 @@
               <td class="font-medium text-slate-900">{{ r.NOV }}</td>
             </tr>
             <tr v-if="tableRows.length === 0">
-              <td colspan="8" class="text-center text-slate-500 py-6">Sin datos</td>
+              <td colspan="6" class="text-center text-slate-500 py-6">Sin datos</td>
             </tr>
           </tbody>
         </table>
       </div>
     </div>
   </div>
+
+<!-- MODAL DETALLES NOVEDADES -->
+<div v-if="novModalOpen" class="fixed inset-0 z-[1000] flex items-center justify-center">
+  <div class="absolute inset-0 bg-black/40" @click="novModalOpen=false"></div>
+
+  <div class="relative bg-white w-screen h-screen sm:w-[95vw] sm:max-w-4xl sm:h-auto sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-xl flex flex-col">
+    <!-- Header -->
+    <div class="p-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white">
+      <div class="font-semibold text-slate-800">
+        Detalle de Novedades — {{ isAdminView ? 'por Grupos' : 'por Unidades' }}
+      </div>
+      <button class="btn-ghost" @click="novModalOpen=false">Cerrar</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="px-4 pt-3 sticky top-[56px] sm:top-[64px] bg-white z-10 border-b border-slate-100">
+      <div class="flex gap-2">
+        <button :class="['btn-ghost h-8 px-3 text-sm', novTab==='tipos' && 'bg-slate-100']" @click="novTab='tipos'">
+          Por novedad
+        </button>
+        <button :class="['btn-ghost h-8 px-3 text-sm', novTab==='ambito' && 'bg-slate-100']" @click="novTab='ambito'">
+          Por {{ isAdminView ? 'grupo' : 'unidad' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="p-4 overflow-auto grow">
+      <!-- Por Tipo -->
+      <div v-show="novTab==='tipos'" class="overflow-x-auto">
+        <table class="table w-full text-xs sm:text-sm">
+          <thead>
+            <tr>
+              <th class="w-1/2">Novedad</th>
+              <th class="text-center">OF</th>
+              <th class="text-center">ME</th>
+              <th class="text-center">PT</th>
+              <th class="text-center">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in novTiposRows" :key="row.novedad">
+              <td class="font-medium">{{ row.novedad }}</td>
+              <td class="text-center">{{ row.OF }}</td>
+              <td class="text-center">{{ row.ME }}</td>
+              <td class="text-center">{{ row.PT }}</td>
+              <td class="text-center font-semibold">{{ row.total }}</td>
+            </tr>
+            <tr v-if="!novTiposRows.length">
+              <td colspan="5" class="text-center text-slate-500 py-4">Sin datos</td>
+            </tr>
+          </tbody>
+          <tfoot v-if="novTiposRows.length">
+            <tr class="bg-slate-50">
+              <td class="font-semibold">Total general</td>
+              <td class="text-center font-semibold">{{ sum(novTiposRows,'OF') }}</td>
+              <td class="text-center font-semibold">{{ sum(novTiposRows,'ME') }}</td>
+              <td class="text-center font-semibold">{{ sum(novTiposRows,'PT') }}</td>
+              <td class="text-center font-bold">{{ sum(novTiposRows,'total') }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Por Ámbito -->
+      <div v-show="novTab==='ambito'" class="overflow-x-auto">
+        <table class="table w-full text-xs sm:text-sm">
+          <thead>
+            <tr>
+              <th class="w-1/2">{{ isAdminView ? 'Grupo' : 'Unidad' }}</th>
+              <th class="text-center">OF</th>
+              <th class="text-center">ME</th>
+              <th class="text-center">PT</th>
+              <th class="text-center">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in novAmbitoRows" :key="row.label">
+              <td class="font-medium">{{ row.label }}</td>
+              <td class="text-center">{{ row.OF }}</td>
+              <td class="text-center">{{ row.ME }}</td>
+              <td class="text-center">{{ row.PT }}</td>
+              <td class="text-center font-semibold">{{ row.total }}</td>
+            </tr>
+            <tr v-if="!novAmbitoRows.length">
+              <td colspan="5" class="text-center text-slate-500 py-4">Sin datos</td>
+            </tr>
+          </tbody>
+          <tfoot v-if="novAmbitoRows.length">
+            <tr class="bg-slate-50">
+              <td class="font-semibold">Total general</td>
+              <td class="text-center font-semibold">{{ sum(novAmbitoRows,'OF') }}</td>
+              <td class="text-center font-semibold">{{ sum(novAmbitoRows,'ME') }}</td>
+              <td class="text-center font-semibold">{{ sum(novAmbitoRows,'PT') }}</td>
+              <td class="text-center font-bold">{{ sum(novAmbitoRows,'total') }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
 </template>
 
 <script setup>
@@ -661,12 +787,82 @@ async function descargarExcel () {
 }
 
 // ===== Acciones
+
+// ===== Modal Novedades
+const novModalOpen = ref(false)
+const novTab = ref('tipos') // 'tipos' | 'ambito'
+const novTiposRows = ref([])   // [{ novedad, OF, ME, PT, total }]
+const novAmbitoRows = ref([])  // [{ label,  OF, ME, PT, total }]
+
+function sum(list, key) {
+  return list.reduce((a, b) => a + (Number(b[key])||0), 0)
+}
+
+function openNovModal() {
+  novModalOpen.value = true
+  novTab.value = 'tipos'
+  loadNovDetails()
+}
+
+// arma filtros según rol y selects actuales
+function buildCommonParams() {
+  const params = { date: date.value }
+  if (isLeaderGroup.value && me.value?.groupId) {
+    params.groupId = me.value.groupId
+    if (selectedLeaderUnitId.value !== 'all') params.unitId = selectedLeaderUnitId.value
+  } else {
+    if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
+    if (selectedUnitId.value  !== 'all') params.unitId  = selectedUnitId.value
+  }
+  return params
+}
+
+async function loadNovDetails() {
+  const params = buildCommonParams()
+
+  // 1) Por tipo (filtrando SIN NOVEDAD)
+  const { data: tipos } = await axios.get('/dashboard/novelties-by-type', {
+    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  novTiposRows.value = (tipos?.items || [])
+    .filter(r => String(r.novedad || '').trim().toUpperCase() !== 'SIN NOVEDAD')
+    .map(r => ({
+      novedad: r.novedad,
+      OF: Number(r.OF || r.OF_count || 0),
+      ME: Number(r.ME || r.SO || r.SO_count || 0),
+      PT: Number(r.PT || r.PT_count || 0),
+      total: (Number(r.OF || r.OF_count || 0)
+            + Number(r.ME || r.SO || r.SO_count || 0)
+            + Number(r.PT || r.PT_count || 0))
+    }))
+
+  // 2) Por ámbito (grupo/unidad) – aquí **no** hay “SIN NOVEDAD” por fila, son totales por ámbito
+  const scopeUrl = isAdminView.value ? '/dashboard/novelties-by-group' : '/dashboard/novelties-by-unit'
+  const { data: amb } = await axios.get(scopeUrl, {
+    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  novAmbitoRows.value = (amb?.items || []).map(r => ({
+    label: r.label || r.groupCode || r.unitName,
+    OF: Number(r.OF || r.OF_count || 0),
+    ME: Number(r.ME || r.SO || r.SO_count || 0),
+    PT: Number(r.PT || r.PT_count || 0),
+    total: (Number(r.OF || r.OF_count || 0)
+          + Number(r.ME || r.SO || r.SO_count || 0)
+          + Number(r.PT || r.PT_count || 0))
+  }))
+}
+
+
+
+
+
 async function applyFilters () {
   await load()
   if (isLeaderGroup.value) await loadComplianceLeader()
   else await loadComplianceAdmin()
   await loadMapData()
   await loadAgentesLibres()
+  await loadNovDetails()
 }
 async function reloadCompliance () {
   if (isLeaderGroup.value) await loadComplianceLeader()
