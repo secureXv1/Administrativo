@@ -11,6 +11,61 @@ import { computeNovelties } from './utils.js';
 import { logEvent, Actions } from './audit.js';
 import { requireSuperadmin } from './middlewares.js';
 
+// === Helpers de cifrado robustos (no lanzan) ===
+import crypto from 'crypto';
+
+const ENC_KEY_B64 = process.env.NOVELTY_ENC_KEY || '';
+const ENC_KEY = Buffer.from(ENC_KEY_B64, 'base64');
+
+if (ENC_KEY.length !== 32) {
+  console.warn('[WARN] NOVELTY_ENC_KEY inválida o ausente. AES-256-GCM requiere 32 bytes base64.');
+  // No hacemos throw para no tumbar la API en dev; pero idealmente valida esto al arrancar.
+}
+
+export function encNullable(plain) {
+  if (!plain) return null;
+  if (ENC_KEY.length !== 32) {
+    // Fallback: si no hay clave válida, guarda en claro (mejor que fallar).
+    return String(plain);
+  }
+  try {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', ENC_KEY, iv);
+    const ct = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    // Formato: [12 iv][16 tag][ct] → base64
+    return Buffer.concat([iv, tag, ct]).toString('base64');
+  } catch {
+    // Si algo raro pasa, devuelve en claro para no romper flujos.
+    return String(plain);
+  }
+}
+
+export function decNullable(maybeB64) {
+  if (maybeB64 == null || maybeB64 === '') return null;
+  // Si no hay clave válida, no intentes descifrar
+  if (ENC_KEY.length !== 32) return String(maybeB64);
+
+  try {
+    const raw = Buffer.from(String(maybeB64), 'base64');
+    // Debe tener al menos 12 (iv) + 16 (tag) + 1 (ct) = 29 bytes; usamos 28 como mínimo estricto (sin ct).
+    if (raw.length < 28) {
+      // No es nuestro formato → devolver tal cual (texto plano o base64 ajeno)
+      return String(maybeB64);
+    }
+    const iv  = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const ct  = raw.subarray(28);
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENC_KEY, iv);
+    decipher.setAuthTag(tag);
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+    return pt.toString('utf8');
+  } catch {
+    // Si falla (no es nuestro ciphertext / clave no corresponde / datos corruptos), regresamos el original.
+    return String(maybeB64);
+  }
+}
 
 
 
@@ -331,27 +386,28 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
   );
 
   const out = rows.map(r => {
-    const status = r.da_state || r.status_agent || null;
-    let municipalityName = '';
-    if (r.da_state) {
-      if (r.dept_da && r.name_da) municipalityName = `${r.dept_da} - ${r.name_da}`;
-    } else {
-      if (r.dept_ag && r.name_ag) municipalityName = `${r.dept_ag} - ${r.name_ag}`;
-    }
-    return {
-      id: r.id,
-      code: r.code,
-      category: r.category,
-      status,
-      groupId: r.groupId,
-      unitId: r.unitId,
-      municipalityId: r.effectiveMunicipalityId || null,
-      municipalityName,
-      novelty_start: r.novelty_start || '',
-      novelty_end: r.novelty_end || '',
-      novelty_description: r.novelty_description || ''
-    };
+  const status = r.da_state || r.status_agent || null;
+  let municipalityName = '';
+  if (r.da_state) {
+    if (r.dept_da && r.name_da) municipalityName = `${r.dept_da} - ${r.name_da}`;
+  } else {
+    if (r.dept_ag && r.name_ag) municipalityName = `${r.dept_ag} - ${r.name_ag}`;
+  }
+  return {
+    id: r.id,
+    code: r.code,
+    category: r.category,
+    status,
+    groupId: r.groupId,
+    unitId: r.unitId,
+    municipalityId: r.effectiveMunicipalityId || null,
+    municipalityName,
+    novelty_start: r.novelty_start || '',
+    novelty_end: r.novelty_end || '',
+    novelty_description: r.novelty_description ? decNullable(r.novelty_description) : ''
+  };
   });
+
 
   return res.json(out);
 }
@@ -619,6 +675,8 @@ app.put('/admin/agents/:id/novelty',
         await deleteAgentRowsSameDate(conn, date, ag.id, reportId);
 
         // UPSERT de la fila del agente en el reporte del día
+        const nDescEnc = encNullable(nDesc);
+
         await conn.query(`
           INSERT INTO dailyreport_agent
             (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
@@ -629,7 +687,8 @@ app.put('/admin/agents/:id/novelty',
             novelty_start=VALUES(novelty_start),
             novelty_end=VALUES(novelty_end),
             novelty_description=VALUES(novelty_description)
-        `, [reportId, ag.id, useGroupId, useUnitId, s, muniId, nStart, nEnd, nDesc]);
+        `, [reportId, ag.id, useGroupId, useUnitId, s, muniId, nStart, nEnd, nDescEnc]);
+
 
         // Estado “actual” del agente
         await conn.query(
@@ -728,7 +787,12 @@ app.get('/admin/agents/:id/novelty',
       LIMIT 1
     `, params);
 
-    if (rows.length) return res.json(rows[0]);
+      if (rows.length) {
+        const row = rows[0];
+        row.novelty_description = row.novelty_description ? decNullable(row.novelty_description) : null;
+        return res.json(row);
+      }
+
 
     // Fallback si nunca tuvo novedad
     const [[mun]] = await pool.query(
@@ -884,7 +948,8 @@ if (prevReport) {
         novelty_start: r.novelty_start,
         novelty_end: r.novelty_end,
         state: r.state,
-        novelty_description: r.novelty_description // <<--- nuevo campo
+        // descifra por si ya estaba cifrado en BD
+        novelty_description: decNullable(r.novelty_description)
       };
     }
   }
@@ -1049,22 +1114,25 @@ for (const p of people) {
   // preservando el registro del reportId actual
   await deleteAgentRowsSameDate(conn, reportDate, ag.id, reportId);
 
-  await conn.query(
-    `INSERT INTO dailyreport_agent 
-      (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      reportId,
-      ag.id,
-      groupId,    // del reporte actual
-      ag.unitId,  // unidad actual del agente (esto está bien si ese es tu diseño)
-      state,
-      muniId,
-      novelty_start,
-      novelty_end,
-      novelty_description
-    ]
-  );
+  const novDescEnc = encNullable(novelty_description);
+
+      await conn.query(
+        `INSERT INTO dailyreport_agent 
+          (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          reportId,
+          ag.id,
+          groupId,
+          ag.unitId,
+          state,
+          muniId,
+          novelty_start,
+          novelty_end,
+          novDescEnc
+        ]
+      );
+
 
   await conn.query(
     'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
@@ -1724,7 +1792,7 @@ app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision
 
   const [rows] = await pool.query(`
     SELECT 
-      a.id AS agentId,          -- 👈 NUEVO
+      a.id AS agentId,          
       a.code, a.category,
       da.state,
       da.groupId, g.code AS groupCode,
@@ -1742,7 +1810,11 @@ app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision
     ORDER BY FIELD(a.category, 'OF', 'SO', 'PT'), a.code
   `, [id]);
 
-  res.json(rows);
+    res.json(rows.map(r => ({
+      ...r,
+      novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null
+    })));
+
 });
 
 
@@ -1819,11 +1891,14 @@ app.put('/admin/report-agents/:reportId/:agentId',
       if (!exists) return res.status(404).json({ error: 'Fila no encontrada' });
 
       // Actualiza detalle del reporte
-      await pool.query(`
-        UPDATE dailyreport_agent
-           SET state=?, municipalityId=?, novelty_start=?, novelty_end=?, novelty_description=?
-         WHERE reportId=? AND agentId=?
-      `, [s, muniId, novStart, novEnd, novDesc, reportId, agentId]);
+      const novDescEnc = encNullable(novDesc);
+
+        await pool.query(`
+          UPDATE dailyreport_agent
+            SET state=?, municipalityId=?, novelty_start=?, novelty_end=?, novelty_description=?
+          WHERE reportId=? AND agentId=?
+        `, [s, muniId, novStart, novEnd, novDescEnc, reportId, agentId]);
+
 
       // Sincroniza estado/municipio del agente
       await pool.query(`
@@ -2078,8 +2153,15 @@ app.get('/reports/export', auth, requireRole('superadmin', 'supervision', 'leade
   }
 });
 
-res.json(rows);
-});
+      res.json(
+        rows.map(r => ({
+          ...r,
+          // el alias en tu SELECT es "descripcion"
+          descripcion: r.descripcion ? decNullable(r.descripcion) : null
+        }))
+      );
+
+      });
 
 
 // ===================== UNITS =====================
@@ -2288,9 +2370,207 @@ app.post('/auth/logout', auth, async (req, res) => {
 });
 
 
+// GET /dashboard/novelties-by-type
+app.get('/dashboard/novelties-by-type', auth, async (req, res) => {
+  try {
+    const { date, groupId, unitId } = req.query;
+    if (!date) return res.status(422).json({ error: 'Falta date' });
+
+    const where = [
+      'dr.reportDate = ?',
+      "UPPER(da.state) <> 'SIN NOVEDAD'"  // ⛔️ siempre excluir
+    ];
+    const args = [date];
+
+    // Alcance por rol / filtros
+    if (req.user.role === 'leader_group') {
+      where.push('dr.groupId = ?');
+      args.push(req.user.groupId);
+    } else if (groupId) {
+      where.push('dr.groupId = ?');
+      args.push(groupId);
+    }
+    if (unitId) {
+      where.push('dr.unitId = ?');
+      args.push(unitId);
+    }
+
+    const [rows] = await pool.query(`
+      SELECT 
+        da.state AS novedad,
+        SUM(CASE WHEN a.category='OF' THEN 1 ELSE 0 END) AS OF_count,
+        SUM(CASE WHEN a.category IN ('SO','ME') THEN 1 ELSE 0 END) AS SO_count,
+        SUM(CASE WHEN a.category='PT' THEN 1 ELSE 0 END) AS PT_count
+      FROM dailyreport dr
+      JOIN dailyreport_agent da ON da.reportId = dr.id
+      JOIN agent a ON a.id = da.agentId
+      WHERE ${where.join(' AND ')}
+      GROUP BY da.state
+      ORDER BY da.state
+    `, args);
+
+    res.json({ items: rows });
+  } catch (e) {
+    console.error('GET /dashboard/novelties-by-type error:', e);
+    res.status(500).json({ error: 'NoveltiesByTypeError', detail: e.message });
+  }
+});
 
 
 
+
+// GET /dashboard/novelties-by-group
+app.get('/dashboard/novelties-by-group', auth, requireRole('superadmin','supervision','supervisor'), async (req, res) => {
+  const { date, groupId, unitId } = req.query
+  if (!date) return res.status(422).json({ error: 'Falta date' })
+  const where = ['r.date = ?']; const args = [date]
+  if (groupId) { where.push('r.groupId = ?'); args.push(groupId) }
+  if (unitId)  { where.push('r.unitId = ?');  args.push(unitId)  }
+
+  const [rows] = await pool.query(`
+    SELECT g.code AS label,
+           SUM(r.OF_nov) AS OF_count,
+           SUM(r.SO_nov) AS SO_count,
+           SUM(r.PT_nov) AS PT_count
+    FROM report r
+    JOIN \`group\` g ON g.id = r.groupId
+    WHERE ${where.join(' AND ')}
+    GROUP BY g.code
+    ORDER BY g.code
+  `, args)
+  res.json({ items: rows })
+})
+
+
+
+
+// GET /dashboard/novelties-by-unit
+app.get('/dashboard/novelties-by-unit', auth, requireRole('leader_group','superadmin','supervision','supervisor'), async (req, res) => {
+  try {
+    const { date, groupId, unitId } = req.query;
+    if (!date) return res.status(422).json({ error: 'Falta date' });
+
+    const where = ['dr.reportDate = ?'];
+    const args = [date];
+
+    // Si es líder de grupo, forzar su groupId
+    const effectiveGroupId = (req.user.role === 'leader_group') ? req.user.groupId : groupId;
+    if (effectiveGroupId) { where.push('dr.groupId = ?'); args.push(effectiveGroupId); }
+    if (unitId && unitId !== 'all') { where.push('dr.unitId = ?'); args.push(unitId); }
+
+    const [rows] = await pool.query(`
+      SELECT 
+        u.name AS label,
+        SUM(dr.OF_nov) AS OF_count,
+        SUM(dr.SO_nov) AS SO_count,
+        SUM(dr.PT_nov) AS PT_count
+      FROM dailyreport dr
+      JOIN unit u ON u.id = dr.unitId
+      WHERE ${where.join(' AND ')}
+      GROUP BY u.name
+      ORDER BY u.name
+    `, args);
+
+    res.json({ items: rows });
+  } catch (e) {
+    console.error('GET /dashboard/novelties-by-unit error:', e);
+    res.status(500).json({ error: 'NoveltiesByUnitError', detail: e.message });
+  }
+});
+
+// === DETALLE: Novedades por Grupo (discriminadas por tipo) ===
+app.get('/dashboard/novelties-by-group-breakdown',
+  auth,
+  requireRole('superadmin','supervision','supervisor','leader_group'),
+  async (req, res) => {
+    const { date, groupId, unitId } = req.query;
+    if (!date) return res.status(422).json({ error: 'Falta date' });
+
+    const where = [
+      'dr.reportDate = ?',
+      "UPPER(da.state) <> 'SIN NOVEDAD'"
+    ];
+    const args = [date];
+
+    // Alcance por rol
+    if (String(req.user.role).toLowerCase() === 'leader_group') {
+      where.push('dr.groupId = ?');
+      args.push(req.user.groupId);
+    } else if (groupId) {
+      where.push('dr.groupId = ?');
+      args.push(groupId);
+    }
+    if (unitId) { // opcional: filtrar a una unidad específica
+      where.push('dr.unitId = ?');
+      args.push(unitId);
+    }
+
+    const [rows] = await pool.query(`
+      SELECT 
+        g.code AS label,                       -- Grupo
+        UPPER(da.state) AS novedad,
+        SUM(CASE WHEN a.category='OF' THEN 1 ELSE 0 END) AS OF_count,
+        SUM(CASE WHEN a.category IN ('SO','ME') THEN 1 ELSE 0 END) AS SO_count,
+        SUM(CASE WHEN a.category='PT' THEN 1 ELSE 0 END) AS PT_count
+      FROM dailyreport dr
+      JOIN dailyreport_agent da ON da.reportId = dr.id
+      JOIN agent a ON a.id = da.agentId
+      JOIN \`group\` g ON g.id = dr.groupId
+      WHERE ${where.join(' AND ')}
+      GROUP BY g.code, UPPER(da.state)
+      ORDER BY g.code, UPPER(da.state)
+    `, args);
+
+    res.json({ items: rows });
+  }
+);
+
+// === DETALLE: Novedades por Unidad (discriminadas por tipo) ===
+app.get('/dashboard/novelties-by-unit-breakdown',
+  auth,
+  requireRole('superadmin','supervision','supervisor','leader_group'),
+  async (req, res) => {
+    const { date, groupId, unitId } = req.query;
+    if (!date) return res.status(422).json({ error: 'Falta date' });
+
+    const where = [
+      'dr.reportDate = ?',
+      "UPPER(da.state) <> 'SIN NOVEDAD'"
+    ];
+    const args = [date];
+
+    // Seguridad/alcance por rol
+    if (String(req.user.role).toLowerCase() === 'leader_group') {
+      where.push('dr.groupId = ?');
+      args.push(req.user.groupId);
+    } else if (groupId) {
+      where.push('dr.groupId = ?');
+      args.push(groupId);
+    }
+    if (unitId && unitId !== 'all') {
+      where.push('dr.unitId = ?');
+      args.push(unitId);
+    }
+
+    const [rows] = await pool.query(`
+      SELECT 
+        u.name AS label,                       -- Unidad
+        UPPER(da.state) AS novedad,
+        SUM(CASE WHEN a.category='OF' THEN 1 ELSE 0 END) AS OF_count,
+        SUM(CASE WHEN a.category IN ('SO','ME') THEN 1 ELSE 0 END) AS SO_count,
+        SUM(CASE WHEN a.category='PT' THEN 1 ELSE 0 END) AS PT_count
+      FROM dailyreport dr
+      JOIN dailyreport_agent da ON da.reportId = dr.id
+      JOIN agent a ON a.id = da.agentId
+      JOIN unit u ON u.id = dr.unitId
+      WHERE ${where.join(' AND ')}
+      GROUP BY u.name, UPPER(da.state)
+      ORDER BY u.name, UPPER(da.state)
+    `, args);
+
+    res.json({ items: rows });
+  }
+);
 
 
 
