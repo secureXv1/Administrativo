@@ -466,7 +466,7 @@ const kpiNOV = computed(() =>
 
 function logout() {
   localStorage.removeItem('token')
-  window.location.href = '/login'
+  window.location.href = '/login/'
 }
 
 function onMuniInput(agent) {

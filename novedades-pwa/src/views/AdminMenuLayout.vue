@@ -202,7 +202,7 @@ async function logout() {
     // continuar de todos modos
   } finally {
     localStorage.removeItem('token')
-    window.location.href = '/login'
+    window.location.href = '/login/'
   }
 }
 </script>
