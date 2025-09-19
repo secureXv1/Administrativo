@@ -274,7 +274,9 @@
 <div v-if="novModalOpen" class="fixed inset-0 z-[1000] flex items-center justify-center">
   <div class="absolute inset-0 bg-black/40" @click="novModalOpen=false"></div>
 
+  <!-- Contenedor -->
   <div class="relative bg-white w-screen h-screen sm:w-[95vw] sm:max-w-4xl sm:h-auto sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-xl flex flex-col">
+
     <!-- Header -->
     <div class="p-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white">
       <div class="font-semibold text-slate-800">
@@ -286,10 +288,15 @@
     <!-- Tabs -->
     <div class="px-4 pt-3 sticky top-[56px] sm:top-[64px] bg-white z-10 border-b border-slate-100">
       <div class="flex gap-2">
-        <button :class="['btn-ghost h-8 px-3 text-sm', novTab==='tipos' && 'bg-slate-100']" @click="novTab='tipos'">
+        <button
+          :class="['btn-ghost h-8 px-3 text-sm', novTab==='tipos' && 'bg-slate-100']"
+          @click="novTab='tipos'">
           Por novedad
         </button>
-        <button :class="['btn-ghost h-8 px-3 text-sm', novTab==='ambito' && 'bg-slate-100']" @click="novTab='ambito'">
+
+        <button
+          :class="['btn-ghost h-8 px-3 text-sm', novTab==='ambito' && 'bg-slate-100']"
+          @click="novTab='ambito'">
           Por {{ isAdminView ? 'grupo' : 'unidad' }}
         </button>
       </div>
@@ -297,6 +304,7 @@
 
     <!-- Body -->
     <div class="p-4 overflow-auto grow">
+
       <!-- Por Tipo -->
       <div v-show="novTab==='tipos'" class="overflow-x-auto">
         <table class="table w-full text-xs sm:text-sm">
@@ -335,6 +343,7 @@
 
       <!-- Por Ámbito -->
       <div v-show="novTab==='ambito'" class="overflow-x-auto">
+        <!-- Totales por ámbito -->
         <table class="table w-full text-xs sm:text-sm">
           <thead>
             <tr>
@@ -367,10 +376,42 @@
             </tr>
           </tfoot>
         </table>
+
+        <!-- Cuadro discriminado por novedad (cards por ámbito) -->
+        <div class="mt-6">
+          <div class="text-slate-700 font-medium mb-2">
+            Detalle por novedad en cada {{ isAdminView ? 'grupo' : 'unidad' }}
+          </div>
+
+          <div v-if="novAmbitoCards.length" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div
+              v-for="card in novAmbitoCards"
+              :key="card.label"
+              class="border border-slate-200 rounded-xl p-3 bg-white">
+              <div class="font-semibold text-slate-800 mb-2">{{ card.label }}</div>
+              <div class="flex flex-wrap gap-2">
+                <template v-if="card.items.length">
+                  <div
+                    v-for="it in card.items"
+                    :key="it.novedad"
+                    class="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 text-xs">
+                    <span class="font-medium">{{ it.novedad }}</span>:
+                    <span>{{ it.total }}</span>
+                    <span class="opacity-70"> ({{ it.OF }}/{{ it.ME }}/{{ it.PT }})</span>
+                  </div>
+                </template>
+                <span v-else class="text-slate-500 text-xs">Sin datos</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="text-slate-500 text-sm">Sin datos detallados</div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+
 
 
 
@@ -691,15 +732,18 @@ const rowsDisplayLeader = computed(() =>
 const completeGroupCodes = computed(() => new Set(compAdmin.value.complete.map(x => x.groupCode)))
 
 const rowsDisplayAdmin = computed(() => {
-  const map = new Map()
+  const codeById = new Map(grupos.value.map(g => [String(g.id), g.code]))
+  const map = new Map() // key = groupId
+
   for (const r of rows.value) {
-    const code = r.groupCode
-    if (!code) continue
-    if (!map.has(code)) {
-      map.set(code, {
-        _key: code,
-        groupCode: code,
-        groupId: r.groupId,           // <-- IMPORTANTE
+    const gid = String(r.groupId ?? r.group_id ?? '')
+    if (!gid) continue
+
+    if (!map.has(gid)) {
+      map.set(gid, {
+        _key: gid,
+        groupId: gid,
+        groupCode: r.groupCode || codeById.get(gid) || `Grupo ${gid}`,
         date: r.date,
         updatedAtMax: r.updatedAt || null,
         OF_effective:0, SO_effective:0, PT_effective:0,
@@ -707,7 +751,8 @@ const rowsDisplayAdmin = computed(() => {
         OF_nov:0, SO_nov:0, PT_nov:0
       })
     }
-    const g = map.get(code)
+
+    const g = map.get(gid)
     const ts  = new Date(r.updatedAt||0).getTime()
     const old = new Date(g.updatedAtMax||0).getTime()
     if (isFinite(ts) && ts > old) g.updatedAtMax = r.updatedAt
@@ -723,13 +768,17 @@ const rowsDisplayAdmin = computed(() => {
     g.PT_nov += r.PT_nov||0
   }
 
+  const completeIds = new Set(
+    compAdmin.value.complete.map(x => String(x.groupId))
+  )
+
   const out = []
-  for (const [code, g] of map.entries()) {
-    const isComplete = completeGroupCodes.value.has(code)
+  for (const [gid, g] of map.entries()) {
+    const isComplete = completeIds.has(gid)
     out.push({
-      _key: code,
-      groupCode: code,
-      groupId: g.groupId,                 // <-- IMPORTANTE
+      _key: gid,
+      groupCode: g.groupCode,
+      groupId: g.groupId,
       date: g.date,
       time: isComplete ? g.updatedAtMax : null,
       isComplete,
@@ -738,7 +787,8 @@ const rowsDisplayAdmin = computed(() => {
       NOV: `${g.OF_nov}/${g.SO_nov}/${g.PT_nov}`
     })
   }
-  return out.sort((a,b)=>a.groupCode.localeCompare(b.groupCode))
+  // ordena por código visible
+  return out.sort((a,b)=> String(a.groupCode).localeCompare(String(b.groupCode)))
 })
 
 
@@ -817,10 +867,42 @@ function buildCommonParams() {
   return params
 }
 
+
+
+// --- Detalle discriminado por novedad (por grupo/unidad)
+const novAmbitoDetRows = ref([]) // [{ label, novedad, OF, ME, PT, total }]
+
+// cards agrupadas por ámbito -> [{ label, items:[{ novedad, OF, ME, PT, total }] }]
+const novAmbitoCards = computed(() => {
+  const map = new Map()
+  for (const r of novAmbitoDetRows.value) {
+    const label = r.label || r.groupCode || r.unitName || '—'
+    if (!map.has(label)) map.set(label, [])
+    map.get(label).push({
+      novedad: r.novedad,
+      OF: Number(r.OF || r.OF_count || 0),
+      ME: Number(r.ME || r.SO || r.SO_count || 0),
+      PT: Number(r.PT || r.PT_count || 0),
+      total: (Number(r.OF || r.OF_count || 0)
+            + Number(r.ME || r.SO || r.SO_count || 0)
+            + Number(r.PT || r.PT_count || 0))
+    })
+  }
+  // ordena cada card por total desc y filtra "SIN NOVEDAD"
+  const out = []
+  for (const [label, items] of map.entries()) {
+    const clean = items.filter(i => String(i.novedad).toUpperCase() !== 'SIN NOVEDAD')
+                       .sort((a,b)=> b.total - a.total)
+    out.push({ label, items: clean })
+  }
+  // ordena cards por etiqueta
+  return out.sort((a,b)=> String(a.label).localeCompare(String(b.label)))
+})
+
 async function loadNovDetails() {
   const params = buildCommonParams()
 
-  // 1) Por tipo (filtrando SIN NOVEDAD)
+  // 1) Por tipo (global) - ya lo tenías
   const { data: tipos } = await axios.get('/dashboard/novelties-by-type', {
     params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
@@ -836,7 +918,7 @@ async function loadNovDetails() {
             + Number(r.PT || r.PT_count || 0))
     }))
 
-  // 2) Por ámbito (grupo/unidad) – aquí **no** hay “SIN NOVEDAD” por fila, son totales por ámbito
+  // 2) Por ámbito (totales)
   const scopeUrl = isAdminView.value ? '/dashboard/novelties-by-group' : '/dashboard/novelties-by-unit'
   const { data: amb } = await axios.get(scopeUrl, {
     params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
@@ -850,6 +932,19 @@ async function loadNovDetails() {
           + Number(r.ME || r.SO || r.SO_count || 0)
           + Number(r.PT || r.PT_count || 0))
   }))
+
+  // 3) Por ámbito con detalle por novedad (NUeVO)
+  const bdUrl = isAdminView.value
+    ? '/dashboard/novelties-by-group-breakdown'
+    : '/dashboard/novelties-by-unit-breakdown'
+
+  const { data: det } = await axios.get(bdUrl, {
+    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  // Espera items: [{ label/groupCode/unitName, novedad, OF, ME/SO, PT }]
+  novAmbitoDetRows.value = (det?.items || []).filter(
+    r => String(r.novedad || '').trim().toUpperCase() !== 'SIN NOVEDAD'
+  )
 }
 
 

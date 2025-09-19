@@ -2419,27 +2419,48 @@ app.get('/dashboard/novelties-by-type', auth, async (req, res) => {
 
 
 
-// GET /dashboard/novelties-by-group
-app.get('/dashboard/novelties-by-group', auth, requireRole('superadmin','supervision','supervisor'), async (req, res) => {
-  const { date, groupId, unitId } = req.query
-  if (!date) return res.status(422).json({ error: 'Falta date' })
-  const where = ['r.date = ?']; const args = [date]
-  if (groupId) { where.push('r.groupId = ?'); args.push(groupId) }
-  if (unitId)  { where.push('r.unitId = ?');  args.push(unitId)  }
 
-  const [rows] = await pool.query(`
-    SELECT g.code AS label,
-           SUM(r.OF_nov) AS OF_count,
-           SUM(r.SO_nov) AS SO_count,
-           SUM(r.PT_nov) AS PT_count
-    FROM report r
-    JOIN \`group\` g ON g.id = r.groupId
-    WHERE ${where.join(' AND ')}
-    GROUP BY g.code
-    ORDER BY g.code
-  `, args)
-  res.json({ items: rows })
-})
+// GET /dashboard/novelties-by-group
+app.get(
+  '/dashboard/novelties-by-group',
+  auth,
+  requireRole('superadmin','supervision','supervisor'),
+  async (req, res) => {
+    try {
+      const { date, groupId, unitId } = req.query;
+      if (!date) return res.status(422).json({ error: 'Falta date' });
+
+      const where = ['dr.reportDate = ?'];
+      const args = [date];
+
+      // Filtros opcionales
+      if (groupId) { where.push('dr.groupId = ?'); args.push(groupId); }
+      if (unitId)  { where.push('dr.unitId = ?');  args.push(unitId);  }
+
+      const [rows] = await pool.query(
+        `
+        SELECT
+          g.code AS label,
+          SUM(dr.OF_nov) AS OF_count,
+          SUM(dr.SO_nov) AS SO_count,
+          SUM(dr.PT_nov) AS PT_count
+        FROM dailyreport dr
+        JOIN \`group\` g ON g.id = dr.groupId
+        WHERE ${where.join(' AND ')}
+        GROUP BY g.code
+        ORDER BY g.code
+        `,
+        args
+      );
+
+      res.json({ items: rows });
+    } catch (e) {
+      console.error('GET /dashboard/novelties-by-group error:', e);
+      res.status(500).json({ error: 'NoveltiesByGroupError', detail: e.message });
+    }
+  }
+);
+
 
 
 
