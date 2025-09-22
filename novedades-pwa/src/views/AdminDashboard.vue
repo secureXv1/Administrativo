@@ -226,7 +226,7 @@
           <thead>
             <tr>
               <th>{{ isAdminView ? 'Grupo' : 'Unidad' }}</th>
-              <th>Fecha</th>
+              <th>Fecha de envío</th>
               <th>{{ isAdminView ? 'Hora de cierre' : 'Hora' }}</th>
               <th>FE (OF/ME/PT)</th>
               <th>FD (OF/ME/PT)</th>
@@ -255,8 +255,9 @@
                   </button>
                 </template>
               </td>
-              <td>{{ r.date }}</td>
-              <td>{{ formatTime(r.time) }}</td>
+              <td>{{ fmtFechaColombia(r.submittedAt || r.time) }}</td>
+              <td>{{ fmtHoraColombia(r.time || r.submittedAt) }}</td>
+
               <td class="font-medium text-slate-900">{{ r.FE }}</td>
               <td class="font-medium text-slate-900">{{ r.FD }}</td>
               <td class="font-medium text-slate-900">{{ r.NOV }}</td>
@@ -499,6 +500,45 @@ function recalcTotals () {
   }
 }
 
+
+// === Helpers de fecha/hora en Colombia (America/Bogota) ===
+function toDateSafe(v) {
+  if (!v) return null;
+  // Soporta ISO con Z, epoch numérico, y 'YYYY-MM-DD HH:mm:ss'
+  if (typeof v === 'number') return new Date(v);
+  const s = String(v).trim();
+  // Si ya es ISO con Z o con offset, úsalo tal cual.
+  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
+  // 'YYYY-MM-DDTHH:mm:ss'
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) return new Date(s);
+  // 'YYYY-MM-DD HH:mm:ss' -> conviértelo a 'YYYY-MM-DDTHH:mm:ss-05:00'
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) return new Date(s.replace(' ', 'T') + '-05:00');
+  // Solo fecha 'YYYY-MM-DD'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + 'T00:00:00-05:00');
+  // Fallback
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+function fmtFechaColombia(v) {
+  const d = toDateSafe(v);
+  if (!d) return '—';
+  return new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(d);
+}
+
+function fmtHoraColombia(v) {
+  const d = toDateSafe(v);
+  if (!d) return '—';
+  return new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    hour: '2-digit', minute: '2-digit'
+  }).format(d);
+}
+
+
 function formatTime (ts) {
   if (!ts) return '—'
   const d = new Date(ts)
@@ -721,75 +761,85 @@ function onComplianceOutsideClick(e){
 // ===== Tabla (líder por unidad / admin por grupo)
 const rowsDisplayLeader = computed(() =>
   rows.value.map(r => ({
-    _key: r.id, id: r.id, unitName: r.unitName, groupCode: r.groupCode,
-    date: r.date, time: r.updatedAt,
+    _key: r.id,
+    id: r.id,
+    unitName: r.unitName,
+    groupCode: r.groupCode,
+    // Fecha del reporte programada (mañana):
+    date: r.date,
+    // Fecha/hora reales de envío:
+    submittedAt: r.updatedAt,   // 👈 usamos updatedAt
+    time: r.updatedAt,          // ya usabas updatedAt para la hora
     FE:  `${r.OF_effective||0}/${r.SO_effective||0}/${r.PT_effective||0}`,
     FD:  `${r.OF_available||0}/${r.SO_available||0}/${r.PT_available||0}`,
     NOV: `${r.OF_nov||0}/${r.SO_nov||0}/${r.PT_nov||0}`
   }))
-)
+);
+
 
 const completeGroupCodes = computed(() => new Set(compAdmin.value.complete.map(x => x.groupCode)))
 
 const rowsDisplayAdmin = computed(() => {
-  const codeById = new Map(grupos.value.map(g => [String(g.id), g.code]))
-  const map = new Map() // key = groupId
+  const codeById = new Map(grupos.value.map(g => [String(g.id), g.code]));
+  const map = new Map(); // key = groupId
 
   for (const r of rows.value) {
-    const gid = String(r.groupId ?? r.group_id ?? '')
-    if (!gid) continue
+    const gid = String(r.groupId ?? r.group_id ?? '');
+    if (!gid) continue;
 
     if (!map.has(gid)) {
       map.set(gid, {
         _key: gid,
         groupId: gid,
         groupCode: r.groupCode || codeById.get(gid) || `Grupo ${gid}`,
-        date: r.date,
-        updatedAtMax: r.updatedAt || null,
+        date: r.date,               // fecha del reporte (programada)
+        updatedAtMax: r.updatedAt || null, // para “hora/fecha de envío” (máxima del grupo)
         OF_effective:0, SO_effective:0, PT_effective:0,
         OF_available:0, SO_available:0, PT_available:0,
         OF_nov:0, SO_nov:0, PT_nov:0
-      })
+      });
     }
 
-    const g = map.get(gid)
-    const ts  = new Date(r.updatedAt||0).getTime()
-    const old = new Date(g.updatedAtMax||0).getTime()
-    if (isFinite(ts) && ts > old) g.updatedAtMax = r.updatedAt
+    const g = map.get(gid);
+    const ts  = new Date(r.updatedAt||0).getTime();
+    const old = new Date(g.updatedAtMax||0).getTime();
+    if (isFinite(ts) && ts > old) g.updatedAtMax = r.updatedAt;
 
-    g.OF_effective += r.OF_effective||0
-    g.SO_effective += r.SO_effective||0
-    g.PT_effective += r.PT_effective||0
-    g.OF_available += r.OF_available||0
-    g.SO_available += r.SO_available||0
-    g.PT_available += r.PT_available||0
-    g.OF_nov += r.OF_nov||0
-    g.SO_nov += r.SO_nov||0
-    g.PT_nov += r.PT_nov||0
+    g.OF_effective += r.OF_effective||0;
+    g.SO_effective += r.SO_effective||0;
+    g.PT_effective += r.PT_effective||0;
+    g.OF_available += r.OF_available||0;
+    g.SO_available += r.SO_available||0;
+    g.PT_available += r.PT_available||0;
+    g.OF_nov += r.OF_nov||0;
+    g.SO_nov += r.SO_nov||0;
+    g.PT_nov += r.PT_nov||0;
   }
 
-  const completeIds = new Set(
-    compAdmin.value.complete.map(x => String(x.groupId))
-  )
+  const completeIds = new Set(compAdmin.value.complete.map(x => String(x.groupId)));
 
-  const out = []
+  const out = [];
   for (const [gid, g] of map.entries()) {
-    const isComplete = completeIds.has(gid)
+    const isComplete = completeIds.has(gid);
+    const submittedAt = isComplete ? g.updatedAtMax : null; // 👈 fecha/hora reales (máx del grupo)
     out.push({
       _key: gid,
       groupCode: g.groupCode,
       groupId: g.groupId,
+      // Fecha del reporte (programada)
       date: g.date,
-      time: isComplete ? g.updatedAtMax : null,
+      // Fecha/hora de envío reales:
+      submittedAt,                 // 👈 nueva propiedad
+      time: submittedAt,           // para la columna “Hora”
       isComplete,
       FE:  `${g.OF_effective}/${g.SO_effective}/${g.PT_effective}`,
       FD:  `${g.OF_available}/${g.SO_available}/${g.PT_available}`,
       NOV: `${g.OF_nov}/${g.SO_nov}/${g.PT_nov}`
-    })
+    });
   }
-  // ordena por código visible
-  return out.sort((a,b)=> String(a.groupCode).localeCompare(String(b.groupCode)))
-})
+  return out.sort((a,b)=> String(a.groupCode).localeCompare(String(b.groupCode)));
+});
+
 
 
 const tableRows = computed(() => isAdminView.value ? rowsDisplayAdmin.value : rowsDisplayLeader.value)

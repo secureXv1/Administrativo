@@ -14,6 +14,9 @@ import { requireSuperadmin } from './middlewares.js';
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
 
+// === Zona horaria del proceso Node: Colombia ===
+process.env.TZ = 'America/Bogota';
+
 const ENC_KEY_B64 = process.env.NOVELTY_ENC_KEY || '';
 const ENC_KEY = Buffer.from(ENC_KEY_B64, 'base64');
 
@@ -75,6 +78,17 @@ async function main() {
   if (typeof initDb === "function") {
     await initDb();
   }
+
+  // === Fuerza la zona horaria de la sesión MySQL a Colombia (UTC-05) ===
+    await pool.query("SET time_zone = '-05:00'");
+
+    // Asegura que todas las conexiones del pool hereden la zona horaria
+    if (typeof pool.on === 'function') {
+      pool.on('connection', (conn) => {
+        conn.query("SET time_zone = '-05:00'").catch(() => {});
+      });
+    }
+
 
   const app = express();
   app.use(cors());
@@ -1768,11 +1782,13 @@ app.get('/dashboard/compliance', auth, requireRole('superadmin', 'supervision', 
 
 
 
+
 // ---------- Cron (solo logs) ----------
-cron.schedule('16 6 * * *', () => console.log('⏰ Recordatorio 06:16'));
-cron.schedule('45 6 * * *', () => console.log('⏳ Cierre ventana 06:45'));
-cron.schedule('15 14 * * *', () => console.log('⏰ Recordatorio 14:15'));
-cron.schedule('45 14 * * *', () => console.log('⏳ Cierre ventana 14:45'));
+cron.schedule('16 6 * * *', () => console.log('⏰ Recordatorio 06:16'), { timezone: 'America/Bogota' });
+cron.schedule('45 6 * * *', () => console.log('⏳ Cierre ventana 06:45'), { timezone: 'America/Bogota' });
+cron.schedule('15 14 * * *', () => console.log('⏰ Recordatorio 14:15'), { timezone: 'America/Bogota' });
+cron.schedule('45 14 * * *', () => console.log('⏳ Cierre ventana 14:45'), { timezone: 'America/Bogota' });
+
 
 // Endpoint: Detalle de agentes por reporte
 app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
