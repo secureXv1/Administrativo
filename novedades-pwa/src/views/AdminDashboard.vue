@@ -81,14 +81,39 @@
 
 
   <!-- Agentes sin grupo -->
-  <div class="flex flex-col sm:flex-row gap-3">
-    <div class="kpi bg-white flex-1">
-      <div class="card-body">
-        <h4>Agentes sin grupo</h4>
-        <div class="value text-amber-600 font-bold text-xl">{{ agentesLibres }}</div>
+  <!-- Agentes sin unidad -->
+<div class="flex flex-col sm:flex-row gap-3">
+  <div
+    class="kpi flex-1 border"
+    :class="agentesSinUnidad > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'"
+  >
+    <div class="card-body">
+      <div class="flex items-center justify-between">
+        <h4 class="font-semibold text-slate-800">Agentes sin unidad</h4>
+        <button
+          v-if="agentesSinUnidad > 0"
+          class="btn-ghost h-8 px-2 text-xs"
+          @click="openSinUnidadModal"
+        >
+          Ver detalle
+        </button>
+      </div>
+      <div
+        class="value font-bold text-xl"
+        :class="agentesSinUnidad > 0 ? 'text-amber-700' : 'text-slate-700'"
+        @click="agentesSinUnidad > 0 && openSinUnidadModal()"
+        style="cursor: pointer;"
+        title="Clic para ver los agentes sin unidad"
+      >
+        {{ agentesSinUnidad }}
+      </div>
+      <div v-if="agentesSinUnidad > 0" class="text-[12px] text-amber-700/80 mt-1">
+        * Permanecen en su grupo. Cambio de grupo solo por Super Admin.
       </div>
     </div>
   </div>
+</div>
+
 
   <!-- Mapa -->
   <div class="card">
@@ -416,6 +441,7 @@
 
 
 
+
 </template>
 
 <script setup>
@@ -567,20 +593,41 @@ function goToGroupReport(r) {
 const municipalitiesMap = ref([])
 
 async function loadMapData () {
+  // Filtros
   const params = { date: date.value }
+
   if (isLeaderGroup.value) {
     // líder: el backend ya te limita a su grupo
+    if (selectedLeaderUnitId.value !== 'all') {
+      // algunos backends aceptan unitId para filtrar extra
+      params.unitId = selectedLeaderUnitId.value
+    }
   } else {
-    if (selectedGroupId.value !== 'all') params.groups = selectedGroupId.value
-    if (selectedUnitId.value  !== 'all') params.units  = selectedUnitId.value
+    // 🛠️ Para admin/supervisor usar groupId / unitId (y duplicar a groups/units por compatibilidad)
+    if (selectedGroupId.value !== 'all') {
+      params.groupId = String(selectedGroupId.value)
+      params.groups  = String(selectedGroupId.value) // compat
+    }
+    if (selectedUnitId.value !== 'all') {
+      params.unitId = String(selectedUnitId.value)
+      params.units  = String(selectedUnitId.value) // compat
+    }
   }
 
-  const { data } = await axios.get('/admin/agent-municipalities', {
-    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
+  let list = []
+  try {
+    const { data } = await axios.get('/admin/agent-municipalities', {
+      params,
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    list = Array.isArray(data) ? data : []
+  } catch (err) {
+    console.error('Error /admin/agent-municipalities:', err)
+    // seguimos con lista vacía para que al menos dibuje el mapa base
+    list = []
+  }
 
-  // Filtro adicional para líder: unidad concreta (si la eligió)
-  let list = data || []
+  // Filtro adicional para líder por unidad específica
   if (isLeaderGroup.value && selectedLeaderUnitId.value !== 'all') {
     list = list.filter(m => String(m.unitId) === String(selectedLeaderUnitId.value))
   }
@@ -588,18 +635,16 @@ async function loadMapData () {
   // 👉 arma estructura por municipio con desglose
   const byMuni = new Map()
   for (const r of list) {
-    if (!r.id) continue
+    if (!r?.id) continue
     let entry = byMuni.get(r.id)
     if (!entry) {
       entry = {
         id: r.id, name: r.name, dept: r.dept, lat: r.lat, lon: r.lon,
         total: 0,
-        breakdown: {} // { etiqueta -> cantidad }
+        breakdown: {}
       }
       byMuni.set(r.id, entry)
     }
-
-    // clave de desglose según rol
     const key = isLeaderGroup.value
       ? (r.unitName || `Unidad ${r.unitId || '—'}`)
       : (r.groupCode || `Grupo ${r.groupId || '—'}`)
@@ -610,7 +655,8 @@ async function loadMapData () {
   }
 
   municipalitiesMap.value = [...byMuni.values()]
-  setTimeout(drawMap, 100)
+  // dibuja aunque esté vacío (así no “desaparece” el mapa si hay error de datos)
+  setTimeout(drawMap, 0)
 }
 
 
@@ -627,14 +673,9 @@ function drawMap () {
 
   municipalitiesMap.value.forEach(m => {
     if (!m.lat || !m.lon) return
-
-    // Ordena el desglose desc
-    const items = Object.entries(m.breakdown)
-      .sort((a,b) => b[1] - a[1]) // [label, count]
-
+    const items = Object.entries(m.breakdown).sort((a,b) => b[1] - a[1])
     const labelTitulo = isLeaderGroup.value ? 'Unidades' : 'Grupos'
     const listHtml = items.map(([k,v]) => `<li>${k}: <b>${v}</b></li>`).join('')
-
     const popupHtml = `
       <b>${m.name}</b><br/>
       <span style="font-size:13px">${m.dept}</span><br/>
@@ -644,7 +685,6 @@ function drawMap () {
         <ul style="margin:6px 0 0 16px; font-size:13px">${listHtml || '<li>—</li>'}</ul>
       </div>
     `
-
     L.marker([m.lat, m.lon], {
       icon: L.icon({
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -653,6 +693,7 @@ function drawMap () {
     }).addTo(window.myMap).bindPopup(popupHtml)
   })
 }
+
 
 
 // Fullscreen (fallback nativo)

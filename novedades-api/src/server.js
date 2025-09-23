@@ -11,6 +11,9 @@ import { computeNovelties } from './utils.js';
 import { logEvent, Actions } from './audit.js';
 import { requireSuperadmin } from './middlewares.js';
 
+
+
+
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
 
@@ -75,19 +78,12 @@ export function decNullable(maybeB64) {
 
 // === INICIALIZACIÓN SEGURA DE LA DB ===
 async function main() {
+   await initDb();
   if (typeof initDb === "function") {
     await initDb();
   }
 
-  // === Fuerza la zona horaria de la sesión MySQL a Colombia (UTC-05) ===
-    await pool.query("SET time_zone = '-05:00'");
-
-    // Asegura que todas las conexiones del pool hereden la zona horaria
-    if (typeof pool.on === 'function') {
-      pool.on('connection', (conn) => {
-        conn.query("SET time_zone = '-05:00'").catch(() => {});
-      });
-    }
+   
 
 
   const app = express();
@@ -557,21 +553,6 @@ async function recalcDailyReport(reportId, connArg = null) {
 }
 
 
-// Elimina cualquier fila de dailyreport_agent del mismo agente y misma fecha (en otros reportes)
-async function deleteAgentRowsSameDate(conn, reportDate, agentId, keepReportId = null) {
-  const params = [reportDate, agentId];
-  let extra = '';
-  if (keepReportId) { // opcional: conserva una fila concreta si ya existe
-    extra = ' AND da.reportId <> ?';
-    params.push(keepReportId);
-  }
-  await conn.query(`
-    DELETE da
-    FROM dailyreport_agent da
-    JOIN dailyreport dr ON dr.id = da.reportId
-    WHERE dr.reportDate = ? AND da.agentId = ? ${extra}
-  `, params);
-}
 
 
 
@@ -877,23 +858,28 @@ app.post('/adminapi/agents', auth, requireRole('superadmin', 'supervision'), asy
 });
 
 app.get('/catalogs/municipalities', auth, async (req, res) => {
-  const { q, limit } = req.query;
-  let where = '1=1', params = [];
+  try {
+    const { q, limit } = req.query;
+    let where = '1=1', params = [];
 
-  if (q) {
-    where = '(name LIKE ? OR dept LIKE ?)';
-    params.push(`%${q}%`, `%${q}%`);
+    if (q) {
+      where = '(name LIKE ? OR dept LIKE ?)';
+      params.push(`%${q}%`, `%${q}%`);
+    }
+
+    let sql = `SELECT id, dept, name FROM municipality WHERE ${where} ORDER BY dept, name`;
+
+    if (limit && !isNaN(limit) && parseInt(limit, 10) > 0) {
+      sql += ' LIMIT ?';
+      params.push(parseInt(limit, 10));
+    }
+
+    const [rows] = await pool.query(sql, params);
+    return res.json(rows);
+  } catch (e) {
+    console.error('GET /catalogs/municipalities error:', e?.message, e);
+    return res.status(500).json({ error: 'MunicipalitiesError', detail: e?.message });
   }
-
-  let sql = `SELECT id, dept, name FROM municipality WHERE ${where} ORDER BY dept, name`;
-
-  if (limit && !isNaN(limit) && parseInt(limit, 10) > 0) {
-    sql += ' LIMIT ?';
-    params.push(parseInt(limit, 10));
-  }
-
-  const [rows] = await pool.query(sql, params);
-  res.json(rows);
 });
 
 
@@ -1173,7 +1159,7 @@ for (const p of people) {
       });
     } catch (_) {}
 
-    res.json({
+    return res.json({
       action: 'upserted',
       reportId,
       totals: { feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov }
@@ -1181,11 +1167,7 @@ for (const p of people) {
 
 
 
-res.json({
-  action: 'upserted',
-  reportId,
-  totals: { feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov }
-});
+
 
 } catch (e) {
   await conn.rollback();
@@ -1197,17 +1179,26 @@ res.json({
 });
 
 // ---------- Obtener reporte resumen por día ----------
+
 app.get('/reports', auth, async (req, res) => {
-  const { date, groupId, unitId } = req.query;
-  let where = 'reportDate=?';
-  const params = [date];
-  if (groupId) { where += ' AND groupId=?'; params.push(groupId); }
-  if (unitId) { where += ' AND unitId=?'; params.push(unitId); }
-  const [rows] = await pool.query(
-    `SELECT * FROM dailyreport WHERE ${where} ORDER BY reportDate`,
-    params
-  );
-  res.json(rows);
+  try {
+    const { date, groupId, unitId } = req.query;
+    if (!date) return res.status(422).json({ error: 'Falta date' });
+
+    let where = 'reportDate=?';
+    const params = [date];
+    if (groupId) { where += ' AND groupId=?'; params.push(groupId); }
+    if (unitId)  { where += ' AND unitId=?'; params.push(unitId); }
+
+    const [rows] = await pool.query(
+      `SELECT * FROM dailyreport WHERE ${where} ORDER BY reportDate`,
+      params
+    );
+    return res.json(rows);
+  } catch (e) {
+    console.error('GET /reports error:', e?.message, e);
+    return res.status(500).json({ error: 'ReportsListError', detail: e?.message });
+  }
 });
 
 // ---------- Listar agentes de mi grupo/unidad (con status/location actual) ----------
@@ -1690,59 +1681,77 @@ app.get('/debug/db', async (req, res) => {
   }
 });
 
-// API para el mapa de municipios con agentes según reporte (date + checkpoint + groups/units)
-app.get('/admin/agent-municipalities', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
-  const { date, groups, units } = req.query;
-  if (!date) return res.status(400).json({ error:'Missing date' });
+app.get('/admin/agent-municipalities',
+  auth,
+  requireRole('superadmin','supervision','leader_group'), // <- roles OK
+  async (req, res) => {
+    const { date, groups, units } = req.query;
+    if (!date) return res.status(400).json({ error:'Missing date' });
 
-  let reportWhere = `reportDate=?`;
-  let reportParams = [date];
+    // 1) Construye alcance base (sin fecha)
+    let baseWhere = `1=1`;
+    const baseArgs = [];
 
-  if (req.user.role === 'leader_group') {
-    // Forzar solo su grupo
-    reportWhere += ' AND groupId=?';
-    reportParams.push(req.user.groupId);
-  } else if (groups) {
-    const groupIds = String(groups).split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
-    if (groupIds.length) {
-      reportWhere += ` AND groupId IN (${groupIds.map(_ => '?').join(',')})`;
-      reportParams = [...reportParams, ...groupIds];
+    if (req.user.role === 'leader_group') {
+      baseWhere += ' AND groupId=?';
+      baseArgs.push(req.user.groupId);
+    } else {
+      if (groups) {
+        const groupIds = String(groups).split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
+        if (groupIds.length) {
+          baseWhere += ` AND groupId IN (${groupIds.map(_ => '?').join(',')})`;
+          baseArgs.push(...groupIds);
+        }
+      }
+      if (units) {
+        const unitIds = String(units).split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
+        if (unitIds.length) {
+          baseWhere += ` AND unitId IN (${unitIds.map(_ => '?').join(',')})`;
+          baseArgs.push(...unitIds);
+        }
+      }
     }
+
+    // 2) Averigua la ÚLTIMA fecha disponible <= date dentro del alcance
+    const [[latest]] = await pool.query(
+      `SELECT MAX(reportDate) AS lastDate
+         FROM dailyreport
+        WHERE ${baseWhere} AND reportDate <= ?`,
+      [...baseArgs, date]
+    );
+
+    if (!latest?.lastDate) return res.json([]); // no hay nada que pintar
+
+    // 3) Trae los reports SOLO de esa última fecha
+    const [reports] = await pool.query(
+      `SELECT id FROM dailyreport WHERE ${baseWhere} AND reportDate = ?`,
+      [...baseArgs, latest.lastDate]
+    );
+    if (!reports.length) return res.json([]);
+
+    const reportIds = reports.map(r => r.id);
+    const qMarks = reportIds.map(() => '?').join(',');
+
+    const [rows] = await pool.query(`
+      SELECT 
+        m.id, m.name, m.dept, m.lat, m.lon, 
+        da.groupId,
+        g.code AS groupCode,
+        da.unitId,
+        u.name AS unitName,
+        COUNT(da.agentId) AS agent_count
+      FROM dailyreport_agent da
+      JOIN municipality m ON m.id = da.municipalityId
+      JOIN \`group\` g ON g.id = da.groupId
+      LEFT JOIN unit u ON u.id = da.unitId
+      WHERE da.reportId IN (${qMarks})
+      GROUP BY m.id, da.groupId, da.unitId
+    `, reportIds);
+
+    res.json(rows);
   }
-  if (units) {
-    const unitIds = String(units).split(',').map(x => parseInt(x)).filter(x => !isNaN(x));
-    if (unitIds.length) {
-      reportWhere += ` AND unitId IN (${unitIds.map(_ => '?').join(',')})`;
-      reportParams = [...reportParams, ...unitIds];
-    }
-  }
+);
 
-  const [reports] = await pool.query(
-    `SELECT id, groupId, unitId FROM dailyreport WHERE ${reportWhere}`,
-    reportParams
-  );
-  if (!reports.length) return res.json([]);
-
-  const reportIds = reports.map(r => r.id);
-  let qMarks = reportIds.map(() => '?').join(',');
-  const [rows] = await pool.query(`
-    SELECT 
-      m.id, m.name, m.dept, m.lat, m.lon, 
-      da.groupId,
-      g.code AS groupCode,
-      da.unitId,
-      u.name AS unitName,
-      COUNT(da.agentId) AS agent_count
-    FROM dailyreport_agent da
-    JOIN municipality m ON m.id = da.municipalityId
-    JOIN \`group\` g ON g.id = da.groupId
-    LEFT JOIN unit u ON u.id = da.unitId
-    WHERE da.reportId IN (${qMarks})
-    GROUP BY m.id, da.groupId, da.unitId
-  `, reportIds);
-
-  res.json(rows);
-});
 
 
 app.get('/dashboard/compliance', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
@@ -1970,104 +1979,6 @@ app.put('/admin/report-agents/:reportId/:agentId',
 
 
 
-app.get('/me/profile', auth, async (req, res) => {
-  const [[user]] = await pool.query(
-    `SELECT u.id, u.username, u.role, u.groupId, u.unitId, u.createdAt, g.code AS groupCode, un.name AS unitName
-       FROM user u
-       LEFT JOIN \`group\` g ON g.id = u.groupId
-       LEFT JOIN unit un ON un.id = u.unitId
-      WHERE u.id=? LIMIT 1`,
-    [req.user.uid]
-  );
-
-
-  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json(user);
-});
-
-app.post('/me/change-password', auth, async (req, res) => {
-  const { oldPassword, newPassword } = req.body;
-  if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Campos requeridos' });
-
-  const [[user]] = await pool.query(
-    'SELECT passwordHash FROM user WHERE id=? LIMIT 1', [req.user.uid]
-  );
-  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
-
-  const ok = await bcrypt.compare(oldPassword, user.passwordHash);
-  if (!ok) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
-
-  const hash = await bcrypt.hash(newPassword, 10);
-  await pool.query(
-    'UPDATE user SET passwordHash=? WHERE id=?',
-    [hash, req.user.uid]
-  );
-  res.json({ ok: true });
-});
-
-
-// Endpoint para el mapa con filtro de grupos y unidades
-app.get('/admin/agent-municipalities', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
-  const { date, groups, units } = req.query;
-  let reportWhere = `reportDate=?`;
-  let reportParams = [date];
-
-  if (req.user.role === 'leader_group') {
-    // Busca todas sus unidades
-    const [unitsBD] = await pool.query('SELECT id FROM unit WHERE groupId=?', [req.user.groupId]);
-    const unitIds = unitsBD.map(u => u.id);
-    if (!unitIds.length) return res.json([]);
-    reportWhere += ` AND unitId IN (${unitIds.map(_ => '?').join(',')})`;
-    reportParams.push(...unitIds);
-  } else {
-    if (groups) {
-      const groupIds = String(groups)
-        .split(',')
-        .map(x => parseInt(x))
-        .filter(x => !isNaN(x));
-      if (groupIds.length) {
-        reportWhere += ` AND groupId IN (${groupIds.map(_ => '?').join(',')})`;
-        reportParams = [...reportParams, ...groupIds];
-      }
-    }
-    if (units) {
-      const unitIds = String(units)
-        .split(',')
-        .map(x => parseInt(x))
-        .filter(x => !isNaN(x));
-      if (unitIds.length) {
-        reportWhere += ` AND unitId IN (${unitIds.map(_ => '?').join(',')})`;
-        reportParams = [...reportParams, ...unitIds];
-      }
-    }
-  }
-
-  const [reports] = await pool.query(
-    `SELECT id, groupId, unitId FROM dailyreport WHERE ${reportWhere}`,
-    reportParams
-  );
-  if (!reports.length) return res.json([]);
-
-  const reportIds = reports.map(r => r.id);
-  let qMarks = reportIds.map(() => '?').join(',');
-  const [rows] = await pool.query(`
-    SELECT 
-      m.id, m.name, m.dept, m.lat, m.lon, 
-      da.groupId,
-      g.code AS groupCode,
-      da.unitId,
-      u.name AS unitName,
-      COUNT(da.agentId) AS agent_count
-    FROM dailyreport_agent da
-    JOIN municipality m ON m.id = da.municipalityId
-    JOIN \`group\` g ON g.id = da.groupId
-    LEFT JOIN unit u ON u.id = da.unitId
-    WHERE da.reportId IN (${qMarks})
-    GROUP BY m.id, da.groupId, da.unitId
-  `, reportIds);
-
-  res.json(rows);
-});
 
 
 // Listar agentes de un grupo que NO tienen unidad asignada
@@ -2208,16 +2119,20 @@ app.delete('/my/units/:id', auth, requireRole('leader_group'), async (req, res) 
 // --- Admin (superadmin/supervision) ---
 // Listar todas (superadmin y supervision)
 app.get('/admin/units', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
-  const [rows] = await pool.query(
-    `SELECT u.id, u.name, u.description, u.groupId,
-            g.code AS groupCode, g.name AS groupName
-       FROM unit u
-       LEFT JOIN \`group\` g ON g.id = u.groupId
-      ORDER BY g.code, u.name`
-  );
-  res.json(rows);
+  try {
+    const [rows] = await pool.query(
+      `SELECT u.id, u.name, u.description, u.groupId,
+              g.code AS groupCode, g.name AS groupName
+         FROM unit u
+         LEFT JOIN \`group\` g ON g.id = u.groupId
+        ORDER BY g.code, u.name`
+    );
+    return res.json(rows);
+  } catch (e) {
+    console.error('GET /admin/units error:', e?.message, e);
+    return res.status(500).json({ error: 'AdminUnitsError', detail: e?.message });
+  }
 });
-
 // Crear (solo superadmin)
 
 app.post('/admin/units', auth, requireRole('superadmin'), async (req, res) => {
@@ -2440,7 +2355,7 @@ app.get('/dashboard/novelties-by-type', auth, async (req, res) => {
 app.get(
   '/dashboard/novelties-by-group',
   auth,
-  requireRole('superadmin','supervision','supervisor'),
+  requireRole('superadmin','supervision'),
   async (req, res) => {
     try {
       const { date, groupId, unitId } = req.query;
@@ -2482,7 +2397,7 @@ app.get(
 
 
 // GET /dashboard/novelties-by-unit
-app.get('/dashboard/novelties-by-unit', auth, requireRole('leader_group','superadmin','supervision','supervisor'), async (req, res) => {
+app.get('/dashboard/novelties-by-unit', auth, requireRole('leader_group','superadmin','supervision'), async (req, res) => {
   try {
     const { date, groupId, unitId } = req.query;
     if (!date) return res.status(422).json({ error: 'Falta date' });
@@ -2518,7 +2433,7 @@ app.get('/dashboard/novelties-by-unit', auth, requireRole('leader_group','supera
 // === DETALLE: Novedades por Grupo (discriminadas por tipo) ===
 app.get('/dashboard/novelties-by-group-breakdown',
   auth,
-  requireRole('superadmin','supervision','supervisor','leader_group'),
+  requireRole('superadmin','supervision','leader_group'),
   async (req, res) => {
     const { date, groupId, unitId } = req.query;
     if (!date) return res.status(422).json({ error: 'Falta date' });
@@ -2565,7 +2480,7 @@ app.get('/dashboard/novelties-by-group-breakdown',
 // === DETALLE: Novedades por Unidad (discriminadas por tipo) ===
 app.get('/dashboard/novelties-by-unit-breakdown',
   auth,
-  requireRole('superadmin','supervision','supervisor','leader_group'),
+  requireRole('superadmin','supervision','leader_group'),
   async (req, res) => {
     const { date, groupId, unitId } = req.query;
     if (!date) return res.status(422).json({ error: 'Falta date' });
