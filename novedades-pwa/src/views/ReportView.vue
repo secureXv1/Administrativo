@@ -232,6 +232,18 @@
             </button>
             <span v-if="msg" :class="msgClass">{{ msg }}</span>
           </div>
+
+          <!-- Resumen resaltado: COMISIÓN DEL SERVICIO -->
+          <div class="rounded-2xl border-2 border-yellow-400 bg-yellow-50 px-4 py-3 text-center">
+            <div class="text-sm text-yellow-800 tracking-wide">COMISIÓN DEL SERVICIO</div>
+            <div class="mt-1 text-2xl font-bold text-yellow-900">
+              {{ comiOF }}/{{ comiSO }}/{{ comiPT }}
+              <span class="text-base font-semibold text-yellow-800"> (Total: {{ comiTotal }})</span>
+            </div>
+            <div class="mt-1 text-xs text-yellow-700">Fecha: {{ reportDateShort }}</div>
+          </div>
+
+
         </div>
       </div>
     </main>
@@ -462,6 +474,28 @@ const kpiFD = computed(() => `${fdOF.value}/${fdSO.value}/${fdPT.value}`)
 const kpiNOV = computed(() =>
   `${feOF.value - fdOF.value}/${feSO.value - fdSO.value}/${fePT.value - fdPT.value}`
 )
+
+// === COMISIÓN DEL SERVICIO (conteos) ===
+const comiOF = computed(() =>
+  agents.value.filter(a => a.category === 'OF' && a.status === 'COMISIÓN DEL SERVICIO').length
+)
+const comiSO = computed(() =>
+  agents.value.filter(a => a.category === 'SO' && a.status === 'COMISIÓN DEL SERVICIO').length
+)
+const comiPT = computed(() =>
+  agents.value.filter(a => a.category === 'PT' && a.status === 'COMISIÓN DEL SERVICIO').length
+)
+const comiTotal = computed(() => comiOF.value + comiSO.value + comiPT.value)
+
+// Fecha corta tipo 1/8/22
+const reportDateShort = computed(() => {
+  try {
+    return new Date(`${reportDate.value}T00:00:00`).toLocaleDateString('es-CO', {
+      year: '2-digit', month: 'numeric', day: 'numeric'
+    })
+  } catch { return reportDate.value }
+})
+
 
 
 function logout() {
