@@ -53,31 +53,42 @@
   </div>
 
     <!-- KPIs -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <div class="kpi">
-        <div class="card-body">
-          <h4>FE total (OF/ME/PT)</h4>
-          <div class="value text-lg">{{ kpiFE }}</div>
-        </div>
-      </div>
-
-      <div class="kpi">
-        <div class="card-body">
-          <h4>FD total (OF/ME/PT)</h4>
-          <div class="value text-lg">{{ kpiFD }}</div>
-        </div>
-      </div>
-
-      <div class="kpi">
-        <div class="card-body">
-          <div class="flex items-center justify-between gap-2">
-            <h4>Novedades totales (OF/ME/PT)</h4>
-            <button class="btn-ghost h-8 px-2 text-xs" @click="openNovModal">Detalles</button>
+   
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="kpi">
+            <div class="card-body">
+              <h4>FE total (OF/ME/PT)</h4>
+              <div class="value text-lg">
+                {{ kpiFE }}
+                <span class="text-sm text-slate-500"> ({{ feTotalDash }})</span>
+              </div>
+            </div>
           </div>
-          <div class="value text-lg">{{ kpiNOV }}</div>
+
+          <div class="kpi">
+            <div class="card-body">
+              <h4>FD total (OF/ME/PT)</h4>
+              <div class="value text-lg">
+                {{ kpiFD }}
+                <span class="text-sm text-slate-500"> ({{ fdTotalDash }})</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kpi">
+            <div class="card-body">
+              <div class="flex items-center justify-between gap-2">
+                <h4>Novedades totales (OF/ME/PT)</h4>
+                <button class="btn-ghost h-8 px-2 text-xs" @click="openNovModal">Detalles</button>
+              </div>
+              <div class="value text-lg">
+                {{ kpiNOV }}
+                <span class="text-sm text-slate-500"> ({{ novTotalDash }})</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+
 
 
   <!-- Agentes sin grupo -->
@@ -525,6 +536,16 @@ function recalcTotals () {
     tot.value.PT_N  += r.PT_nov||0
   }
 }
+
+// Totales para KPI (dashboard)
+const feTotalDash  = computed(() => tot.value.OF_FE + tot.value.SO_FE + tot.value.PT_FE)
+const fdTotalDash  = computed(() => tot.value.OF_FD + tot.value.SO_FD + tot.value.PT_FD)
+// Puedes calcularlo de dos maneras; dejo ambas equivalentes:
+const novTotalDash = computed(() =>
+  (tot.value.OF_N + tot.value.SO_N + tot.value.PT_N)
+  // o: feTotalDash.value - fdTotalDash.value
+)
+
 
 
 // === Helpers de fecha/hora en Colombia (America/Bogota) ===

@@ -32,32 +32,56 @@
           </p>
         </div>
 
-          <!-- Buscar y agregar agente libre -->
-          <div class="mb-4 flex gap-2 items-end">
-            <div>
-              <label class="label">Agregar agente libre</label>
-              <input
-                class="input"
-                list="free-agents-list"
-                v-model="agentSearch"
-                @input="onAgentSearchInput"
-                placeholder="Buscar código (ej: O101)..."
-                autocomplete="off"
-              />
-              <datalist id="free-agents-list">
-                <option
-                  v-for="a in agentSearchResults.filter(x => !agents.some(y => y.code === x.code))"
-                  :key="a.id"
-                  :value="a.code"
-                  @click="onSelectAgent(a.code)"
-                >
-                {{ a.code }} ({{ displayCategory(a.category) }})
-              </option>
+          
+         
+                           <!-- Buscar y agregar agente -->
+            <div class="mb-4 grid grid-cols-1 sm:grid-cols-[minmax(260px,360px)_max-content] gap-3 items-start">
+              <!-- Columna: input + mensaje -->
+              <div class="flex flex-col">
+                <label class="label">Agregar agente</label>
+                <input
+                  class="input"
+                  list="free-agents-list"
+                  v-model="agentSearch"
+                  @input="onAgentSearchInput"
+                  placeholder="Buscar código (ej: O101)..."
+                  autocomplete="off"
+                />
+                <datalist id="free-agents-list">
+                  <option
+                    v-for="a in agentSearchResults.filter(x => !agents.some(y => y.code === x.code))"
+                    :key="a.id"
+                    :value="a.code"
+                    @click="onSelectAgent(a.code)"
+                  >
+                    {{ a.code }} ({{ displayCategory(a.category) }})
+                    {{ getUnitLabel(a) ? ' — ' + getUnitLabel(a) : '' }}
+                  </option>
+                </datalist>
 
-              </datalist>
+                <!-- Mensaje: ocupa altura fija para que NUNCA mueva el botón -->
+                <p v-if="agentOwnershipMsg" class="mt-1 h-5 text-xs text-amber-700">
+                  {{ agentOwnershipMsg }}
+                </p>
+                <p v-else class="mt-1 h-5 text-xs">&nbsp;</p>
+              </div>
+
+              <!-- Columna: botón (con label invisible para alinear con el input) -->
+              <div class="flex flex-col items-start">
+                <label class="label invisible select-none" aria-hidden="true">.</label>
+                <button
+                  class="btn-primary px-4 whitespace-nowrap"
+                  @click="addFreeAgent"
+                  :disabled="!canAddSelected"
+                >
+                  Agregar
+                </button>
+              </div>
             </div>
-            <button class="btn-primary" @click="addFreeAgent" :disabled="!selectedAgentToAdd">Agregar</button>
-          </div>
+
+
+
+
 
           <!-- Tabla para desktop -->
               <div class="overflow-auto hidden md:block">
@@ -221,28 +245,52 @@
 
 
 
-          <!-- KPIs calculados -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="kpi"><div class="card-body">
+         <!-- KPIs calculados -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="kpi">
+            <div class="card-body">
               <h4>FE total (OF/ME/PT)</h4>
-              <div class="value">{{ kpiFE }}</div>
-            </div></div>
-            <div class="kpi"><div class="card-body">
-              <h4>FD total (OF/ME/PT)</h4>
-              <div class="value">{{ kpiFD }}</div>
-            </div></div>
-            <div class="kpi"><div class="card-body">
-              <h4>Novedades totales (OF/ME/PT)</h4>
-              <div class="value">{{ kpiNOV }}</div>
-            </div></div>
+              <div class="value">
+                {{ kpiFE }}
+                <span class="text-sm text-slate-500"> ({{ feTotal }})</span>
+              </div>
+            </div>
           </div>
 
-          <div class="flex gap-3">
-            <button @click="save" class="btn-primary">
-              {{ existeReporte ? 'Actualizar' : 'Guardar' }}
-            </button>
-            <span v-if="msg" :class="msgClass">{{ msg }}</span>
+          <div class="kpi">
+            <div class="card-body">
+              <h4>FD total (OF/ME/PT)</h4>
+              <div class="value">
+                {{ kpiFD }}
+                <span class="text-sm text-slate-500"> ({{ fdTotal }})</span>
+              </div>
+            </div>
           </div>
+
+          <div class="kpi">
+            <div class="card-body">
+              <h4>Novedades totales (OF/ME/PT)</h4>
+              <div class="value">
+                {{ kpiNOV }}
+                <span class="text-sm text-slate-500"> ({{ novTotalKPI }})</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+<!-- Acciones -->
+<div class="flex flex-wrap items-center gap-3">
+  <button @click="save" class="btn-primary">
+    {{ existeReporte ? 'Actualizar' : 'Guardar' }}
+  </button>
+  
+  <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
+</div>
+
+
+
+
 
 
           <!-- Aclaración antes del resumen discriminado -->
@@ -337,6 +385,24 @@
 
         </div>
       </div>
+
+
+                  <!-- Toast -->
+            <transition
+              enter-active-class="transition duration-200 ease-out"
+              enter-from-class="opacity-0 translate-y-2"
+              enter-to-class="opacity-100 translate-y-0"
+              leave-active-class="transition duration-150 ease-in"
+              leave-from-class="opacity-100 translate-y-0"
+              leave-to-class="opacity-0 translate-y-2"
+            >
+              <div v-if="toast.visible"
+                  class="fixed bottom-4 right-4 z-[1000] rounded-xl px-4 py-3 shadow-lg border"
+                  :class="toast.kind === 'success' ? 'bg-white border-green-200 text-green-800' : 'bg-white border-amber-200 text-amber-800'">
+                <div class="text-sm font-medium">{{ toast.text }}</div>
+              </div>
+            </transition>
+
     </main>
   </div>
 </template>
@@ -345,6 +411,13 @@
 
 import axios from 'axios'
 import { ref, computed, onMounted, watch } from 'vue'
+
+const toast = ref({ visible: false, text: '', kind: 'success' })
+function showToast(text, kind = 'success') {
+  toast.value = { visible: true, text, kind }
+  setTimeout(() => (toast.value.visible = false), 2500)
+}
+
 
 
 function tomorrowStr() {
@@ -361,6 +434,10 @@ const municipalities = ref([])
 const me = ref(null) // 👈 Para info usuario
 
 const existeReporte = ref(false)
+
+const agentOwnershipMsg = ref('')     // Mensaje "Agente pertenece a XX unidad"
+const canAddSelected     = ref(false) // Habilita/inhabilita el botón Agregar
+
 
 async function loadMe() {
   try {
@@ -566,6 +643,12 @@ const kpiNOV = computed(() =>
   `${feOF.value - fdOF.value}/${feSO.value - fdSO.value}/${fePT.value - fdPT.value}`
 )
 
+// Totales para KPI
+const feTotal  = computed(() => feOF.value + feSO.value + fePT.value)
+const fdTotal  = computed(() => fdOF.value + fdSO.value + fdPT.value)
+const novTotalKPI = computed(() => feTotal.value - fdTotal.value) // = (FE - FD)
+
+
 
 
 
@@ -668,6 +751,13 @@ const reportDateShort = computed(() => {
 })
 
 
+function getUnitLabel(a) {
+  // Ajusta los campos según lo que devuelva tu API
+  return a.unitCode || a.unitShort || a.unitAlias || a.unit_name_short || a.unitName || (a.unitId ? `U${a.unitId}` : '')
+}
+
+
+
 
 
 function logout() {
@@ -690,59 +780,113 @@ const selectedAgentToAdd = ref(null)
 
 async function onAgentSearchInput() {
   const q = agentSearch.value.trim().toUpperCase()
+
+  agentOwnershipMsg.value = ''
+  selectedAgentToAdd.value = null
+  canAddSelected.value = false
+
   if (q.length < 1) {
     agentSearchResults.value = []
-    selectedAgentToAdd.value = null
     return
   }
+
   const { data } = await axios.get('/catalogs/agents', {
     params: { q, limit: 20 },
     headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
   })
-  agentSearchResults.value = (data || []).filter(a => (a.groupId == null || a.groupId === 0) && (a.unitId == null || a.unitId === 0))
 
-  const match = agentSearchResults.value.find(a => a.code === q)
-  selectedAgentToAdd.value = match ? match.id : null
+  // NO filtrar, mostramos todos para poder advertir si está en otra unidad
+  agentSearchResults.value = Array.isArray(data) ? data : []
+
+  const match = agentSearchResults.value.find(a => String(a.code).toUpperCase() === q)
+
+  if (match) {
+    const isInOtherUnit = !!(match.unitId && me.value?.unitId && match.unitId !== me.value.unitId)
+
+    if (isInOtherUnit) {
+      const unitLabel  = getUnitLabel(match)
+      const groupLabel = match.groupCode ? ` — Grupo ${match.groupCode}` : ''
+      agentOwnershipMsg.value = `Agente pertenece a ${unitLabel}${groupLabel}`
+      selectedAgentToAdd.value = null
+      canAddSelected.value = false
+    } else if (!match.unitId && !match.groupId) {
+      selectedAgentToAdd.value = match.id
+      canAddSelected.value = true
+    } else {
+      agentOwnershipMsg.value = match.unitId ? 'Agente ya está en su unidad' : 'Agente asignado a grupo'
+      selectedAgentToAdd.value = null
+      canAddSelected.value = false
+    }
+
+  }
 }
+
 
 function onSelectAgent(code) {
   agentSearch.value = code
-  const agent = agentSearchResults.value.find(a => a.code === code)
-  selectedAgentToAdd.value = agent ? agent.id : null
+  agentOwnershipMsg.value = ''
+  selectedAgentToAdd.value = null
+  canAddSelected.value = false
+
+  const a = agentSearchResults.value.find(x => x.code === code)
+  if (!a) return
+
+  const isInOtherUnit = !!(a.unitId && me.value?.unitId && a.unitId !== me.value.unitId)
+  if (isInOtherUnit) {
+  const unitLabel  = getUnitLabel(a)
+  const groupLabel = a.groupCode ? ` — Grupo ${a.groupCode}` : ''
+  agentOwnershipMsg.value = `Agente pertenece a ${unitLabel}${groupLabel}`
+  return
 }
+
+
+  if (!a.unitId && !a.groupId) {
+    selectedAgentToAdd.value = a.id
+    canAddSelected.value = true
+  } else {
+    agentOwnershipMsg.value = a.unitId ? 'Agente ya está en su unidad' : 'Agente asignado a grupo'
+  }
+}
+
 
 async function addFreeAgent() {
   const q = agentSearch.value.trim().toUpperCase()
-  const agent = agentSearchResults.value.find(a => a.code === q)
+  const agent = agentSearchResults.value.find(a => String(a.code).toUpperCase() === q)
 
-  if (!agent) {
-    msg.value = "Selecciona un agente libre válido"
-    return
-  }
+  if (!agent) { msg.value = "Selecciona un agente válido"; return }
 
-  // 🚫 Evitar duplicados: si ya está en la lista de agentes, no lo agregues
+  // Evitar duplicados en la misma unidad
   if (agents.value.some(x => String(x.code).toUpperCase().trim() === agent.code)) {
     msg.value = `El agente ${agent.code} ya está en tu unidad`
     return
   }
 
+  // Solo si está libre
+  if (!canAddSelected.value) return
+
   try {
     await axios.post('/my/agents/add', { agentId: agent.id }, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     })
-    msg.value = "Agente agregado a tu grupo ✅"
 
-    // limpiar buscador
+    msg.value = "Agregado con éxito ✅"
+    showToast(`Agente ${agent.code} agregado a su unidad`, 'success')
+    setTimeout(() => { if (msg.value.includes('✅')) msg.value = '' }, 3000)
+
+    // limpiar buscador/estado
     agentSearch.value = ''
     agentSearchResults.value = []
+    agentOwnershipMsg.value = ''
     selectedAgentToAdd.value = null
+    canAddSelected.value = false
 
-    // recargar listado
     await loadAgents()
   } catch (e) {
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo agregar'
+    showToast(msg.value, 'warn')
   }
 }
+
 
 
 async function checkIfReportExists() {
