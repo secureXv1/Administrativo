@@ -209,6 +209,17 @@
                 </div>
               </div>
 
+                        <!-- Aclaración antes de KPIs -->
+          <div class="text-center py-2">
+            <h3 class="text-base font-semibold text-slate-700">
+              Novedades enviadas a nivel central
+            </h3>
+            <p class="text-xs text-slate-500">
+              Este consolidado corresponde al reporte que se transmite a nivel central.
+            </p>
+          </div>
+
+
 
           <!-- KPIs calculados -->
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -233,15 +244,95 @@
             <span v-if="msg" :class="msgClass">{{ msg }}</span>
           </div>
 
-          <!-- Resumen resaltado: COMISIÓN DEL SERVICIO -->
-          <div class="rounded-2xl border-2 border-yellow-400 bg-yellow-50 px-4 py-3 text-center">
-            <div class="text-sm text-yellow-800 tracking-wide">COMISIÓN DEL SERVICIO</div>
-            <div class="mt-1 text-2xl font-bold text-yellow-900">
-              {{ comiOF }}/{{ comiSO }}/{{ comiPT }}
-              <span class="text-base font-semibold text-yellow-800"> (Total: {{ comiTotal }})</span>
+
+          <!-- Aclaración antes del resumen discriminado -->
+<div class="text-center py-2">
+  <h3 class="text-base font-semibold text-slate-700">
+    Novedades para unidad externa
+  </h3>
+  <p class="text-xs text-slate-500">
+    Este detalle refleja las novedades discriminadas de los agentes en su unidad.
+  </p>
+</div>
+
+          
+
+          
+
+   <!-- Novedades en su unidad (desplegable) -->
+<div class="rounded-2xl border-2 border-yellow-400 bg-yellow-50">
+  <!-- Encabezado / Toggle -->
+  <button
+    type="button"
+    class="w-full px-4 py-3 flex items-center justify-between"
+    @click="showUnitPanel = !showUnitPanel"
+    :aria-expanded="showUnitPanel ? 'true' : 'false'"
+  >
+    <div class="text-left">
+      <div class="text-sm font-semibold text-yellow-800">Novedades en su unidad</div>
+      <div class="text-xs text-yellow-700">Fecha: {{ reportDateShort }}</div>
+    </div>
+    <svg class="h-5 w-5 text-yellow-800 transition-transform"
+         :class="{'rotate-180': showUnitPanel}" viewBox="0 0 20 20" fill="currentColor">
+      <path fill-rule="evenodd"
+            d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
+            clip-rule="evenodd" />
+    </svg>
+  </button>
+
+  <!-- Resumen compacto (siempre visible) -->
+  <div class="px-4 pb-3">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <!-- FE -->
+      <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+        <div class="text-xs text-yellow-700">F/E (OF/ME/PT)</div>
+        <div class="text-base font-bold text-yellow-900">
+          {{ feOF }}/{{ feSO }}/{{ fePT }}
+          <span class="text-xs text-yellow-800"> ({{ feOF + feSO + fePT }})</span>
+        </div>
+      </div>
+      <!-- F/D (Comisión del servicio) -->
+      <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+        <div class="text-xs text-yellow-700">F/D (Comisión del servicio)</div>
+        <div class="text-base font-bold text-yellow-900">
+          {{ comiOF }}/{{ comiSO }}/{{ comiPT }}
+          <span class="text-xs text-yellow-800"> ({{ comiTotal }})</span>
+        </div>
+      </div>
+      <!-- Novedades (SIN NOVEDAD + demás, excepto Comisión) -->
+      <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+        <div class="text-xs text-yellow-700">Novedades</div>
+        <div class="text-base font-bold text-yellow-900">
+          {{ novOF }}/{{ novSO }}/{{ novPT }}
+          <span class="text-xs text-yellow-800"> ({{ novTotal }})</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+                            <!-- Contenido desplegable -->
+            <div v-show="showUnitPanel" class="px-4 pb-4 space-y-3">
+              <!-- Lista discriminada de estados (Comisión primero, luego Sin novedad, etc.) -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div
+                  v-for="row in summaryByStatus"
+                  :key="row.status"
+                  class="flex items-center justify-between rounded-xl bg-yellow-100/70 px-3 py-2 border border-yellow-200"
+                >
+                  <div class="text-sm font-medium text-yellow-900">
+                    {{ row.label }}
+                  </div>
+                  <div class="text-sm font-semibold text-yellow-900">
+                    {{ row.of }}/{{ row.me }}/{{ row.pt }}
+                    <span class="ml-1 text-xs text-yellow-800">(Total: {{ row.total }})</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="mt-1 text-xs text-yellow-700">Fecha: {{ reportDateShort }}</div>
-          </div>
+            </div>
+
+
+
 
 
         </div>
@@ -475,7 +566,15 @@ const kpiNOV = computed(() =>
   `${feOF.value - fdOF.value}/${feSO.value - fdSO.value}/${fePT.value - fdPT.value}`
 )
 
-// === COMISIÓN DEL SERVICIO (conteos) ===
+
+
+
+// Panel desplegable (cerrado por defecto)
+const showUnitPanel = ref(false)
+
+// === Cómputos para FE, F/D (Comisión) y Novedades ===
+// Ya tienes feOF/feSO/fePT; reutilizamos
+
 const comiOF = computed(() =>
   agents.value.filter(a => a.category === 'OF' && a.status === 'COMISIÓN DEL SERVICIO').length
 )
@@ -487,7 +586,79 @@ const comiPT = computed(() =>
 )
 const comiTotal = computed(() => comiOF.value + comiSO.value + comiPT.value)
 
-// Fecha corta tipo 1/8/22
+// Novedades (suma de "SIN NOVEDAD" y todos los demás EXCEPTO Comisión del servicio)
+// Equivale a FE - Comisión del servicio
+const novOF = computed(() => feOF.value - comiOF.value)
+const novSO = computed(() => feSO.value - comiSO.value)
+const novPT = computed(() => fePT.value - comiPT.value)
+const novTotal = computed(() => novOF.value + novSO.value + novPT.value)
+
+// ==== Orden/etiquetas para la sección discriminada ====
+const STATUS_ORDER = [
+  'COMISIÓN DEL SERVICIO',
+  'SIN NOVEDAD',
+  'VACACIONES',
+  'EXCUSA DEL SERVICIO',
+  'SERVICIO',
+  'FRANCO FRANCO',
+  'LICENCIA DE MATERNIDAD',
+  'LICENCIA DE LUTO',
+  'LICENCIA REMUNERADA',
+  'LICENCIA NO REMUNERADA',
+  'LICENCIA PATERNIDAD',
+  'PERMISO',
+  'COMISIÓN EN EL EXTERIOR',
+  'COMISIÓN DE ESTUDIO',
+];
+
+const STATUS_LABEL = {
+  'COMISIÓN DEL SERVICIO': 'COMISIÓN DEL SERVICIO',
+  'SIN NOVEDAD': 'SIN NOVEDAD (Bogotá)',
+  'VACACIONES': 'VACACIONES',
+  'EXCUSA DEL SERVICIO': 'EXCUSA DEL SERVICIO',
+  'SERVICIO': 'SERVICIO',
+  'FRANCO FRANCO': 'FRANCO FRANCO',
+  'LICENCIA DE MATERNIDAD': 'LICENCIA DE MATERNIDAD',
+  'LICENCIA DE LUTO': 'LICENCIA DE LUTO',
+  'LICENCIA REMUNERADA': 'LICENCIA REMUNERADA',
+  'LICENCIA NO REMUNERADA': 'LICENCIA NO REMUNERADA',
+  'LICENCIA PATERNIDAD': 'LICENCIA PATERNIDAD',
+  'PERMISO': 'PERMISO',
+  'COMISIÓN EN EL EXTERIOR': 'COMISIÓN EN EL EXTERIOR',
+  'COMISIÓN DE ESTUDIO': 'COMISIÓN DE ESTUDIO',
+};
+
+const summaryByStatus = computed(() => {
+  const acc = {};
+  for (const st of STATUS_ORDER) acc[st] = { of: 0, so: 0, pt: 0, total: 0 };
+
+  for (const a of agents.value) {
+    const st = a.status || 'SIN NOVEDAD';
+    if (!acc[st]) acc[st] = { of: 0, so: 0, pt: 0, total: 0 };
+    if (a.category === 'OF') acc[st].of++;
+    else if (a.category === 'SO') acc[st].so++;
+    else if (a.category === 'PT') acc[st].pt++;
+    acc[st].total++;
+  }
+
+  const list = [];
+  for (const st of STATUS_ORDER) {
+    const r = acc[st];
+    if (r && r.total > 0) {
+      list.push({
+        status: st,
+        label: STATUS_LABEL[st] || st,
+        of: r.of,
+        me: r.so,  // mostrar "ME" aunque la categoría sea SO
+        pt: r.pt,
+        total: r.total,
+      });
+    }
+  }
+  return list;
+});
+
+// Fecha corta
 const reportDateShort = computed(() => {
   try {
     return new Date(`${reportDate.value}T00:00:00`).toLocaleDateString('es-CO', {
@@ -495,6 +666,7 @@ const reportDateShort = computed(() => {
     })
   } catch { return reportDate.value }
 })
+
 
 
 
