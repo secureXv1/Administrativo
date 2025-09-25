@@ -307,15 +307,14 @@
 
           
 
-   <!-- Novedades en su unidad (desplegable) -->
+  <!-- Novedades en su unidad (desplegable) -->
 <div class="rounded-2xl border-2 border-yellow-400 bg-yellow-50">
-  <!-- Encabezado / Toggle -->
+  <!-- Encabezado / Toggle (lo único visible cuando está colapsado) -->
   <button
     type="button"
     class="w-full px-4 py-3 flex items-center justify-between"
     @click="showUnitPanel = !showUnitPanel"
-    :aria-expanded="showUnitPanel ? 'true' : 'false'"
-  >
+    :aria-expanded="showUnitPanel ? 'true' : 'false'">
     <div class="text-left">
       <div class="text-sm font-semibold text-yellow-800">Novedades en su unidad</div>
       <div class="text-xs text-yellow-700">Fecha: {{ reportDateShort }}</div>
@@ -328,56 +327,64 @@
     </svg>
   </button>
 
-  <!-- Resumen compacto (siempre visible) -->
-  <div class="px-4 pb-3">
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-      <!-- FE -->
-      <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
-        <div class="text-xs text-yellow-700">F/E (OF/ME/PT)</div>
-        <div class="text-base font-bold text-yellow-900">
-          {{ feOF }}/{{ feSO }}/{{ fePT }}
-          <span class="text-xs text-yellow-800"> ({{ feOF + feSO + fePT }})</span>
+  <!-- Contenido desplegable: KPI + detalle -->
+  <transition
+    enter-active-class="transition duration-200 ease-out"
+    enter-from-class="opacity-0 -translate-y-1"
+    enter-to-class="opacity-100 translate-y-0"
+    leave-active-class="transition duration-150 ease-in"
+    leave-from-class="opacity-100 translate-y-0"
+    leave-to-class="opacity-0 -translate-y-1">
+    <div v-show="showUnitPanel" class="px-4 pb-4 space-y-3">
+      <!-- KPIs (antes eran “siempre visibles”; ahora SOLO al expandir) -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <!-- FE -->
+        <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+          <div class="text-xs text-yellow-700">F/E (OF/ME/PT)</div>
+          <div class="text-base font-bold text-yellow-900">
+            {{ feOF }}/{{ feSO }}/{{ fePT }}
+            <span class="text-xs text-yellow-800"> ({{ feOF + feSO + fePT }})</span>
+          </div>
+        </div>
+
+        <!-- F/D (Comisión del servicio) -->
+        <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+          <div class="text-xs text-yellow-700">F/D (Comisión del servicio)</div>
+          <div class="text-base font-bold text-yellow-900">
+            {{ comiOF }}/{{ comiSO }}/{{ comiPT }}
+            <span class="text-xs text-yellow-800"> ({{ comiTotal }})</span>
+          </div>
+        </div>
+
+        <!-- Novedades (sin Comisión) -->
+        <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+          <div class="text-xs text-yellow-700">Novedades</div>
+          <div class="text-base font-bold text-yellow-900">
+            {{ novOF }}/{{ novSO }}/{{ novPT }}
+            <span class="text-xs text-yellow-800"> ({{ novTotal }})</span>
+          </div>
         </div>
       </div>
-      <!-- F/D (Comisión del servicio) -->
-      <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
-        <div class="text-xs text-yellow-700">F/D (Comisión del servicio)</div>
-        <div class="text-base font-bold text-yellow-900">
-          {{ comiOF }}/{{ comiSO }}/{{ comiPT }}
-          <span class="text-xs text-yellow-800"> ({{ comiTotal }})</span>
-        </div>
-      </div>
-      <!-- Novedades (SIN NOVEDAD + demás, excepto Comisión) -->
-      <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
-        <div class="text-xs text-yellow-700">Novedades</div>
-        <div class="text-base font-bold text-yellow-900">
-          {{ novOF }}/{{ novSO }}/{{ novPT }}
-          <span class="text-xs text-yellow-800"> ({{ novTotal }})</span>
+
+      <!-- Detalle discriminado por estado -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div
+          v-for="row in summaryByStatus"
+          :key="row.status"
+          class="flex items-center justify-between rounded-xl bg-yellow-100/70 px-3 py-2 border border-yellow-200">
+          <div class="text-sm font-medium text-yellow-900">
+            {{ row.label }}
+          </div>
+          <div class="text-sm font-semibold text-yellow-900">
+            {{ row.of }}/{{ row.me }}/{{ row.pt }}
+            <span class="ml-1 text-xs text-yellow-800">(Total: {{ row.total }})</span>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </transition>
+</div>
 
-                            <!-- Contenido desplegable -->
-            <div v-show="showUnitPanel" class="px-4 pb-4 space-y-3">
-              <!-- Lista discriminada de estados (Comisión primero, luego Sin novedad, etc.) -->
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div
-                  v-for="row in summaryByStatus"
-                  :key="row.status"
-                  class="flex items-center justify-between rounded-xl bg-yellow-100/70 px-3 py-2 border border-yellow-200"
-                >
-                  <div class="text-sm font-medium text-yellow-900">
-                    {{ row.label }}
-                  </div>
-                  <div class="text-sm font-semibold text-yellow-900">
-                    {{ row.of }}/{{ row.me }}/{{ row.pt }}
-                    <span class="ml-1 text-xs text-yellow-800">(Total: {{ row.total }})</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            </div>
 
 
 
