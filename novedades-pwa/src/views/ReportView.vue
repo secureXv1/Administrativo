@@ -180,7 +180,7 @@
                       </td>
                     </tr>
                     <tr v-if="agents.length === 0">
-                      <td colspan="5" class="text-center text-slate-500 py-4">Sin agentes en tu grupo.</td>
+                      <td colspan="5" class="text-center text-slate-500 py-4">Sin agentes en tu Unidad.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -276,7 +276,7 @@
                   </div>
                 </div>
                 <div v-if="agents.length === 0" class="text-center text-slate-500 py-4">
-                  Sin agentes en tu grupo.
+                  Sin agentes en tu Unidad.
                 </div>
 
 
@@ -708,16 +708,30 @@ async function save() {
 
 
 async function removeAgent(agentId) {
-  if (!confirm('¿Quitar este agente de tu grupo?')) return
+  if (!confirm('¿Quitar este agente de tu unidad?')) return
   try {
-    await axios.post('/my/agents/remove', { agentId }, {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-    })
+    const role = String(me.value?.role || '').toLowerCase()
+
+    if (role === 'leader_unit' || role === 'leader_group') {
+      await axios.put(`/my/agents/${agentId}/unit`, { unitId: null }, {
+        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+      })
+    } else if (role === 'superadmin' || role === 'supervision') {
+      await axios.put(`/admin/agents/${agentId}`, { unitId: null }, {
+        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+      })
+    } else {
+      msg.value = 'No tiene permisos para quitar agentes de la unidad'
+      return
+    }
+
     await loadAgents()
   } catch (e) {
-    msg.value = e.response?.data?.error || 'No se pudo quitar agente'
+    msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo quitar agente'
   }
 }
+
+
 
 // KPIs calculados en frontend
 // FD = todos los OF/SO/PT con status "SIN NOVEDAD"
@@ -884,41 +898,50 @@ async function onAgentSearchInput() {
   selectedAgentToAdd.value = null
   canAddSelected.value = false
 
-  if (q.length < 1) {
-    agentSearchResults.value = []
-    return
-  }
+  if (!q.length) { agentSearchResults.value = []; return }
 
   const { data } = await axios.get('/catalogs/agents', {
     params: { q, limit: 20 },
     headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
   })
 
-  // NO filtrar, mostramos todos para poder advertir si está en otra unidad
   agentSearchResults.value = Array.isArray(data) ? data : []
-
   const match = agentSearchResults.value.find(a => String(a.code).toUpperCase() === q)
+  if (!match) return
 
-  if (match) {
-    const isInOtherUnit = !!(match.unitId && me.value?.unitId && match.unitId !== me.value.unitId)
+  const sameGroup = !!me.value?.groupId && match.groupId === me.value.groupId
+  const sameUnit  = !!me.value?.unitId && match.unitId === me.value.unitId
+  const inOtherUnit = !!match.unitId && !sameUnit
 
-    if (isInOtherUnit) {
-      const unitLabel  = getUnitLabel(match)
-      const groupLabel = match.groupCode ? ` — Grupo ${match.groupCode}` : ''
-      agentOwnershipMsg.value = `Agente pertenece a ${unitLabel}${groupLabel}`
-      selectedAgentToAdd.value = null
-      canAddSelected.value = false
-    } else if (!match.unitId && !match.groupId) {
-      selectedAgentToAdd.value = match.id
-      canAddSelected.value = true
-    } else {
-      agentOwnershipMsg.value = match.unitId ? 'Agente ya está en su unidad' : 'Agente asignado a grupo'
-      selectedAgentToAdd.value = null
-      canAddSelected.value = false
-    }
-
+  if (sameUnit) {
+    agentOwnershipMsg.value = 'Agente ya está en su unidad'
+    return
   }
+  if (inOtherUnit) {
+    const unitLabel  = getUnitLabel(match) || 'otra unidad'
+    agentOwnershipMsg.value = `Agente pertenece a ${unitLabel}`
+    return
+  }
+
+  // ✅ NUEVO: permitir agregar si es de mi grupo y no tiene unidad
+  if (!match.unitId && sameGroup) {
+    selectedAgentToAdd.value = match.id
+    canAddSelected.value = true
+    agentOwnershipMsg.value = 'Agente de su grupo (sin unidad)'
+    return
+  }
+
+  // Libre total (sin grupo ni unidad) → también se puede agregar
+  if (!match.unitId && !match.groupId) {
+    selectedAgentToAdd.value = match.id
+    canAddSelected.value = true
+    agentOwnershipMsg.value = 'Agente libre'
+    return
+  }
+
+  agentOwnershipMsg.value = 'Agente asignado a otro grupo'
 }
+
 
 
 function onSelectAgent(code) {
@@ -930,21 +953,30 @@ function onSelectAgent(code) {
   const a = agentSearchResults.value.find(x => x.code === code)
   if (!a) return
 
-  const isInOtherUnit = !!(a.unitId && me.value?.unitId && a.unitId !== me.value.unitId)
-  if (isInOtherUnit) {
-  const unitLabel  = getUnitLabel(a)
-  const groupLabel = a.groupCode ? ` — Grupo ${a.groupCode}` : ''
-  agentOwnershipMsg.value = `Agente pertenece a ${unitLabel}${groupLabel}`
-  return
-}
+  const sameGroup = !!me.value?.groupId && a.groupId === me.value.groupId
+  const sameUnit  = !!me.value?.unitId && a.unitId === me.value.unitId
+  const inOtherUnit = !!a.unitId && !sameUnit
 
-
+  if (sameUnit) { agentOwnershipMsg.value = 'Agente ya está en su unidad'; return }
+  if (inOtherUnit) {
+    const unitLabel  = getUnitLabel(a) || 'otra unidad'
+    agentOwnershipMsg.value = `Agente pertenece a ${unitLabel}`
+    return
+  }
+  if (!a.unitId && sameGroup) {
+    selectedAgentToAdd.value = a.id
+    canAddSelected.value = true
+    agentOwnershipMsg.value = 'Agente de su grupo (sin unidad)'
+    return
+  }
   if (!a.unitId && !a.groupId) {
     selectedAgentToAdd.value = a.id
     canAddSelected.value = true
-  } else {
-    agentOwnershipMsg.value = a.unitId ? 'Agente ya está en su unidad' : 'Agente asignado a grupo'
+    agentOwnershipMsg.value = 'Agente libre'
+    return
   }
+
+  agentOwnershipMsg.value = 'Agente asignado a otro grupo'
 }
 
 

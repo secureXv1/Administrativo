@@ -468,39 +468,52 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
 
 
 // Cambiar solo la unidad de un agente (LÍDER DE GRUPO)
+// Cambiar/liberar unidad de un agente (líder de grupo o líder de unidad)
 app.put('/my/agents/:id/unit',
   auth,
-  requireRole('leader_group'),
+  requireRole('leader_group', 'leader_unit'),
   async (req, res) => {
     const { id } = req.params;
     const { unitId } = req.body;
 
-    // verifica que el agente pertenece a su grupo
+    // Traer agente
     const [[ag]] = await pool.query(
-      'SELECT id, groupId FROM agent WHERE id=? LIMIT 1', [id]
+      'SELECT id, groupId, unitId FROM agent WHERE id=? LIMIT 1', [id]
     );
     if (!ag) return res.status(404).json({ error: 'Agente no encontrado' });
-    if (ag.groupId !== req.user.groupId) {
-      return res.status(403).json({ error: 'No autorizado' });
+
+    const role = String(req.user.role).toLowerCase();
+
+    if (role === 'leader_group') {
+      // Debe pertenecer a su grupo
+      if (ag.groupId !== req.user.groupId) {
+        return res.status(403).json({ error: 'No autorizado' });
+      }
+      // Si envían unitId, debe existir y pertenecer a su grupo
+      if (unitId) {
+        const [[u]] = await pool.query(
+          'SELECT id FROM unit WHERE id=? AND groupId=? LIMIT 1',
+          [unitId, req.user.groupId]
+        );
+        if (!u) return res.status(404).json({ error: 'Unidad no existe en su grupo' });
+      }
+      await pool.query('UPDATE agent SET unitId=? WHERE id=?', [unitId || null, id]);
+      return res.json({ ok: true });
     }
 
-    // si envían unitId, debe existir y pertenecer a su grupo
-    if (unitId) {
-      const [[u]] = await pool.query(
-        'SELECT id FROM unit WHERE id=? AND groupId=? LIMIT 1',
-        [unitId, req.user.groupId]
-      );
-      if (!u) return res.status(404).json({ error: 'Unidad no existe en su grupo' });
+    // role === 'leader_unit'
+    // Solo puede LIBERAR (unitId=null) agentes que estén en SU unidad
+    if (unitId !== null && unitId !== undefined) {
+      return res.status(403).json({ error: 'Solo puede liberar (unitId=null)' });
     }
-
-    await pool.query(
-      'UPDATE agent SET unitId=? WHERE id=?',
-      [unitId || null, id]
-    );
-
-    res.json({ ok: true });
+    if (ag.unitId !== req.user.unitId) {
+      return res.status(403).json({ error: 'Agente no pertenece a su unidad' });
+    }
+    await pool.query('UPDATE agent SET unitId=NULL WHERE id=?', [id]);
+    return res.json({ ok: true });
   }
 );
+
 
 
 
@@ -840,34 +853,37 @@ app.get('/admin/agents/:id/novelty',
 
 
 
-// Asignar un agente libre (sin grupo ni unidad) a mi unidad y grupo
+// Asignar agente a mi unidad (si está libre o ya en mi grupo sin unidad)
 app.post('/my/agents/add', auth, requireRole('leader_unit'), async (req, res) => {
   const { agentId } = req.body;
   const groupId = req.user.groupId;
-  const unitId = req.user.unitId;
-  const [r] = await pool.query(
-    'UPDATE agent SET groupId = ?, unitId = ? WHERE id = ? AND (groupId IS NULL OR groupId = 0) AND (unitId IS NULL OR unitId = 0)',
-    [groupId, unitId, agentId]
-  );
-  if (r.affectedRows === 0) {
-    return res.status(409).json({ error: 'AgenteNoDisponible', detail: 'El agente no está libre (groupId/unitId ≠ 0)' });
-  }
-  res.json({ ok: true });
-});
+  const unitId  = req.user.unitId;
 
-// Quitar un agente de mi unidad y grupo (dejarlo libre)
-app.post('/my/agents/remove', auth, requireRole('leader_unit'), async (req, res) => {
-  const { agentId } = req.body;
-  const groupId = req.user.groupId;
-  const unitId = req.user.unitId;
-  const [r] = await pool.query(
-    'UPDATE agent SET groupId = NULL, unitId = NULL WHERE id = ? AND groupId = ? AND unitId = ?',
-    [agentId, groupId, unitId]
+  const [[ag]] = await pool.query(
+    'SELECT id, groupId, unitId FROM agent WHERE id=? LIMIT 1',
+    [agentId]
   );
-  if (r.affectedRows === 0) {
-    return res.status(404).json({ error: 'NoPertenece', detail: 'El agente no pertenece a tu unidad/grupo' });
+  if (!ag) return res.status(404).json({ error: 'Agente no encontrado' });
+
+  // Ya está en alguna unidad
+  if (ag.unitId) {
+    return res.status(409).json({ error: 'AgenteNoDisponible', detail: 'El agente ya tiene unidad' });
   }
-  res.json({ ok: true });
+
+  // Caso A: sin grupo -> tomarlo a mi grupo/unidad
+  if (!ag.groupId) {
+    await pool.query('UPDATE agent SET groupId=?, unitId=? WHERE id=?', [groupId, unitId, agentId]);
+    return res.json({ ok: true });
+  }
+
+  // Caso B: mismo grupo y sin unidad -> solo set unitId
+  if (ag.groupId === groupId) {
+    await pool.query('UPDATE agent SET unitId=? WHERE id=?', [unitId, agentId]);
+    return res.json({ ok: true });
+  }
+
+  // Caso C: pertenece a otro grupo
+  return res.status(409).json({ error: 'AgenteDeOtroGrupo', detail: 'El agente pertenece a otro grupo' });
 });
 
 // Crear agente (incluye unitId)
@@ -1496,19 +1512,60 @@ app.post('/admin/users/:id/unlock', auth, requireRole('superadmin'), async (req,
 
 // ---------- CRUD Agentes Admin ----------
 
-// Listar todos los agentes (puedes agregar filtros con query params)
-app.get('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
+
+// Listado de agentes (admin/supervisión/supervisor/leader_group)
+app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervisor', 'leader_group'), async (req, res) => {
   try {
-    const { q, code, category, groupId, unitId, limit = 100 } = req.query;
-    let where = '1=1', params = [];
-    if (code) { where += ' AND a.code=?'; params.push(String(code).toUpperCase().trim()); }
-    else if (q) { where += ' AND a.code LIKE ?'; params.push(String(q).toUpperCase().trim() + '%'); }
-    if (category) { where += ' AND a.category=?'; params.push(category); }
-    if (groupId) { where += ' AND a.groupId=?'; params.push(Number(groupId)); }
-    if (unitId) { where += ' AND a.unitId=?'; params.push(Number(unitId)); }
+    const { q, code, category, groupId, unitId, freeOnly, limit = 100 } = req.query;
+
+    let where = '1=1';
+    const params = [];
+
+    // 🔐 Restricción para leader_group
+    if (req.user.role === 'leader_group') {
+      // Debe tener groupId asignado en el token
+      if (!req.user.groupId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      // Solo puede consultar su propio grupo
+      if (groupId && Number(groupId) !== Number(req.user.groupId)) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      where += ' AND a.groupId=?';
+      params.push(Number(req.user.groupId));
+    } else {
+      // Para roles superiores (superadmin/supervision/supervisor)
+      if (groupId) { where += ' AND a.groupId=?'; params.push(Number(groupId)); }
+    }
+
+    if (code) {
+      where += ' AND a.code=?';
+      params.push(String(code).toUpperCase().trim());
+    } else if (q) {
+      where += ' AND a.code LIKE ?';
+      params.push(String(q).toUpperCase().trim() + '%');
+    }
+
+    if (category) {
+      where += ' AND a.category=?';
+      params.push(category);
+    }
+
+    if (unitId) {
+      where += ' AND a.unitId=?';
+      params.push(Number(unitId));
+    }
+
+    // ✅ filtro extra: solo agentes sin unidad
+    if (String(freeOnly || '0') === '1') {
+      where += ' AND (a.unitId IS NULL OR a.unitId = 0)';
+    }
+
     const [rows] = await pool.query(
-      `SELECT a.id, a.code, a.category, a.status, a.groupId, a.unitId, g.code AS groupCode, u.name AS unitName, a.municipalityId,
-              m.name AS municipalityName, m.dept
+      `SELECT a.id, a.code, a.category, a.status,
+              a.groupId, g.code AS groupCode,
+              a.unitId, u.name AS unitName,
+              a.municipalityId, m.name AS municipalityName, m.dept
          FROM agent a
          LEFT JOIN \`group\` g ON g.id = a.groupId
          LEFT JOIN unit u ON u.id = a.unitId
@@ -1516,13 +1573,15 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (
         WHERE ${where}
         ORDER BY a.code
         LIMIT ?`,
-      [...params, Math.min(parseInt(limit,10)||100, 500)]
+      [...params, Math.min(parseInt(limit, 10) || 100, 500)]
     );
+
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: 'AgentListError', detail: e.message });
   }
 });
+
 
 // Crear agente
 app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
@@ -1574,6 +1633,7 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
 
 
 // Actualizar agente (parcial)
+// Actualizar agente (parcial)
 app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { id } = req.params;
   const { code, category, groupId, unitId, status, municipalityId } = req.body;
@@ -1586,11 +1646,13 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     sets.push('code=?'); params.push(String(code).trim().toUpperCase());
     changes.code = String(code).trim().toUpperCase();
   }
+
   if (category !== undefined) {
     if (!['OF','SO','PT'].includes(String(category))) return res.status(422).json({ error:'Categoría inválida' });
     sets.push('category=?'); params.push(category);
     changes.category = category;
   }
+
   if (groupId !== undefined) {
     if (groupId) {
       const [[g]] = await pool.query('SELECT id FROM `group` WHERE id=? LIMIT 1', [groupId]);
@@ -1599,6 +1661,7 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     sets.push('groupId=?'); params.push(groupId || null);
     changes.groupId = groupId || null;
   }
+
   if (unitId !== undefined) {
     if (unitId) {
       const [[u]] = await pool.query('SELECT id FROM unit WHERE id=? LIMIT 1', [unitId]);
@@ -1607,10 +1670,12 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     sets.push('unitId=?'); params.push(unitId || null);
     changes.unitId = unitId || null;
   }
+
   if (status !== undefined) {
     sets.push('status=?'); params.push(String(status));
     changes.status = String(status);
   }
+
   if (municipalityId !== undefined) {
     if (municipalityId) {
       const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
@@ -1619,6 +1684,24 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     sets.push('municipalityId=?'); params.push(municipalityId || null);
     changes.municipalityId = municipalityId || null;
   }
+
+  // ================== PATCH INTEGRIDAD GRUPO-UNIDAD ==================
+  // 1) Si vienen groupId Y unitId a la vez, validar que la unidad pertenezca al grupo indicado.
+  if (('groupId' in changes) && ('unitId' in changes) && changes.groupId && changes.unitId) {
+    const [[ux]] = await pool.query(
+      'SELECT id FROM unit WHERE id=? AND groupId=? LIMIT 1',
+      [changes.unitId, changes.groupId]
+    );
+    if (!ux) return res.status(422).json({ error: 'La unidad no pertenece al nuevo grupo' });
+  }
+
+  // 2) Si CAMBIAN groupId y NO mandan unitId en el body, limpiar unitId automáticamente
+  //    (solo si efectivamente se incluyó groupId en la petición)
+  if (('groupId' in changes) && changes.groupId !== null && (unitId === undefined)) {
+    sets.push('unitId=?'); params.push(null);
+    changes.unitId = null;
+  }
+  // ================== FIN PATCH INTEGRIDAD ===========================
 
   if (!sets.length) return res.status(400).json({ error:'Nada para actualizar' });
 
@@ -1967,23 +2050,19 @@ app.put('/admin/report-agents/:reportId/:agentId',
 // Listar agentes de un grupo que NO tienen unidad asignada
 app.get('/admin/agents-no-unit', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
   let groupId = req.query.groupId;
-
-  // Si es líder de grupo, forzar groupId por su sesión
-  if (req.user.role === 'leader_group') {
-    groupId = req.user.groupId;
-  }
+  if (req.user.role === 'leader_group') groupId = req.user.groupId;
   if (!groupId) return res.status(400).json({ error: 'Falta groupId' });
 
-  try {
-    const [rows] = await pool.query(
-      `SELECT id, code, category, status FROM agent WHERE groupId = ? AND (unitId IS NULL OR unitId = 0) ORDER BY code`,
-      [groupId]
-    );
-    res.json(rows);
-  } catch (e) {
-    res.status(500).json({ error: 'AgentListNoUnitError', detail: e.message });
-  }
+  const [rows] = await pool.query(
+    `SELECT id, code, category, status 
+       FROM agent 
+      WHERE groupId = ? AND (unitId IS NULL OR unitId = 0) 
+      ORDER BY code`,
+    [groupId]
+  );
+  res.json(rows);
 });
+
 
 // Para líder de grupo: cumplimiento de unidades de SU grupo
 app.get('/dashboard/compliance-units', auth, requireRole('leader_group'), async (req, res) => {

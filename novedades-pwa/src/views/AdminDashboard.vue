@@ -91,7 +91,7 @@
 
 
 
-  <!-- Agentes sin grupo -->
+ 
   <!-- Agentes sin unidad -->
 <div class="flex flex-col sm:flex-row gap-3">
   <div
@@ -118,9 +118,7 @@
       >
         {{ agentesSinUnidad }}
       </div>
-      <div v-if="agentesSinUnidad > 0" class="text-[12px] text-amber-700/80 mt-1">
-        * Permanecen en su grupo. Cambio de grupo solo por Super Admin.
-      </div>
+    
     </div>
   </div>
 </div>
@@ -449,6 +447,52 @@
   </div>
 </div>
 
+<!-- MODAL AGENTES SIN UNIDAD -->
+<div v-if="sinUnidadModalOpen" class="fixed inset-0 z-[1100] flex items-center justify-center">
+  <div class="absolute inset-0 bg-black/40" @click="sinUnidadModalOpen=false"></div>
+
+  <div class="relative bg-white w-screen h-screen sm:w-[520px] sm:h-auto sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-xl flex flex-col">
+    <!-- Header -->
+    <div class="p-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white">
+      <div class="font-semibold text-slate-800">
+        Agentes sin unidad — <span class="text-amber-700">{{ agentesSinUnidad }}</span>
+      </div>
+      <button class="btn-ghost" @click="sinUnidadModalOpen=false">Cerrar</button>
+    </div>
+
+    <!-- Body -->
+    <div class="p-4 overflow-auto">
+      <template v-if="agentesSinUnidad > 0">
+        <div class="mb-2 text-xs text-slate-500">
+          * Permanecen en su grupo. Cambio de grupo solo por Super Admin.
+        </div>
+
+        <div class="border rounded-xl overflow-hidden">
+          <table class="table w-full text-sm">
+            <thead>
+              <tr class="bg-slate-50">
+                <th class="w-[40%]">Código</th>
+                <th class="w-[20%]">Cat.</th>
+                <th class="w-[40%]">Grupo</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="a in agentesSinUnidadList" :key="a.id">
+                <td class="font-semibold">{{ a.code }}</td>
+                <td>{{ a.category === 'SO' ? 'ME' : a.category }}</td>
+                <td>{{ a.groupCode || ('G'+(a.groupId ?? '—')) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
+      <div v-else class="text-slate-500 text-sm text-center py-6">
+        Sin agentes sin unidad.
+      </div>
+    </div>
+  </div>
+</div>
 
 
 
@@ -727,18 +771,54 @@ function toggleFullscreen () {
   }
 }
 
-// ===== Agentes libres
-const agentesLibres = ref(0)
-async function loadAgentesLibres () {
-  let params = { limit: 9999 }
-  if (isLeaderGroup.value && me.value?.groupId) params.groupId = me.value.groupId
-  const { data } = await axios.get('/admin/agents', {
-    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  agentesLibres.value = isLeaderGroup.value
-    ? (data || []).filter(a => !a.unitId).length
-    : (data || []).filter(a => a.groupId == null || a.groupId === 0).length
+// ===== Agentes sin unidad (alerta/KPI + modal)
+const agentesSinUnidad = ref(0)
+const agentesSinUnidadList = ref([])   // [{id, code, category, groupId, groupCode}]
+const sinUnidadModalOpen = ref(false)
+
+async function loadAgentesSinUnidad () {
+  try {
+    // 1) Construir filtros según rol/selecciones
+    const params = { freeOnly: 1, limit: 2000 } // queremos SOLO sin unidad
+    if (isLeaderGroup.value && me.value?.groupId) {
+      // líder de grupo: restringido a su propio grupo
+      params.groupId = me.value.groupId
+    } else {
+      // admin/supervisor: puede filtrar por grupo desde el select
+      if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
+      // (no filtramos por unidad; buscamos precisamente sin unidad)
+    }
+
+    // 2) Llamada correcta al endpoint
+    const { data } = await axios.get('/admin/agents', {
+      params,
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+
+    // 3) Filtrar por seguridad (unitId null/0)
+    let list = (Array.isArray(data) ? data : []).filter(a => !a.unitId)
+
+    // 4) Ordenar por categoría y código
+    const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
+    list.sort(
+      (x, y) =>
+        (CATEG_ORDER[x.category] || 99) - (CATEG_ORDER[y.category] || 99) ||
+        String(x.code).localeCompare(String(y.code))
+    )
+
+    agentesSinUnidadList.value = list
+    agentesSinUnidad.value = list.length
+  } catch (err) {
+    console.error('Error loadAgentesSinUnidad:', err)
+    agentesSinUnidadList.value = []
+    agentesSinUnidad.value = 0
+  }
 }
+
+function openSinUnidadModal () {
+  if (agentesSinUnidad.value > 0) sinUnidadModalOpen.value = true
+}
+
 
 // ===== Cumplimiento
 const checkpointLabel = 'diario'
@@ -1068,7 +1148,7 @@ async function applyFilters () {
   if (isLeaderGroup.value) await loadComplianceLeader()
   else await loadComplianceAdmin()
   await loadMapData()
-  await loadAgentesLibres()
+  await loadAgentesSinUnidad()
   await loadNovDetails()
 }
 async function reloadCompliance () {
@@ -1097,7 +1177,7 @@ onMounted(async () => {
   if (isLeaderGroup.value) await loadComplianceLeader()
   else await loadComplianceAdmin()
   await loadMapData()
-  await loadAgentesLibres()
+  await loadAgentesSinUnidad()
 
   document.addEventListener('click', onComplianceOutsideClick)
 })
