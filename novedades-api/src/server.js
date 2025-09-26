@@ -73,15 +73,31 @@ export function decNullable(maybeB64) {
   }
 }
 
+// === NOVEDADES: catálogo y normalizador ===
+export const VALID_STATES = new Set([
+  'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
+  'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
+  'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO',
+ 
+  'SUSPENDIDO','HOSPITALIZADO'
+]);
+
+export function isValidState(s) {
+  return VALID_STATES.has(String(s || '').toUpperCase().trim());
+}
+
+
 
 
 
 // === INICIALIZACIÓN SEGURA DE LA DB ===
 async function main() {
-   await initDb();
-  if (typeof initDb === "function") {
+  // Llama initDb SOLO si existe, y SOLO una vez
+  if (typeof initDb === 'function') {
     await initDb();
   }
+
 
    
 
@@ -560,13 +576,14 @@ async function recalcDailyReport(reportId, connArg = null) {
 
 
 
+// PUT: guardar/actualizar novedad de un agente en una fecha específica
 app.put('/admin/agents/:id/novelty',
   auth,
   requireRole('superadmin','supervision','leader_group'),
   async (req, res) => {
     const { id } = req.params;
     const {
-      date,                // YYYY-MM-DD
+      date,
       state,
       municipalityId,
       novelty_start,
@@ -578,29 +595,26 @@ app.put('/admin/agents/:id/novelty',
       if (!date)  return res.status(422).json({ error: 'Falta date' });
       if (!state) return res.status(422).json({ error: 'Falta state' });
 
+      const isoDate = String(date).slice(0,10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+        return res.status(422).json({ error: 'Formato inválido de date (YYYY-MM-DD)' });
+      }
+
       const [[ag]] = await pool.query(
         'SELECT id, groupId, unitId FROM agent WHERE id=? LIMIT 1',
         [id]
       );
       if (!ag) return res.status(404).json({ error: 'Agente no encontrado' });
 
-      // Permisos líder de grupo
       if (String(req.user.role).toLowerCase() === 'leader_group' && ag.groupId !== req.user.groupId) {
         return res.status(403).json({ error: 'No autorizado' });
       }
 
-      const estadosValidos = [
-        'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
-        'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
-        'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-        'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO'
-      ];
       const s = String(state || '').toUpperCase().trim();
-      if (!estadosValidos.includes(s)) {
+      if (!isValidState(s)) {
         return res.status(422).json({ error: 'Estado inválido' });
       }
 
-      // Normalización/validación
       let muniId  = municipalityId ? Number(municipalityId) : null;
       let nStart  = novelty_start || null;
       let nEnd    = novelty_end   || null;
@@ -619,26 +633,45 @@ app.put('/admin/agents/:id/novelty',
         nStart = null; nEnd = null;
       } else if (s === 'FRANCO FRANCO') {
         muniId = null; nStart = null; nEnd = null; nDesc = null;
+      } else if (s === 'SUSPENDIDO') {
+        muniId = null;
+        if (!nStart) return res.status(422).json({ error: 'Falta fecha inicio (SUSPENDIDO)' });
+        if (!nEnd)   return res.status(422).json({ error: 'Falta fecha fin (SUSPENDIDO)' });
+        if (!nDesc)  return res.status(422).json({ error: 'Falta descripción (SUSPENDIDO)' });
+      } else if (s === 'HOSPITALIZADO') {
+        muniId = null;
+        if (!nStart) return res.status(422).json({ error: 'Falta fecha inicio (HOSPITALIZADO)' });
+        if (!nDesc)  return res.status(422).json({ error: 'Falta descripción (HOSPITALIZADO)' });
+        nEnd = null;
       } else {
-        // VACACIONES / LICENCIAS / EXCUSA / PATERNIDAD / PERMISO / COMISIÓN EN EL EXTERIOR / COMISIÓN DE ESTUDIO
         if (!nStart) return res.status(422).json({ error: `Falta fecha inicio (${s})` });
         if (!nEnd)   return res.status(422).json({ error: `Falta fecha fin (${s})` });
         if (!nDesc)  return res.status(422).json({ error: `Falta descripción (${s})` });
         muniId = null;
       }
 
+      if (nStart && nEnd) {
+        const startOk = /^\d{4}-\d{2}-\d{2}$/.test(String(nStart).slice(0,10));
+        const endOk   = /^\d{4}-\d{2}-\d{2}$/.test(String(nEnd).slice(0,10));
+        if (!startOk || !endOk) {
+          return res.status(422).json({ error: 'Formato inválido de fechas (YYYY-MM-DD)' });
+        }
+        if (new Date(nEnd) < new Date(nStart)) {
+          return res.status(422).json({ error: 'La fecha fin no puede ser menor a la fecha inicio' });
+        }
+      }
+
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
 
-        // ¿Existe un reporte del día para este agente?
         const [[exist]] = await conn.query(`
           SELECT dr.id AS reportId, dr.groupId, dr.unitId
-          FROM dailyreport_agent da
-          JOIN dailyreport dr ON dr.id = da.reportId
-          WHERE da.agentId=? AND dr.reportDate=? 
-          LIMIT 1
-        `, [ag.id, date]);
+            FROM dailyreport_agent da
+            JOIN dailyreport dr ON dr.id = da.reportId
+           WHERE da.agentId=? AND dr.reportDate=? 
+           LIMIT 1
+        `, [ag.id, isoDate]);
 
         let reportId, useGroupId, useUnitId;
         if (exist) {
@@ -649,7 +682,6 @@ app.put('/admin/agents/:id/novelty',
           useGroupId = ag.groupId;
           useUnitId  = ag.unitId;
 
-          // UPSERT de dailyreport (único por fecha+grupo+unidad)
           await conn.query(`
             INSERT INTO dailyreport
               (reportDate, groupId, unitId,
@@ -658,20 +690,17 @@ app.put('/admin/agents/:id/novelty',
                OF_nov, SO_nov, PT_nov)
             VALUES (?, ?, ?, 0,0,0, 0,0,0, 0,0,0)
             ON DUPLICATE KEY UPDATE updatedAt=CURRENT_TIMESTAMP(3)
-          `, [date, useGroupId, useUnitId]);
+          `, [isoDate, useGroupId, useUnitId]);
 
           const [[dr]] = await conn.query(`
             SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1
-          `, [date, useGroupId, useUnitId]);
+          `, [isoDate, useGroupId, useUnitId]);
           reportId = dr.id;
         }
 
-        // Asegura una única fila por (agentId, fecha) eliminando otras de ese día
-        await deleteAgentRowsSameDate(conn, date, ag.id, reportId);
+        await deleteAgentRowsSameDate(conn, isoDate, ag.id, reportId);
 
-        // UPSERT de la fila del agente en el reporte del día
         const nDescEnc = encNullable(nDesc);
-
         await conn.query(`
           INSERT INTO dailyreport_agent
             (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
@@ -684,8 +713,6 @@ app.put('/admin/agents/:id/novelty',
             novelty_description=VALUES(novelty_description)
         `, [reportId, ag.id, useGroupId, useUnitId, s, muniId, nStart, nEnd, nDescEnc]);
 
-
-        // Estado “actual” del agente
         await conn.query(
           'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
           [s, muniId, ag.id]
@@ -695,7 +722,6 @@ app.put('/admin/agents/:id/novelty',
 
         await conn.commit();
 
-        // Log (no bloquear por error)
         try {
           await logEvent({
             req, userId: req.user.uid,
@@ -703,7 +729,7 @@ app.put('/admin/agents/:id/novelty',
             details: {
               mode: 'byAgent',
               reportId,
-              date,
+              date: isoDate,
               agentId: ag.id,
               state: s,
               municipalityId: muniId,
@@ -712,7 +738,7 @@ app.put('/admin/agents/:id/novelty',
               novelty_description: nDesc
             }
           });
-        } catch (_) {}
+        } catch {}
 
         return res.json({ ok: true, reportId });
       } catch (e) {
@@ -722,7 +748,6 @@ app.put('/admin/agents/:id/novelty',
         conn.release();
       }
     } catch (e) {
-      // Cualquier excepción fuera de la transacción
       return res.status(500).json({ error:'AgentNoveltyUpdateError', detail:e.message });
     }
   }
@@ -738,7 +763,8 @@ async function deleteAgentRowsSameDate(conn, date, agentId, keepReportId) {
 }
 
 
-// Leer la ÚLTIMA novedad registrada del agente.
+
+
 
 // Leer la ÚLTIMA novedad registrada del agente (opcionalmente hasta una fecha)
 app.get('/admin/agents/:id/novelty',
@@ -885,6 +911,7 @@ app.get('/catalogs/municipalities', auth, async (req, res) => {
 
 
 
+
 // ---------- Guardar reporte (actualiza solo agent y dailyreport) ----------
 app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmin', 'supervision'), async (req, res) => {
   const { reportDate, people = [] } = req.body;
@@ -893,23 +920,22 @@ app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmi
     return res.status(422).json({ error:'SinPersonas', detail:'Envía al menos un agente.' });
   }
 
+  // scope por rol
   let groupId = req.user.groupId;
-  let unitId = req.user.unitId;
-
-  // Permitir que superadmin/supervision usen lo que viene en el body (si se envía)
+  let unitId  = req.user.unitId;
   if (['superadmin','supervision'].includes(String(req.user.role))) {
     groupId = req.body.groupId || groupId;
-    unitId = req.body.unitId || unitId;
+    unitId  = req.body.unitId  || unitId;
   }
 
-  // 1. Variables para los KPIs
-  let feOF = 0, feSO = 0, fePT = 0, fdOF = 0, fdSO = 0, fdPT = 0;
+  let feOF = 0, feSO = 0, fePT = 0;
+  let fdOF = 0, fdSO = 0, fdPT = 0;
 
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
 
-    // 2. Consulta previa para obtener categorías y unidad de todos los agentes
+    // resolver agentes por código
     const codes = people.map(p => String(p.agentCode || '').toUpperCase().trim());
     const [agentsBD] = await conn.query(
       `SELECT id, code, category, unitId FROM agent WHERE code IN (${codes.map(_ => '?').join(',')})`,
@@ -918,233 +944,199 @@ app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmi
     const agentMap = {};
     for (const a of agentsBD) agentMap[a.code] = a;
 
-    // ----------- BLOQUE PARA COPIAR NOVEDADES DEL REPORTE ANTERIOR -----------
-    // Busca el último reporte anterior (no el actual)
+    // arrastre de novedades de reporte anterior
     const [[prevReport]] = await conn.query(
-  `SELECT id FROM dailyreport 
-    WHERE groupId=? AND unitId=? AND reportDate<? 
-    ORDER BY reportDate DESC 
-    LIMIT 1`,
-  [groupId, unitId, reportDate]
-);
+      `SELECT id FROM dailyreport 
+       WHERE groupId=? AND unitId=? AND reportDate<? 
+       ORDER BY reportDate DESC 
+       LIMIT 1`,
+      [groupId, unitId, reportDate]
+    );
 
-let prevNovedades = {};
-if (prevReport) {
-  // 👇 Nota: ahora traemos también 'novelty_description'
-  const [prevRows] = await conn.query(
-    `SELECT agentId, state, novelty_start, novelty_end, novelty_description
-     FROM dailyreport_agent 
-     WHERE reportId=?`,
-    [prevReport.id]
-  );
-  const today = new Date(reportDate);
-  for (const r of prevRows) {
-    if (
-      r.novelty_start &&
-      (!r.novelty_end || new Date(r.novelty_end) >= today) &&
-      ['VACACIONES','EXCUSA','PERMISO','COMISIÓN EN EL EXTERIOR'].includes(r.state)
-    ) {
-      prevNovedades[r.agentId] = {
-        novelty_start: r.novelty_start,
-        novelty_end: r.novelty_end,
-        state: r.state,
-        // descifra por si ya estaba cifrado en BD
-        novelty_description: decNullable(r.novelty_description)
-      };
-    }
-  }
-}
-
-    // ----------- FIN BLOQUE COPIAR NOVEDADES -----------
-
-
-const estadosValidos = [
-  "SIN NOVEDAD",
-  "SERVICIO",
-  "COMISIÓN DEL SERVICIO",
-  "FRANCO FRANCO",
-  "VACACIONES",
-  "LICENCIA DE MATERNIDAD",
-  "LICENCIA DE LUTO",
-  "LICENCIA REMUNERADA",
-  "LICENCIA NO REMUNERADA",
-  "EXCUSA DEL SERVICIO",
-  "LICENCIA PATERNIDAD","PERMISO","COMISIÓN EN EL EXTERIOR", "COMISIÓN DE ESTUDIO"
-];
-
-for (const p of people) {
-  const code = String(p.agentCode || '').toUpperCase().trim();
-  const state = String(p.state || '').toUpperCase().trim();
-  let muniId = p.municipalityId ? Number(p.municipalityId) : null;
-  let novelty_start = p.novelty_start || null;
-  let novelty_end = p.novelty_end || null;
-  let novelty_description = p.novelty_description || null;
-
-  const ag = agentMap[code];
-  if (!ag) throw new Error(`No existe agente ${code}`);
-
-  // FD solo si "SIN NOVEDAD"
-  if (ag.category === 'OF') feOF++;
-  if (ag.category === 'SO') feSO++;
-  if (ag.category === 'PT') fePT++;
-  if (state === 'SIN NOVEDAD') {
-    if (ag.category === 'OF') fdOF++;
-    if (ag.category === 'SO') fdSO++;
-    if (ag.category === 'PT') fdPT++;
-  }
-
-  if (!estadosValidos.includes(state)) {
-    throw new Error(`Estado inválido: ${state}`);
-  }
-
-  // SIN NOVEDAD: municipio Bogotá (id 11001), solo lectura, no pide nada más
-  if (state === "SIN NOVEDAD") {
-    muniId = 11001;
-    novelty_start = null;
-    novelty_end = null;
-    novelty_description = null;
-  }
-  // SERVICIO: municipio Bogotá (id 11001), pide fechas y descripción
-  else if (state === "SERVICIO") {
-    muniId = 11001;
-    if (!p.novelty_start) throw new Error(`Falta fecha de inicio para ${code} (SERVICIO)`);
-    if (!p.novelty_end) throw new Error(`Falta fecha de fin para ${code} (SERVICIO)`);
-    if (!p.novelty_description) throw new Error(`Falta descripción para ${code} (SERVICIO)`);
-    novelty_start = p.novelty_start;
-    novelty_end = p.novelty_end;
-    novelty_description = p.novelty_description;
-  }
-  // COMISIÓN DEL SERVICIO: municipio requerido, NO fechas ni descripción
-  else if (state === "COMISIÓN DEL SERVICIO") {
-    if (!muniId) throw new Error(`Falta municipio para ${code} (COMISIÓN DEL SERVICIO)`);
-    if (!p.novelty_description) throw new Error(`Falta descripción para ${code} (COMISIÓN DEL SERVICIO)`);
-    novelty_start = null;
-    novelty_end = null;
-    novelty_description = p.novelty_description;
-  }
-  // FRANCO FRANCO: no pide nada extra
-  else if (state === "FRANCO FRANCO") {
-    muniId = null;
-    novelty_start = null;
-    novelty_end = null;
-    novelty_description = null;
-  }
-  // Otros: fecha inicio, fin, descripción requeridas, municipio null
-  else {
-    if (!p.novelty_start) throw new Error(`Falta fecha de inicio para ${code} (${state})`);
-    if (!p.novelty_end) throw new Error(`Falta fecha de fin para ${code} (${state})`);
-    if (!p.novelty_description) throw new Error(`Falta descripción para ${code} (${state})`);
-    muniId = null;
-    novelty_start = p.novelty_start;
-    novelty_end = p.novelty_end;
-    novelty_description = p.novelty_description;
-  }
-
-  // ---- Aquí puedes dejar la copia de fechas de reporte anterior, si aplica
-    if (prevNovedades[ag.id] && state === prevNovedades[ag.id].state) {
-      // Solo rellena si el campo está vacío y hay dato anterior:
-      if (!novelty_start && prevNovedades[ag.id].novelty_start)
-        novelty_start = prevNovedades[ag.id].novelty_start;
-      if (!novelty_end && prevNovedades[ag.id].novelty_end)
-        novelty_end = prevNovedades[ag.id].novelty_end;
-      if (!novelty_description && prevNovedades[ag.id].novelty_description)
-        novelty_description = prevNovedades[ag.id].novelty_description;
+    let prevNovedades = {};
+    if (prevReport) {
+      const [prevRows] = await conn.query(
+        `SELECT agentId, state, novelty_start, novelty_end, novelty_description
+           FROM dailyreport_agent 
+          WHERE reportId=?`,
+        [prevReport.id]
+      );
+      const today = new Date(reportDate);
+      for (const r of prevRows) {
+        if (
+          r.novelty_start &&
+          (!r.novelty_end || new Date(r.novelty_end) >= today) &&
+          ['VACACIONES','EXCUSA','PERMISO','COMISIÓN EN EL EXTERIOR','SUSPENDIDO','HOSPITALIZADO'].includes(r.state)
+        ) {
+          prevNovedades[r.agentId] = {
+            novelty_start: r.novelty_start,
+            novelty_end: r.novelty_end,
+            state: r.state,
+            novelty_description: decNullable(r.novelty_description)
+          };
+        }
+      }
     }
 
+    // validar/normalizar cada persona
+    for (const p of people) {
+      const code  = String(p.agentCode || '').toUpperCase().trim();
+      const state = String(p.state || '').toUpperCase().trim();
+      let muniId = p.municipalityId ? Number(p.municipalityId) : null;
+      let novelty_start = p.novelty_start || null;
+      let novelty_end   = p.novelty_end   || null;
+      let novelty_description = p.novelty_description || null;
 
-  // Guarda lo que vas a insertar (puedes usar directamente o en el for siguiente)
-  p._resolved = {
-    state, muniId, novelty_start, novelty_end, novelty_description
-  };
-}
+      const ag = agentMap[code];
+      if (!ag) throw new Error(`No existe agente ${code}`);
 
-const { OF_nov, SO_nov, PT_nov } = computeNovelties({
-  OF_effective: feOF,
-  SO_effective: feSO,
-  PT_effective: fePT,
-  OF_available: fdOF,
-  SO_available: fdSO,
-  PT_available: fdPT
-});
+      // contadores FE/FD
+      if (ag.category === 'OF') feOF++;
+      if (ag.category === 'SO') feSO++;
+      if (ag.category === 'PT') fePT++;
+      if (state === 'SIN NOVEDAD') {
+        if (ag.category === 'OF') fdOF++;
+        if (ag.category === 'SO') fdSO++;
+        if (ag.category === 'PT') fdPT++;
+      }
 
-const leaderUserId = req.user.uid;
-await conn.query(
-  `
-  INSERT INTO dailyreport
-    (reportDate, groupId, unitId, leaderUserId,
-    OF_effective, SO_effective, PT_effective,
-    OF_available, SO_available, PT_available,
-    OF_nov, SO_nov, PT_nov)
-  VALUES
-    (?, ?, ?, ?,
-    ?, ?, ?,
-    ?, ?, ?,
-    ?, ?, ?)
-  ON DUPLICATE KEY UPDATE
-    leaderUserId=VALUES(leaderUserId),
-    unitId=VALUES(unitId),
-    OF_effective=VALUES(OF_effective), SO_effective=VALUES(SO_effective), PT_effective=VALUES(PT_effective),
-    OF_available=VALUES(OF_available), SO_available=VALUES(SO_available), PT_available=VALUES(PT_available),
-    OF_nov=VALUES(OF_nov), SO_nov=VALUES(SO_nov), PT_nov=VALUES(PT_nov),
-    updatedAt=CURRENT_TIMESTAMP(3)
-  `,
-  [
-    reportDate, groupId, unitId, leaderUserId,
-    feOF, feSO, fePT,
-    fdOF, fdSO, fdPT,
-    OF_nov, SO_nov, PT_nov
-  ]
-);
+      if (!isValidState(state)) throw new Error(`Estado inválido: ${state}`);
 
-const [[daily]] = await conn.query(
-  `SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1`,
-  [reportDate, groupId, unitId]
-);
-const reportId = daily?.id;
+      if (state === "SIN NOVEDAD") {
+        muniId = 11001; novelty_start = null; novelty_end = null; novelty_description = null;
+      } else if (state === "SERVICIO") {
+        muniId = 11001;
+        if (!p.novelty_start)      throw new Error(`Falta fecha de inicio para ${code} (SERVICIO)`);
+        if (!p.novelty_end)        throw new Error(`Falta fecha de fin para ${code} (SERVICIO)`);
+        if (!p.novelty_description)throw new Error(`Falta descripción para ${code} (SERVICIO)`);
+        novelty_start = p.novelty_start;
+        novelty_end   = p.novelty_end;
+        novelty_description = p.novelty_description;
+      } else if (state === "COMISIÓN DEL SERVICIO") {
+        if (!muniId)               throw new Error(`Falta municipio para ${code} (COMISIÓN DEL SERVICIO)`);
+        if (!p.novelty_description)throw new Error(`Falta descripción para ${code} (COMISIÓN DEL SERVICIO)`);
+        novelty_start = null; novelty_end = null;
+        novelty_description = p.novelty_description;
+      } else if (state === "FRANCO FRANCO") {
+        muniId = null; novelty_start = null; novelty_end = null; novelty_description = null;
+      } else if (state === "SUSPENDIDO") {
+        muniId = null;
+        if (!p.novelty_start)      throw new Error(`Falta fecha de inicio para ${code} (SUSPENDIDO)`);
+        if (!p.novelty_end)        throw new Error(`Falta fecha de fin para ${code} (SUSPENDIDO)`);
+        if (!p.novelty_description)throw new Error(`Falta descripción para ${code} (SUSPENDIDO)`);
+        novelty_start = p.novelty_start;
+        novelty_end   = p.novelty_end;
+        novelty_description = p.novelty_description;
+      } else if (state === "HOSPITALIZADO") {
+        muniId = null;
+        if (!p.novelty_start)      throw new Error(`Falta fecha de inicio para ${code} (HOSPITALIZADO)`);
+        if (!p.novelty_description)throw new Error(`Falta descripción para ${code} (HOSPITALIZADO)`);
+        novelty_start = p.novelty_start;
+        novelty_end   = null;
+        novelty_description = p.novelty_description;
+      } else {
+        if (!p.novelty_start)      throw new Error(`Falta fecha de inicio para ${code} (${state})`);
+        if (!p.novelty_end)        throw new Error(`Falta fecha de fin para ${code} (${state})`);
+        if (!p.novelty_description)throw new Error(`Falta descripción para ${code} (${state})`);
+        muniId = null;
+        novelty_start = p.novelty_start;
+        novelty_end   = p.novelty_end;
+        novelty_description = p.novelty_description;
+      }
 
-// ... después de obtener reportId y de hacer el DELETE del propio reportId:
-await conn.query('DELETE FROM dailyreport_agent WHERE reportId=?', [reportId]);
+      const ymd = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '').slice(0,10));
+      if (novelty_start && !ymd(novelty_start)) throw new Error(`Formato inválido de fecha inicio para ${code} (YYYY-MM-DD)`);
+      if (novelty_end   && !ymd(novelty_end))   throw new Error(`Formato inválido de fecha fin para ${code} (YYYY-MM-DD)`);
+      if (novelty_start && novelty_end && (new Date(novelty_end) < new Date(novelty_start))) {
+        throw new Error(`La fecha fin no puede ser menor a la fecha inicio (${code})`);
+      }
 
-for (const p of people) {
-  const code = String(p.agentCode || '').toUpperCase().trim();
-  const ag = agentMap[code];
-  const { state, muniId, novelty_start, novelty_end, novelty_description } = p._resolved;
+      // completar con arrastre si aplica
+      if (prevNovedades[ag.id] && state === prevNovedades[ag.id].state) {
+        if (!novelty_start && prevNovedades[ag.id].novelty_start)       novelty_start = prevNovedades[ag.id].novelty_start;
+        if (!novelty_end   && prevNovedades[ag.id].novelty_end)         novelty_end   = prevNovedades[ag.id].novelty_end;
+        if (!novelty_description && prevNovedades[ag.id].novelty_description)
+          novelty_description = prevNovedades[ag.id].novelty_description;
+      }
 
-  // 🔥 Nuevo: limpia duplicados del MISMO día en otros reportes,
-  // preservando el registro del reportId actual
-  await deleteAgentRowsSameDate(conn, reportDate, ag.id, reportId);
+      // guardar resolución para insert posterior
+      p._resolved = { state, muniId, novelty_start, novelty_end, novelty_description };
+    }
 
-  const novDescEnc = encNullable(novelty_description);
+    // KPIs
+    const { OF_nov, SO_nov, PT_nov } = computeNovelties({
+      OF_effective: feOF, SO_effective: feSO, PT_effective: fePT,
+      OF_available: fdOF, SO_available: fdSO, PT_available: fdPT
+    });
+
+    const leaderUserId = req.user.uid;
+
+    // upsert del encabezado dailyreport
+    await conn.query(
+      `
+      INSERT INTO dailyreport
+        (reportDate, groupId, unitId, leaderUserId,
+         OF_effective, SO_effective, PT_effective,
+         OF_available, SO_available, PT_available,
+         OF_nov, SO_nov, PT_nov)
+      VALUES
+        (?, ?, ?, ?,
+         ?, ?, ?,
+         ?, ?, ?,
+         ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        leaderUserId=VALUES(leaderUserId),
+        unitId=VALUES(unitId),
+        OF_effective=VALUES(OF_effective), SO_effective=VALUES(SO_effective), PT_effective=VALUES(PT_effective),
+        OF_available=VALUES(OF_available), SO_available=VALUES(SO_available), PT_available=VALUES(PT_available),
+        OF_nov=VALUES(OF_nov), SO_nov=VALUES(SO_nov), PT_nov=VALUES(PT_nov),
+        updatedAt=CURRENT_TIMESTAMP(3)
+      `,
+      [
+        reportDate, groupId, unitId, leaderUserId,
+        feOF, feSO, fePT,
+        fdOF, fdSO, fdPT,
+        OF_nov, SO_nov, PT_nov
+      ]
+    );
+
+    const [[daily]] = await conn.query(
+      `SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1`,
+      [reportDate, groupId, unitId]
+    );
+    const reportId = daily?.id;
+    if (!reportId) throw new Error('No se pudo obtener el reportId');
+
+    // limpiar filas del propio reporte antes de insertar
+    await conn.query('DELETE FROM dailyreport_agent WHERE reportId=?', [reportId]);
+
+    // insertar filas detalle + actualizar agente
+    for (const p of people) {
+      const code = String(p.agentCode || '').toUpperCase().trim();
+      const ag   = agentMap[code];
+      const { state, muniId, novelty_start, novelty_end, novelty_description } = p._resolved;
+
+      // evitar duplicados del MISMO día en otros reports
+      await deleteAgentRowsSameDate(conn, reportDate, ag.id, reportId);
+
+      const novDescEnc = encNullable(novelty_description);
 
       await conn.query(
         `INSERT INTO dailyreport_agent 
-          (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          reportId,
-          ag.id,
-          groupId,
-          ag.unitId,
-          state,
-          muniId,
-          novelty_start,
-          novelty_end,
-          novDescEnc
-        ]
+           (reportId, agentId, groupId, unitId, state, municipalityId, novelty_start, novelty_end, novelty_description)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [reportId, ag.id, groupId, ag.unitId, state, muniId, novelty_start, novelty_end, novDescEnc]
       );
 
+      await conn.query(
+        'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
+        [state, muniId, ag.id]
+      );
+    }
 
-  await conn.query(
-    'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
-    [state, muniId, ag.id]
-  );
-}
+    await conn.commit();
 
-
-
-
-   await conn.commit();
-
+    // log
     try {
       await logEvent({
         req, userId: req.user.uid,
@@ -1157,7 +1149,7 @@ for (const p of people) {
           agents: people.map(p => String(p.agentCode || '').toUpperCase().trim())
         }
       });
-    } catch (_) {}
+    } catch {}
 
     return res.json({
       action: 'upserted',
@@ -1165,18 +1157,19 @@ for (const p of people) {
       totals: { feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov }
     });
 
-
-
-
-
-} catch (e) {
-  await conn.rollback();
-  console.error('POST /reports error', e);
-  res.status(400).json({ error:'Cannot save report', detail: e?.message });
-} finally {
-  conn.release();
-}
+  } catch (e) {
+    await conn.rollback();
+    console.error('POST /reports error', e);
+    return res.status(400).json({ error:'Cannot save report', detail: e?.message });
+  } finally {
+    conn.release();
+  }
 });
+
+
+
+
+
 
 // ---------- Obtener reporte resumen por día ----------
 
@@ -1546,14 +1539,8 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     if (!u) return res.status(404).json({ error: 'Unidad no existe' });
   }
 
-  const estadosValidos = [
-    'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
-    'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
-    'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-    'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO'
-  ];
   let s = String(status || 'SIN NOVEDAD').toUpperCase().trim();
-  if (!estadosValidos.includes(s)) return res.status(422).json({ error: 'Estado inválido', detail: `Recibido: ${status}` });
+  if (!isValidState(s)) return res.status(422).json({ error: 'Estado inválido', detail: `Recibido: ${status}` });
 
   let muniId = municipalityId ? Number(municipalityId) : null;
   if (s === 'SIN NOVEDAD' || s === 'SERVICIO') muniId = 11001;
@@ -1582,6 +1569,7 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     else res.status(500).json({ error: 'No se pudo crear', detail: e.message });
   }
 });
+
 
 
 
@@ -1858,7 +1846,6 @@ app.put('/admin/report-agents/:reportId/:agentId',
         return res.status(400).json({ error: 'Parámetros requeridos' });
       }
 
-      // líder de grupo: sólo su grupo
       if (req.user.role === 'leader_group') {
         const [[repCheck]] = await pool.query(
           'SELECT groupId FROM dailyreport WHERE id=? LIMIT 1',
@@ -1869,18 +1856,11 @@ app.put('/admin/report-agents/:reportId/:agentId',
         }
       }
 
-      const estadosValidos = [
-        'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
-        'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
-        'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-        'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO'
-      ];
       const s = String(state || '').toUpperCase().trim();
-      if (!estadosValidos.includes(s)) {
+      if (!isValidState(s)) {
         return res.status(422).json({ error: 'Estado inválido' });
       }
 
-      // Normalización/validación según estado
       let muniId  = municipalityId ? Number(municipalityId) : null;
       let novStart = novelty_start || null;
       let novEnd   = novelty_end   || null;
@@ -1896,43 +1876,48 @@ app.put('/admin/report-agents/:reportId/:agentId',
       } else if (s === 'COMISIÓN DEL SERVICIO') {
         if (!muniId)   return res.status(422).json({ error:'Falta municipio (COMISIÓN DEL SERVICIO)' });
         if (!novDesc)  return res.status(422).json({ error:'Falta descripción (COMISIÓN DEL SERVICIO)' });
-        novStart = null;
-        novEnd   = null;
+        novStart = null; novEnd = null;
       } else if (s === 'FRANCO FRANCO') {
         muniId = null; novStart = null; novEnd = null; novDesc = null;
+      } else if (s === 'SUSPENDIDO') {
+        muniId = null;
+        if (!novStart) return res.status(422).json({ error: 'Falta fecha de inicio (SUSPENDIDO)' });
+        if (!novEnd)   return res.status(422).json({ error: 'Falta fecha de fin (SUSPENDIDO)' });
+        if (!novDesc)  return res.status(422).json({ error: 'Falta descripción (SUSPENDIDO)' });
+      } else if (s === 'HOSPITALIZADO') {
+        muniId = null;
+        if (!novStart) return res.status(422).json({ error: 'Falta fecha de inicio (HOSPITALIZADO)' });
+        if (!novDesc)  return res.status(422).json({ error: 'Falta descripción (HOSPITALIZADO)' });
+        novEnd = null;
       } else {
-        // VACACIONES, LICENCIAS, EXCUSA, PATERNIDAD, COMISIÓN EN EL EXTERIOR, COMISIÓN DE ESTUDIO…
         if (!novStart) return res.status(422).json({ error: `Falta fecha de inicio (${s})` });
         if (!novEnd)   return res.status(422).json({ error: `Falta fecha de fin (${s})` });
         if (!novDesc)  return res.status(422).json({ error: `Falta descripción (${s})` });
         muniId = null;
       }
 
-      // Verifica que exista la fila
       const [[exists]] = await pool.query(
         'SELECT 1 FROM dailyreport_agent WHERE reportId=? AND agentId=? LIMIT 1',
         [reportId, agentId]
       );
       if (!exists) return res.status(404).json({ error: 'Fila no encontrada' });
 
-      // Actualiza detalle del reporte
       const novDescEnc = encNullable(novDesc);
 
-        await pool.query(`
-          UPDATE dailyreport_agent
-            SET state=?, municipalityId=?, novelty_start=?, novelty_end=?, novelty_description=?
-          WHERE reportId=? AND agentId=?
-        `, [s, muniId, novStart, novEnd, novDescEnc, reportId, agentId]);
-
-
-      // Sincroniza estado/municipio del agente
       await pool.query(`
-        UPDATE agent SET status=?, municipalityId=? WHERE id=?
-      `, [s, muniId, agentId]);
+        UPDATE dailyreport_agent
+           SET state=?, municipalityId=?, novelty_start=?, novelty_end=?, novelty_description=?
+         WHERE reportId=? AND agentId=?`,
+        [s, muniId, novStart, novEnd, novDescEnc, reportId, agentId]
+      );
+
+      await pool.query(
+        'UPDATE agent SET status=?, municipalityId=? WHERE id=?',
+        [s, muniId, agentId]
+      );
 
       await recalcDailyReport(reportId);
 
-      // Log enriquecido (no bloquear por errores)
       try {
         const [[agSnap]] = await pool.query(
           'SELECT code, category FROM agent WHERE id=? LIMIT 1',
@@ -1964,17 +1949,15 @@ app.put('/admin/report-agents/:reportId/:agentId',
             }
           }
         });
-      } catch (e) {
-        console.warn('logEvent REPORT_UPDATE error:', e?.message);
-      }
+      } catch {}
 
       return res.json({ ok: true });
     } catch (e) {
-      console.error('PUT /admin/report-agents error:', e);
       return res.status(500).json({ error: 'ReportAgentUpdateError', detail: e.message });
     }
   }
 );
+
 
 
 

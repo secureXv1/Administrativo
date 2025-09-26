@@ -116,6 +116,8 @@
                           <option value="PERMISO">PERMISO</option>
                           <option value="COMISIÓN EN EL EXTERIOR">COMISIÓN EN EL EXTERIOR</option>
                           <option value="COMISIÓN DE ESTUDIO">COMISIÓN DE ESTUDIO</option>
+                          <option value="SUSPENDIDO">SUSPENDIDO</option>
+                          <option value="HOSPITALIZADO">HOSPITALIZADO</option>
                         </select>
                       </td>
                       <td>
@@ -145,6 +147,26 @@
                         <template v-else-if="a.status === 'FRANCO FRANCO'">
                           <span class="text-xs text-slate-400">Sin datos adicionales</span>
                         </template>
+
+                      <!-- SUSPENDIDO: inicio, fin, descripción -->
+                      <template v-else-if="a.status === 'SUSPENDIDO'">
+                        <div class="flex gap-1 mb-1">
+                          <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                          <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                        </div>
+                        <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                      </template>
+
+                      <!-- HOSPITALIZADO: inicio y descripción (sin fin) -->
+                      <template v-else-if="a.status === 'HOSPITALIZADO'">
+                        <div class="flex gap-1 mb-1">
+                          <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                        </div>
+                        <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                      </template>
+
+
+
                         <template v-else>
                           <div class="flex gap-1 mb-1">
                             <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
@@ -193,6 +215,8 @@
                     <option value="PERMISO">PERMISO</option>
                     <option value="COMISIÓN EN EL EXTERIOR">COMISIÓN EN EL EXTERIOR</option>
                     <option value="COMISIÓN DE ESTUDIO">COMISIÓN DE ESTUDIO</option>
+                    <option value="SUSPENDIDO">SUSPENDIDO</option>
+                    <option value="HOSPITALIZADO">HOSPITALIZADO</option>
                   </select>
 
                   <!-- Campos dinámicos según estado -->
@@ -220,6 +244,29 @@
                   <div v-else-if="a.status === 'FRANCO FRANCO'">
                     <span class="text-xs text-slate-400">Sin datos adicionales</span>
                   </div>
+
+                                <!-- SUSPENDIDO: inicio, fin, descripción -->
+                  <div v-else-if="a.status === 'SUSPENDIDO'">
+                    <div class="flex gap-2 mt-2">
+                      <input class="input flex-1" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                      <input class="input flex-1" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                    </div>
+                    <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                  </div>
+
+                  <!-- HOSPITALIZADO: inicio y descripción (sin fin) -->
+                  <div v-else-if="a.status === 'HOSPITALIZADO'">
+                    <div class="flex gap-2 mt-2">
+                      <input class="input flex-1" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
+                    </div>
+                    <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                  </div>
+
+
+
+
+
+
                   <div v-else>
                     <div class="flex gap-2 mt-2">
                       <input class="input flex-1" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
@@ -231,6 +278,9 @@
                 <div v-if="agents.length === 0" class="text-center text-slate-500 py-4">
                   Sin agentes en tu grupo.
                 </div>
+
+
+
               </div>
 
                         <!-- Aclaración antes de KPIs -->
@@ -522,11 +572,10 @@ function onStateChange(agent) {
     agent.municipalityId = 11001
     const bogota = municipalities.value.find(m => m.id === 11001)
     agent.municipalityName = bogota ? `${bogota.dept} - ${bogota.name}` : 'CUNDINAMARCA - Bogotá'
-    // No limpia fechas ni descripción, el usuario las edita
     return
   }
 
-  // COMISIÓN DEL SERVICIO: limpia municipio (el usuario debe seleccionarlo)
+  // COMISIÓN DEL SERVICIO: municipio requerido
   if (agent.status === 'COMISIÓN DEL SERVICIO') {
     agent.municipalityId = null
     agent.municipalityName = ''
@@ -546,7 +595,27 @@ function onStateChange(agent) {
     return
   }
 
-  // Otros estados: limpia municipio y pide fechas/desc
+  // SUSPENDIDO: requiere inicio, fin y descripción, sin municipio
+  if (agent.status === 'SUSPENDIDO') {
+    agent.municipalityId = null
+    agent.municipalityName = ''
+    agent.novelty_start = ''
+    agent.novelty_end = ''
+    agent.novelty_description = ''
+    return
+  }
+
+  // HOSPITALIZADO: requiere inicio y descripción (sin fin), sin municipio
+  if (agent.status === 'HOSPITALIZADO') {
+    agent.municipalityId = null
+    agent.municipalityName = ''
+    agent.novelty_start = ''
+    agent.novelty_end = '' // asegúrate que quede vacío
+    agent.novelty_description = ''
+    return
+  }
+
+  // Otros estados genéricos: limpia municipio y pide fechas/desc
   agent.municipalityId = null
   agent.municipalityName = ''
   agent.novelty_start = ''
@@ -558,54 +627,72 @@ function onStateChange(agent) {
 
 
 
+
 async function save() {
-  for (const a of agents.value) {
-    if (a.status === 'SIN NOVEDAD') {
-      if (a.municipalityId !== 11001) {
-        msg.value = `El agente ${a.code} debe estar en Bogotá (SIN NOVEDAD)`
-        return
+        for (const a of agents.value) {
+        if (a.status === 'SIN NOVEDAD') {
+          if (a.municipalityId !== 11001) {
+            msg.value = `El agente ${a.code} debe estar en Bogotá (SIN NOVEDAD)`
+            return
+          }
+        } else if (a.status === 'SERVICIO') {
+          if (a.municipalityId !== 11001) {
+            msg.value = `El agente ${a.code} debe estar en Bogotá (SERVICIO)`
+            return
+          }
+          if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (SERVICIO)`; return }
+          if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (SERVICIO)`; return }
+          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SERVICIO)`; return }
+        } else if (a.status === 'COMISIÓN DEL SERVICIO') {
+          if (!a.municipalityId) { msg.value = `Falta municipio para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
+          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
+        } else if (a.status === 'FRANCO FRANCO') {
+          // nada requerido
+        } else if (a.status === 'SUSPENDIDO') {
+          if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (SUSPENDIDO)`; return }
+          if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (SUSPENDIDO)`; return }
+          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SUSPENDIDO)`; return }
+        } else if (a.status === 'HOSPITALIZADO') {
+          if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (HOSPITALIZADO)`; return }
+          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (HOSPITALIZADO)`; return }
+          // fuerza a vacío por consistencia de UI
+          a.novelty_end = ''
+        } else {
+          // Resto de novedades: inicio, fin, descripción
+          if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (${a.status})`; return }
+          if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (${a.status})`; return }
+          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (${a.status})`; return }
+        }
       }
-    } else if (a.status === 'SERVICIO') {
-      if (a.municipalityId !== 11001) {
-        msg.value = `El agente ${a.code} debe estar en Bogotá (SERVICIO)`
-        return
-      }
-      if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (SERVICIO)`; return }
-      if (!a.novelty_end) { msg.value = `Falta fecha fin para ${a.code} (SERVICIO)`; return }
-      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SERVICIO)`; return }
-    } else if (a.status === 'COMISIÓN DEL SERVICIO') {
-      if (!a.municipalityId) { msg.value = `Falta municipio para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
-      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
-    } else if (a.status === 'FRANCO FRANCO') {
-      // Nada requerido
-    } else {
-      // Resto de novedades: fecha inicio, fecha fin, descripción
-      if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (${a.status})`; return }
-      if (!a.novelty_end) { msg.value = `Falta fecha fin para ${a.code} (${a.status})`; return }
-      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (${a.status})`; return }
-    }
-  }
+
 
   try {
     await axios.post('/reports', {
       reportDate: reportDate.value,
-     people: agents.value.map(a => ({
-          agentCode: a.code,
-          state: a.status,
-          municipalityId:
-            (a.status === 'SIN NOVEDAD' || a.status === 'SERVICIO') ? 11001 :
-            (a.status === 'COMISIÓN DEL SERVICIO' ? a.municipalityId : null),
-          novelty_start:
-            (a.status === 'SERVICIO' || !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
-              ? a.novelty_start : null,
-          novelty_end:
-            (a.status === 'SERVICIO' || !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
-              ? a.novelty_end : null,
-          novelty_description:
-          (a.status === 'SERVICIO' || a.status === 'COMISIÓN DEL SERVICIO' ||
-          !['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(a.status))
-          ? a.novelty_description : null,
-        }))
+     people: agents.value.map(a => {
+            const isBase = (s) => ['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(s)
+            const isServicio = a.status === 'SERVICIO'
+            const isHosp = a.status === 'HOSPITALIZADO'
+            const isSusp = a.status === 'SUSPENDIDO'
+            const needsDatesGeneric = !(isBase(a.status) || isServicio || isHosp)
+
+            return {
+              agentCode: a.code,
+              state: a.status,
+              municipalityId:
+                (a.status === 'SIN NOVEDAD' || a.status === 'SERVICIO') ? 11001 :
+                (a.status === 'COMISIÓN DEL SERVICIO' ? a.municipalityId : null),
+
+              // reglas:
+              novelty_start: (isServicio || isHosp || needsDatesGeneric) ? (a.novelty_start || null) : null,
+              novelty_end:   (isServicio || isSusp || needsDatesGeneric) ? (a.novelty_end   || null) : null, // HOSPITALIZADO => null
+              novelty_description:
+                (isServicio || a.status === 'COMISIÓN DEL SERVICIO' || isHosp || isSusp || needsDatesGeneric)
+                  ? (a.novelty_description || null)
+                  : null,
+            }
+          })
+
 
     }, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
@@ -699,6 +786,8 @@ const STATUS_ORDER = [
   'PERMISO',
   'COMISIÓN EN EL EXTERIOR',
   'COMISIÓN DE ESTUDIO',
+  'SUSPENDIDO',
+  'HOSPITALIZADO',
 ];
 
 const STATUS_LABEL = {
@@ -716,6 +805,9 @@ const STATUS_LABEL = {
   'PERMISO': 'PERMISO',
   'COMISIÓN EN EL EXTERIOR': 'COMISIÓN EN EL EXTERIOR',
   'COMISIÓN DE ESTUDIO': 'COMISIÓN DE ESTUDIO',
+  'SUSPENDIDO': 'SUSPENDIDO',
+  'HOSPITALIZADO': 'HOSPITALIZADO',
+
 };
 
 const summaryByStatus = computed(() => {

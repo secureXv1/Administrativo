@@ -167,6 +167,13 @@
               <label class="label">Fecha fin</label>
               <input type="date" class="input" v-model="form.novelty_end" />
             </div>
+            <!-- HOSPITALIZADO: solo INICIO -->
+            <div v-else-if="form.state === 'HOSPITALIZADO'">
+              <label class="label">Fecha inicio</label>
+              <input type="date" class="input" v-model="form.novelty_start" />
+            </div>
+
+
           </div>
 
           <div v-if="form.state === 'COMISIÓN DEL SERVICIO'">
@@ -185,11 +192,15 @@
             </p>
           </div>
 
-          <div v-if="form.state === 'SERVICIO' || form.state === 'COMISIÓN DEL SERVICIO' || otrosRequierenFechas.includes(form.state)">
-            <label class="label">Descripción</label>
-            <textarea class="input" rows="2" v-model="form.novelty_description"
-                      placeholder="Motivo / detalle..."></textarea>
-          </div>
+                    <div v-if="
+              form.state === 'SERVICIO' ||
+              form.state === 'COMISIÓN DEL SERVICIO' ||
+              otrosRequierenFechas.includes(form.state) ||
+              form.state === 'HOSPITALIZADO'
+            ">
+              <label class="label">Descripción</label>
+              <textarea class="input" rows="2" v-model="form.novelty_description" placeholder="Motivo / detalle..."></textarea>
+            </div>
 
           <div class="flex justify-end gap-2 pt-2">
             <button class="btn-ghost" @click="closeEdit">Cancelar</button>
@@ -257,12 +268,12 @@ const filters = ref({ q:'', cat:'ALL', groupId:'ALL' })
   'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
   'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR', 'COMISIÓN DE ESTUDIO'
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR', 'COMISIÓN DE ESTUDIO', 'SUSPENDIDO','HOSPITALIZADO'
  ]
  const otrosRequierenFechas = [
   'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR', 'COMISIÓN DE ESTUDIO'
+  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR', 'COMISIÓN DE ESTUDIO', 'SUSPENDIDO'
  ]
 
 /* ===== Cargas ===== */
@@ -483,37 +494,41 @@ function onStateChange(preserve = false){
     form.value.municipalityId = 11001
     form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
     if (!preserve) {
-     form.value.novelty_start = ''
-     form.value.novelty_end = ''
-     form.value.novelty_description = ''
-   }
+      form.value.novelty_start = ''
+      form.value.novelty_end = ''
+      form.value.novelty_description = ''
+    }
   } else if (s === 'SERVICIO') {
     form.value.municipalityId = 11001
     form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
-    // Fechas y descripción las llena el usuario
   } else if (s === 'COMISIÓN DEL SERVICIO') {
     form.value.municipalityId = null
     form.value.municipalityName = ''
     if (!preserve) {
-     form.value.novelty_start = ''
-     form.value.novelty_end = ''
-     form.value.novelty_description = ''
-   }
+      form.value.novelty_start = ''
+      form.value.novelty_end = ''
+      form.value.novelty_description = ''
+    }
   } else if (s === 'FRANCO FRANCO') {
     form.value.municipalityId = null
     form.value.municipalityName = ''
-   if (!preserve) {
-     form.value.novelty_start = ''
-     form.value.novelty_end = ''
-     form.value.novelty_description = ''
-   }
-  } else {
-    // VACACIONES / LICENCIAS / EXCUSA / PERMISO / COMISIÓN EXTERIOR
+    if (!preserve) {
+      form.value.novelty_start = ''
+      form.value.novelty_end = ''
+      form.value.novelty_description = ''
+    }
+  } else if (s === 'HOSPITALIZADO') {
+    // 👇 importante: sin fin
+    if (!preserve) form.value.novelty_end = ''
     form.value.municipalityId = null
     form.value.municipalityName = ''
-    // fechas/descr requeridas, usuario completa
+  } else {
+    // VACACIONES / LICENCIAS / EXCUSA / PERMISO / COMISIÓN EXTERIOR / SUSPENDIDO ...
+    form.value.municipalityId = null
+    form.value.municipalityName = ''
   }
 }
+
 
 function onMunicipalityInput(e){
   const q = (form.value.municipalityName || '').trim().toLowerCase()
@@ -548,27 +563,30 @@ async function saveEdit () {
       return
     }
 
-    // --- Edición existente ---
     const requiereFechasYDescr = (s) => s === 'SERVICIO' || otrosRequierenFechas.includes(s)
 
-    if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipalityId) {
-      msg.value = 'Selecciona un municipio válido para Comisión del servicio'
-      return
-    }
-    if (form.value.state === 'COMISIÓN DEL SERVICIO' && !String(form.value.novelty_description||'').trim()) {
-      msg.value = 'La descripción es obligatoria para Comisión del servicio'
-      return
-    }
-    if (requiereFechasYDescr(form.value.state)) {
-      if (!form.value.novelty_start || !form.value.novelty_end) {
-        msg.value = 'Completa fecha inicio y fin'
-        return
-      }
-      if (!String(form.value.novelty_description || '').trim()) {
-        msg.value = 'La descripción es obligatoria'
-        return
-      }
-    }
+          // Comisión del servicio (igual que tenías)
+          if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipalityId) {
+            msg.value = 'Selecciona un municipio válido para Comisión del servicio'
+            return
+          }
+          if (form.value.state === 'COMISIÓN DEL SERVICIO' && !String(form.value.novelty_description||'').trim()) {
+            msg.value = 'La descripción es obligatoria para Comisión del servicio'
+            return
+          }
+
+          // HOSPITALIZADO: inicio + descripción, sin fin
+          if (form.value.state === 'HOSPITALIZADO') {
+            if (!form.value.novelty_start) { msg.value = 'Falta fecha inicio (HOSPITALIZADO)'; return }
+            if (!String(form.value.novelty_description||'').trim()) { msg.value = 'La descripción es obligatoria (HOSPITALIZADO)'; return }
+          }
+
+          // Estados con inicio+fin+descr (incluye SUSPENDIDO)
+          if (requiereFechasYDescr(form.value.state)) {
+            if (!form.value.novelty_start || !form.value.novelty_end) { msg.value = 'Completa fecha inicio y fin'; return }
+            if (!String(form.value.novelty_description||'').trim()) { msg.value = 'La descripción es obligatoria'; return }
+          }
+
 
     // Actualizar grupo/unidad/código/categoría según rol
     if (isLeaderGroup.value) {
@@ -593,31 +611,61 @@ async function saveEdit () {
       (editing.value.novelty_description||'') !== (form.value.novelty_description||'')
 
     if (novChanged) {
-      await axios.put(`/admin/agents/${id}/novelty`, {
+      const state = String(form.value.state || '').toUpperCase()
+      const isHosp = state === 'HOSPITALIZADO'
+      const requiresDates = (s) => s === 'SERVICIO' || otrosRequierenFechas.includes(s)
+
+      // municipalityId: number o se omite
+      let municipalityId = null
+      if (state === 'COMISIÓN DEL SERVICIO') {
+        municipalityId = form.value.municipalityId ? Number(form.value.municipalityId) : null
+      } else if (state === 'SERVICIO' || state === 'SIN NOVEDAD') {
+        municipalityId = 11001
+      }
+
+      // Fechas y descripción (solo agrega si aplica y hay valor)
+      const payload = {
         date: today.value,
-        state: form.value.state,
-        municipalityId:
-          form.value.state === 'COMISIÓN DEL SERVICIO'
-            ? form.value.municipalityId
-            : (['SERVICIO','SIN NOVEDAD'].includes(form.value.state) ? 11001 : null),
-        novelty_start: (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_start : null,
-        novelty_end:   (form.value.state === 'SERVICIO' || otrosRequierenFechas.includes(form.value.state)) ? form.value.novelty_end   : null,
-        novelty_description: (
-          form.value.state === 'COMISIÓN DEL SERVICIO' ||
-          form.value.state === 'SERVICIO' ||
-          otrosRequierenFechas.includes(form.value.state)
-        ) ? form.value.novelty_description : null
-      }, authHeader())
+        state
+      }
+
+      if (municipalityId !== null) payload.municipalityId = municipalityId
+
+      const start = (requiresDates(state) || isHosp) ? (form.value.novelty_start || '').trim() : ''
+      const end   =  requiresDates(state)            ? (form.value.novelty_end   || '').trim() : ''
+      const descNeeded = (state === 'COMISIÓN DEL SERVICIO') || (state === 'SERVICIO') || requiresDates(state) || isHosp
+      const desc  = descNeeded ? (form.value.novelty_description || '').trim() : ''
+
+      if (start) payload.novelty_start = start
+      if (end && !isHosp) payload.novelty_end = end   // 👈 nunca para HOSPITALIZADO
+      if (desc) payload.novelty_description = desc
+
+      // Debug útil: ver exactamente qué enviamos
+      console.log('[PUT] /admin/agents/:id/novelty payload →', payload)
+
+      await axios.put(`/admin/agents/${id}/novelty`, payload, authHeader())
     }
+
 
     msg.value = 'Cambios guardados ✅'
     closeEdit()
     await loadAgents()
 
   } catch (e) {
-    console.error('saveEdit error:', e)
-    msg.value = e?.response?.data?.detail || e?.response?.data?.error || 'Error al guardar'
-  }
+        const data = e?.response?.data
+        console.error('saveEdit error →', {
+          status: e?.response?.status,
+          data,
+          payloadHint: {
+            state: form.value.state,
+            municipalityId: form.value.municipalityId,
+            start: form.value.novelty_start,
+            end: form.value.novelty_end,
+          }
+        })
+        msg.value = data?.detail || data?.error || e?.message || 'Error al guardar'
+      }
+
 }
 
 

@@ -194,6 +194,7 @@
                     </div>
                   </div>
 
+                  <!-- Estados que requieren INICIO y FIN -->
                   <div v-if="needsFechas">
                     <label class="label">Inicio</label>
                     <input v-model="form.novelty_start" type="date" class="input" />
@@ -202,6 +203,13 @@
                     <label class="label">Fin</label>
                     <input v-model="form.novelty_end" type="date" class="input" />
                   </div>
+
+                  <!-- HOSPITALIZADO: solo INICIO -->
+                  <div v-else-if="form.state === 'HOSPITALIZADO'">
+                    <label class="label">Inicio</label>
+                    <input v-model="form.novelty_start" type="date" class="input" />
+                  </div>
+
 
                   <div v-if="needsDescripcion" class="sm:col-span-3">
                     <label class="label">Descripción</label>
@@ -294,7 +302,9 @@ const estadosValidos = [
   'LICENCIA PATERNIDAD',
   'PERMISO',
   'COMISIÓN EN EL EXTERIOR',
-  'COMISIÓN DE ESTUDIO' 
+  'COMISIÓN DE ESTUDIO', 
+  'SUSPENDIDO',
+  'HOSPITALIZADO'
 ]
 
 // ===== Helpers
@@ -453,14 +463,14 @@ const needsFechas      = computed(() => [
   'SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
   'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR',
-  'COMISIÓN DE ESTUDIO'              
+  'COMISIÓN DE ESTUDIO', 'SUSPENDIDO'              
 ].includes(form.value.state))
 const needsDescripcion = computed(() => [
   'SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
   'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR',
   'COMISIÓN DE ESTUDIO',              
-  'COMISIÓN DEL SERVICIO'           
+  'COMISIÓN DEL SERVICIO', 'SUSPENDIDO','HOSPITALIZADO'           
 ].includes(form.value.state))
 
 const needsMunicipio = computed(() => form.value.state === 'COMISIÓN DEL SERVICIO')
@@ -508,27 +518,35 @@ async function searchMunicipios(term){
   }, 250)
 }
 
-// ===== Guardar
+
 // ===== Guardar
 async function saveEdit(){
   if (!editRow.value) return
 
-  // Validaciones mínimas (igual que ya tenías)...
+  // Reglas específicas
   if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipio?.id) {
     alert('Selecciona un municipio para Comisión del servicio')
     return
   }
-
   if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.novelty_description?.trim()) {
-  alert('La descripción es requerida para Comisión del servicio')
-  return
+    alert('La descripción es requerida para Comisión del servicio')
+    return
   }
+
+  // HOSPITALIZADO: inicio + descripción (SIN fin)
+  if (form.value.state === 'HOSPITALIZADO') {
+    if (!form.value.novelty_start) { alert('Falta fecha de inicio (HOSPITALIZADO)'); return }
+    if (!form.value.novelty_description?.trim()) { alert('Falta descripción (HOSPITALIZADO)'); return }
+  }
+
+  // Estados que requieren INICIO y FIN (incluye SUSPENDIDO)
   if (needsFechas.value) {
     if (!form.value.novelty_start || !form.value.novelty_end) {
-      alert('Completa las fechas de la novedad')
+      alert('Completa las fechas de la novedad (inicio y fin)')
       return
     }
   }
+
   if (needsDescripcion.value && !form.value.novelty_description?.trim()) {
     alert('La descripción es requerida para este estado')
     return
@@ -536,6 +554,8 @@ async function saveEdit(){
 
   saving.value = true
   try {
+    const isHosp = form.value.state === 'HOSPITALIZADO'
+
     await axios.put(`/admin/report-agents/${editRow.value.reportId}/${editRow.value.agentId}`, {
       state: form.value.state,
       municipalityId:
@@ -543,34 +563,25 @@ async function saveEdit(){
           ? (form.value.municipio?.id || null)
           : (['SERVICIO','SIN NOVEDAD'].includes(form.value.state) ? BOGOTA_DC.id : null),
       novelty_start: form.value.novelty_start || null,
-      novelty_end: form.value.novelty_end || null,
+      novelty_end:   isHosp ? null : (form.value.novelty_end || null), // 👈 hospitalizado sin fin
       novelty_description: form.value.novelty_description || null
     }, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
 
-    // 🔄 Refleja el cambio en la tabla SIN hardcodear "Bogotá (Cundinamarca)"
+    // Reflejar cambios en la tabla
     let mId = null, mName = null, mDept = null, mLabel = ''
-
     if (form.value.state === 'COMISIÓN DEL SERVICIO') {
       mId = form.value.municipio?.id || null
       if (form.value.municipio?.label) {
-        // label: "Nombre (Depto)"
         const parts = form.value.municipio.label.split(' (')
         mName = parts[0] || null
         mDept = parts[1] ? parts[1].replace(/\)$/, '') : null
         mLabel = form.value.municipio.label
       }
     } else if (['SERVICIO','SIN NOVEDAD'].includes(form.value.state)) {
-      // En backend se fija a 11001; aquí mostramos el MISMO texto que hay en BD
       mId = BOGOTA_DC.id
       mName = BOGOTA_DC.name
       mDept = BOGOTA_DC.dept
       mLabel = BOGOTA_DC.label()
-    } else {
-      // Otros estados: municipio NULL
-      mId = null
-      mName = null
-      mDept = null
-      mLabel = ''
     }
 
     Object.assign(editRow.value, {
@@ -580,7 +591,7 @@ async function saveEdit(){
       municipalityDept: mDept,
       municipality: mLabel || (mName ? `${mName} (${mDept||''})` : 'N/A'),
       novelty_start: form.value.novelty_start || null,
-      novelty_end: form.value.novelty_end || null,
+      novelty_end:   isHosp ? null : (form.value.novelty_end || null), // 👈 reflejo local
       novelty_description: form.value.novelty_description || null
     })
 
