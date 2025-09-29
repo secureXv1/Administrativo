@@ -323,7 +323,7 @@ app.post('/auth/login', async (req, res) => {
 });
 
 
-  app.get('/catalogs/agents', auth, async (req, res) => {
+app.get('/catalogs/agents', auth, async (req, res) => {
   try {
     const { q, code, category, groupId, unitId, limit = 50 } = req.query;
     const take = Math.min(Number(limit) || 50, 200);
@@ -331,36 +331,49 @@ app.post('/auth/login', async (req, res) => {
     let where = '1=1';
 
     if (category) { where += ' AND a.category=?'; params.push(String(category)); }
-    if (groupId) { where += ' AND a.groupId=?'; params.push(Number(groupId)); }
-    if (unitId) { where += ' AND a.unitId=?'; params.push(Number(unitId)); }
-    if (code) { where += ' AND a.code=?'; params.push(String(code).toUpperCase().trim()); }
-    else if (q) { where += ' AND a.code LIKE ?'; params.push(String(q).toUpperCase().trim() + '%'); }
+    if (groupId)  { where += ' AND a.groupId=?';  params.push(Number(groupId)); }
+    if (unitId)   { where += ' AND a.unitId=?';   params.push(Number(unitId)); }
+    if (code)     { where += ' AND a.code=?';     params.push(String(code).toUpperCase().trim()); }
+    else if (q)   { where += ' AND a.code LIKE ?';params.push(String(q).toUpperCase().trim() + '%'); }
 
     const [rows] = await pool.query(
-      `SELECT 
-          a.id, 
-          a.code, 
-          a.category, 
-          a.groupId,
-          a.unitId,
-          a.status, 
-          a.municipalityId, 
-          m.dept, 
-          m.name, 
-          m.lat, 
-          m.lon
-        FROM agent a
-        LEFT JOIN municipality m ON a.municipalityId = m.id
-        WHERE ${where}
-        ORDER BY a.code
-        LIMIT ?`,
+      `SELECT
+         a.id,
+         a.code,
+         a.category,
+         a.groupId,
+         a.unitId,
+         a.status,
+         a.municipalityId,
+
+         -- unidad (solo name para evitar columnas inexistentes)
+         u.name AS unitName,
+
+         -- grupo
+         g.code AS groupCode,
+
+         -- municipio (renombrado para no chocar con "name")
+         m.dept AS muniDept,
+         m.name AS muniName
+       FROM agent a
+       LEFT JOIN unit u ON u.id = a.unitId
+       LEFT JOIN \`group\` g ON g.id = a.groupId
+       LEFT JOIN municipality m ON m.id = a.municipalityId
+       WHERE ${where}
+       ORDER BY a.code
+       LIMIT ?`,
       [...params, take]
     );
+
     res.json(rows);
   } catch (e) {
-    res.status(500).json({ error:'CatalogError', detail:e.message });
+    console.error('GET /catalogs/agents error:', e); // <— mira la consola del servidor
+    res.status(500).json({ error: 'CatalogError', detail: e.message });
   }
 });
+
+
+
 
 // ===== Mis agentes (del líder de unidad) =====
 app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (req, res) => {
@@ -467,7 +480,7 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
 
 
 
-// Cambiar solo la unidad de un agente (LÍDER DE GRUPO)
+
 // Cambiar/liberar unidad de un agente (líder de grupo o líder de unidad)
 app.put('/my/agents/:id/unit',
   auth,

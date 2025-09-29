@@ -17,6 +17,9 @@ export const Actions = {
   AGENT_UPDATE: 'AGENT_UPDATE',
   GROUP_CREATE: 'GROUP_CREATE',
   UNIT_CREATE: 'UNIT_CREATE',
+  AGENT_ASSIGN_UNIT: 'AGENT_ASSIGN_UNIT',
+  AGENT_RELEASE_UNIT: 'AGENT_RELEASE_UNIT',
+  
 };
 
 // Guarda un evento de auditoría

@@ -55,8 +55,9 @@
                     @click="onSelectAgent(a.code)"
                   >
                     {{ a.code }} ({{ displayCategory(a.category) }})
-                    {{ getUnitLabel(a) ? ' — ' + getUnitLabel(a) : '' }}
+                    {{ a.unitName ? ' — ' + a.unitName : '' }}
                   </option>
+
                 </datalist>
 
                 <!-- Mensaje: ocupa altura fija para que NUNCA mueva el botón -->
@@ -865,8 +866,7 @@ const reportDateShort = computed(() => {
 
 
 function getUnitLabel(a) {
-  // Ajusta los campos según lo que devuelva tu API
-  return a.unitCode || a.unitShort || a.unitAlias || a.unit_name_short || a.unitName || (a.unitId ? `U${a.unitId}` : '')
+  return a.unitName || a.unitCode || a.unitShort || ''
 }
 
 
