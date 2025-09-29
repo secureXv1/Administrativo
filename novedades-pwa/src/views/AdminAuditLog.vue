@@ -166,6 +166,8 @@ const actionOptions = [
   { value: 'AGENT_UPDATE',     label: 'Edición de agente',     icon: '🧑‍✈️✏' },
   { value: 'GROUP_CREATE',     label: 'Creación de grupo',     icon: '🧩'  },
   { value: 'UNIT_CREATE',      label: 'Creación de unidad',    icon: '🏷️'  },
+  { value: 'AGENT_ASSIGN',     label: 'Asignación de agente',  icon: '📥'  },
+  { value: 'AGENT_RELEASE',    label: 'Liberación de agente',  icon: '📤'  },
 ]
 /* para el <select> clásico del layout */
 const actions = actionOptions.filter(o => o.value).map(o => o.value)
@@ -196,6 +198,8 @@ function actionStyle(a){
     case 'AGENT_UPDATE': return 'badge-cyan'
     case 'GROUP_CREATE': return 'badge-indigo'
     case 'UNIT_CREATE': return 'badge-indigo'
+    case 'AGENT_ASSIGN': return 'badge-emerald'
+    case 'AGENT_RELEASE': return 'badge-red'
     default: return 'badge-slate'
   }
 }
@@ -221,7 +225,7 @@ function summarize(item) {
     case 'LOGIN':  return `Inicio de sesión de ${actor}`
     case 'LOGOUT': return `Cierre de sesión de ${actor}`
 
-     case 'ACCOUNT_LOCK': {
+    case 'ACCOUNT_LOCK': {
       const mins = d.minutes ? `${d.minutes} min` : (d.lock_until ? 'hasta ' + d.lock_until : '')
       const who  = d.targetUserId ? `ID ${d.targetUserId}` : (d.username ? '@' + d.username : 'cuenta')
       return `Bloqueo temporal de ${who}${mins ? ' · ' + mins : ''}${d.reason ? ' · ' + d.reason : ''}`
@@ -230,11 +234,11 @@ function summarize(item) {
       const who  = d.targetUserId ? `ID ${d.targetUserId}` : (d.username ? '@' + d.username : 'cuenta')
       return `Bloqueo de ${who}${d.reason ? ' · ' + d.reason : ''}`
     }
-        case 'ACCOUNT_UNLOCK': {
-        const who = d.username ? `@${d.username}` 
-                    : (d.targetUserId ? `ID ${d.targetUserId}` : 'cuenta')
-        return `Desbloqueo de ${who}`
-        }
+    case 'ACCOUNT_UNLOCK': {
+      const who = d.username ? `@${d.username}` : (d.targetUserId ? `ID ${d.targetUserId}` : 'cuenta')
+      return `Desbloqueo de ${who}`
+    }
+
     case 'REPORT_CREATE': {
       const rid = d.reportId ? `#${d.reportId}` : ''
       const date = d.reportDate || ''
@@ -269,11 +273,29 @@ function summarize(item) {
     }
     case 'GROUP_CREATE':          return `Creó grupo ${d.code || 'nuevo'}`
     case 'UNIT_CREATE':           return `Creó unidad ${d.name || 'nueva'}${d.groupId != null ? ' · grupo '+d.groupId : ''}`
-    default:                      return 'Evento'
+
+    // 🆕 nuevas (basado en details del backend)
+    case 'AGENT_ASSIGN': {
+      const code = d.agentCode ? ` ${d.agentCode}` : ''
+      const toU  = d.toUnitId != null ? `unidad ${d.toUnitId}` : 'unidad ?'
+      const mode = d.mode ? ` (${d.mode})` : ''
+      return `Asignó agente${code} a ${toU}${mode}`
+    }
+    case 'AGENT_RELEASE': {
+      const code = d.agentCode ? ` ${d.agentCode}` : ''
+      const fromU = d.fromUnitId != null ? `unidad ${d.fromUnitId}` : 'unidad ?'
+      const mode = d.mode ? ` (${d.mode})` : ''
+      return `Liberó agente${code} de ${fromU}${mode}`
+    }
+
+    default: return 'Evento'
   }
 }
+
 function extraLine(item) {
   const d = details(item) || {}
+
+  // INFO adicional para REPORT_UPDATE ya existente
   if (item.action === 'REPORT_UPDATE') {
     const segs = []
     if (d.municipalityId) segs.push(`municipio ${d.municipalityId}`)
@@ -282,6 +304,15 @@ function extraLine(item) {
     if (d.novelty_description) segs.push(`"${String(d.novelty_description).slice(0,50)}${String(d.novelty_description).length>50?'…':''}"`)
     return segs.join(' · ') || null
   }
+
+  // 🆕 línea extra para AGENT_ASSIGN / AGENT_RELEASE
+  if (item.action === 'AGENT_ASSIGN' || item.action === 'AGENT_RELEASE') {
+    const segs = []
+    if (d.fromGroupId != null) segs.push(`grupo: ${d.fromGroupId} → ${d.toGroupId ?? '—'}`)
+    if (d.fromUnitId  != null || d.toUnitId != null) segs.push(`unidad: ${d.fromUnitId ?? '—'} → ${d.toUnitId ?? '—'}`)
+    return segs.length ? segs.join(' · ') : null
+  }
+
   return null
 }
 

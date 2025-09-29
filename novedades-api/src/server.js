@@ -489,9 +489,9 @@ app.put('/my/agents/:id/unit',
     const { id } = req.params;
     const { unitId } = req.body;
 
-    // Traer agente
+    // Traer agente con code para enriquecer el log
     const [[ag]] = await pool.query(
-      'SELECT id, groupId, unitId FROM agent WHERE id=? LIMIT 1', [id]
+      'SELECT id, code, groupId, unitId FROM agent WHERE id=? LIMIT 1', [id]
     );
     if (!ag) return res.status(404).json({ error: 'Agente no encontrado' });
 
@@ -510,7 +510,48 @@ app.put('/my/agents/:id/unit',
         );
         if (!u) return res.status(404).json({ error: 'Unidad no existe en su grupo' });
       }
+
+      // Mantener snapshot para el log
+      const fromGroupId = ag.groupId;
+      const fromUnitId  = ag.unitId;
+
       await pool.query('UPDATE agent SET unitId=? WHERE id=?', [unitId || null, id]);
+
+      // ▶️ Log según acción (asignación o liberación)
+      try {
+        if (unitId) {
+          await logEvent({
+            req,
+            userId: req.user.uid,
+            action: Actions.AGENT_ASSIGN,
+            details: {
+              mode: 'leader_group_set',
+              agentId: ag.id,
+              agentCode: ag.code,
+              fromGroupId,
+              fromUnitId,
+              toGroupId: req.user.groupId,
+              toUnitId: Number(unitId)
+            }
+          });
+        } else {
+          await logEvent({
+            req,
+            userId: req.user.uid,
+            action: Actions.AGENT_RELEASE,
+            details: {
+              mode: 'leader_group_release',
+              agentId: ag.id,
+              agentCode: ag.code,
+              fromGroupId,
+              fromUnitId,
+              toGroupId: req.user.groupId,
+              toUnitId: null
+            }
+          });
+        }
+      } catch {}
+
       return res.json({ ok: true });
     }
 
@@ -522,10 +563,34 @@ app.put('/my/agents/:id/unit',
     if (ag.unitId !== req.user.unitId) {
       return res.status(403).json({ error: 'Agente no pertenece a su unidad' });
     }
+
+    const fromGroupId = ag.groupId;
+    const fromUnitId  = ag.unitId;
+
     await pool.query('UPDATE agent SET unitId=NULL WHERE id=?', [id]);
+
+    // ▶️ Log de liberación por líder de unidad
+    try {
+      await logEvent({
+        req,
+        userId: req.user.uid,
+        action: Actions.AGENT_RELEASE,
+        details: {
+          mode: 'leader_unit_release',
+          agentId: ag.id,
+          agentCode: ag.code,
+          fromGroupId,
+          fromUnitId,
+          toGroupId: ag.groupId,
+          toUnitId: null
+        }
+      });
+    } catch {}
+
     return res.json({ ok: true });
   }
 );
+
 
 
 
@@ -873,7 +938,7 @@ app.post('/my/agents/add', auth, requireRole('leader_unit'), async (req, res) =>
   const unitId  = req.user.unitId;
 
   const [[ag]] = await pool.query(
-    'SELECT id, groupId, unitId FROM agent WHERE id=? LIMIT 1',
+    'SELECT id, code, groupId, unitId FROM agent WHERE id=? LIMIT 1',
     [agentId]
   );
   if (!ag) return res.status(404).json({ error: 'Agente no encontrado' });
@@ -883,21 +948,65 @@ app.post('/my/agents/add', auth, requireRole('leader_unit'), async (req, res) =>
     return res.status(409).json({ error: 'AgenteNoDisponible', detail: 'El agente ya tiene unidad' });
   }
 
+  const fromGroupId = ag.groupId || null;
+  const fromUnitId  = ag.unitId  || null;
+
   // Caso A: sin grupo -> tomarlo a mi grupo/unidad
   if (!ag.groupId) {
     await pool.query('UPDATE agent SET groupId=?, unitId=? WHERE id=?', [groupId, unitId, agentId]);
+
+    // ▶️ Log de asignación (tomado desde “libre total”)
+    try {
+      await logEvent({
+        req,
+        userId: req.user.uid,
+        action: Actions.AGENT_ASSIGN,
+        details: {
+          mode: 'leader_unit_add_from_free',
+          agentId: ag.id,
+          agentCode: ag.code,
+          fromGroupId,
+          fromUnitId,
+          toGroupId: groupId,
+          toUnitId: unitId
+        }
+      });
+    } catch {}
+
     return res.json({ ok: true });
   }
 
   // Caso B: mismo grupo y sin unidad -> solo set unitId
   if (ag.groupId === groupId) {
     await pool.query('UPDATE agent SET unitId=? WHERE id=?', [unitId, agentId]);
+
+    // ▶️ Log de asignación (misma organización, solo unidad)
+    try {
+      await logEvent({
+        req,
+        userId: req.user.uid,
+        action: Actions.AGENT_ASSIGN,
+        details: {
+          mode: 'leader_unit_add_same_group',
+          agentId: ag.id,
+          agentCode: ag.code,
+          fromGroupId,
+          fromUnitId,
+          toGroupId: groupId,
+          toUnitId: unitId
+        }
+      });
+    } catch {}
+
     return res.json({ ok: true });
   }
 
   // Caso C: pertenece a otro grupo
   return res.status(409).json({ error: 'AgenteDeOtroGrupo', detail: 'El agente pertenece a otro grupo' });
 });
+
+
+
 
 // Crear agente (incluye unitId)
 app.post('/adminapi/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
