@@ -1634,29 +1634,39 @@ app.post('/admin/users/:id/unlock', auth, requireRole('superadmin'), async (req,
 
 // ---------- CRUD Agentes Admin ----------
 
-
-// Listado de agentes (admin/supervisión/supervisor/leader_group)
+// Listado de agentes (admin/supervisión/supervisor/leader_group) con paginación
 app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervisor', 'leader_group'), async (req, res) => {
   try {
-    const { q, code, category, groupId, unitId, freeOnly, limit = 100 } = req.query;
+    const {
+      q,
+      code,
+      category,
+      groupId,
+      unitId,
+      freeOnly,
+      // 📄 nuevo: paginado
+      page = 1,
+      pageSize = 100, // default alto pero controlado
+    } = req.query;
+
+    const p = Math.max(parseInt(page, 10) || 1, 1);
+    const ps = Math.min(Math.max(parseInt(pageSize, 10) || 100, 1), 1000); // tope razonable
+    const offset = (p - 1) * ps;
 
     let where = '1=1';
     const params = [];
 
     // 🔐 Restricción para leader_group
     if (req.user.role === 'leader_group') {
-      // Debe tener groupId asignado en el token
-      if (!req.user.groupId) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-      // Solo puede consultar su propio grupo
+      if (!req.user.groupId) return res.status(403).json({ error: 'Forbidden' });
+      // Si envían groupId distinto, bloquear
       if (groupId && Number(groupId) !== Number(req.user.groupId)) {
         return res.status(403).json({ error: 'Forbidden' });
       }
       where += ' AND a.groupId=?';
       params.push(Number(req.user.groupId));
     } else {
-      // Para roles superiores (superadmin/supervision/supervisor)
+      // Roles superiores
       if (groupId) { where += ' AND a.groupId=?'; params.push(Number(groupId)); }
     }
 
@@ -1670,7 +1680,7 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervi
 
     if (category) {
       where += ' AND a.category=?';
-      params.push(category);
+      params.push(String(category));
     }
 
     if (unitId) {
@@ -1678,27 +1688,49 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervi
       params.push(Number(unitId));
     }
 
-    // ✅ filtro extra: solo agentes sin unidad
+    // Solo agentes sin unidad
     if (String(freeOnly || '0') === '1') {
       where += ' AND (a.unitId IS NULL OR a.unitId = 0)';
     }
 
-    const [rows] = await pool.query(
-      `SELECT a.id, a.code, a.category, a.status,
-              a.groupId, g.code AS groupCode,
-              a.unitId, u.name AS unitName,
-              a.municipalityId, m.name AS municipalityName, m.dept
-         FROM agent a
-         LEFT JOIN \`group\` g ON g.id = a.groupId
-         LEFT JOIN unit u ON u.id = a.unitId
-         LEFT JOIN municipality m ON a.municipalityId = m.id
-        WHERE ${where}
-        ORDER BY a.code
-        LIMIT ?`,
-      [...params, Math.min(parseInt(limit, 10) || 100, 500)]
+    // 📊 total para paginación
+    const [[{ total }]] = await pool.query(
+      `
+        SELECT COUNT(*) AS total
+          FROM agent a
+          LEFT JOIN \`group\` g ON g.id = a.groupId
+          LEFT JOIN unit u     ON u.id = a.unitId
+          LEFT JOIN municipality m ON m.id = a.municipalityId
+         WHERE ${where}
+      `,
+      params
     );
 
-    res.json(rows);
+    // 🔎 página solicitada
+    const [rows] = await pool.query(
+      `
+        SELECT 
+          a.id, a.code, a.category, a.status,
+          a.groupId, g.code AS groupCode,
+          a.unitId, u.name AS unitName,
+          a.municipalityId, m.name AS municipalityName, m.dept
+        FROM agent a
+        LEFT JOIN \`group\` g ON g.id = a.groupId
+        LEFT JOIN unit u ON u.id = a.unitId
+        LEFT JOIN municipality m ON a.municipalityId = m.id
+        WHERE ${where}
+        ORDER BY a.code
+        LIMIT ? OFFSET ?
+      `,
+      [...params, ps, offset]
+    );
+
+    res.json({
+      page: p,
+      pageSize: ps,
+      total: Number(total) || 0,
+      items: rows,
+    });
   } catch (e) {
     res.status(500).json({ error: 'AgentListError', detail: e.message });
   }

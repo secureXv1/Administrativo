@@ -51,7 +51,7 @@
           <table class="table min-w-[860px]">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>#</th>
                 <th>Código</th>
                 <th>Cat.</th>
                 <th>Grupo</th>
@@ -62,8 +62,8 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="a in itemsFiltradosOrdenados" :key="a.id">
-                <td>{{ a.id }}</td>
+              <tr v-for="(a, idx) in itemsPagina" :key="a.id">
+                <td :title="'ID: ' + a.id">{{ rowNumber(idx) }}</td>
                 <td>{{ a.code }}</td>
                 <td>{{ catLabel(a.category) }}</td>
                 <td>{{ a.groupCode || groupCode(a.groupId) || '—' }}</td>
@@ -97,11 +97,39 @@
                   </button>
                 </td>
               </tr>
-              <tr v-if="itemsFiltradosOrdenados.length === 0">
+              <tr v-if="itemsPagina.length === 0">
                 <td colspan="8" class="text-center text-slate-500 py-6">Sin agentes</td>
               </tr>
             </tbody>
+
           </table>
+
+                          <!-- Paginación (solo admin/supervisión) -->
+                <div v-if="total > 0" class="mt-3 flex items-center gap-3 justify-between">
+                  <div class="text-sm text-slate-600">
+                    Mostrando
+                    <b>{{ Math.min(((page-1)*pageSize)+1, total) }}</b>–
+                    <b>{{ Math.min(page*pageSize, total) }}</b>
+                    de <b>{{ total }}</b>
+                  </div>
+
+                  <div class="flex items-center gap-2">
+                    <button class="btn-ghost" :disabled="page<=1" @click="gotoPage(1)">« Primero</button>
+                    <button class="btn-ghost" :disabled="page<=1" @click="gotoPage(page-1)">‹ Anterior</button>
+                    <span class="text-sm text-slate-700">Página {{ page }} / {{ totalPages }}</span>
+                    <button class="btn-ghost" :disabled="page>=totalPages" @click="gotoPage(page+1)">Siguiente ›</button>
+                    <button class="btn-ghost" :disabled="page>=totalPages" @click="gotoPage(totalPages)">Último »</button>
+
+                    <select class="input !w-28" v-model.number="pageSize" @change="() => { page=1; loadAgents() }">
+                      <option :value="50">50</option>
+                      <option :value="100">100</option>
+                      <option :value="200">200</option>
+                      <option :value="500">500</option>
+                      <option :value="1000">1000</option>
+                    </select>
+                  </div>
+                </div>
+
         </div>
       </div>
     </div>
@@ -214,12 +242,44 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import axios from 'axios'
+
 
 /* ===== Helpers UI ===== */
 const catLabel = (c) => (String(c).toUpperCase()==='SO' ? 'ME' : c)
 const uiToApiCategory = (ui) => (ui==='ME' ? 'SO' : ui)
+
+// ===== Paginación común (admin/supervisión: server-side | líder grupo: client-side) =====
+const page = ref(1)
+const pageSize = ref(200)
+const total = ref(0)
+const totalPages = computed(() => Math.max(1, Math.ceil((total.value || 0) / (pageSize.value || 1))))
+
+function gotoPage(n){
+  const t = totalPages.value
+  const p = Math.min(Math.max(1, Number(n) || 1), t)
+  if (p !== page.value) page.value = p // client-side siempre
+}
+
+function onChangePageSize(){
+  page.value = 1 // client-side: el computed se recalcula solo
+}
+
+
+
+function rowNumber(idx){
+  // Admin/Supervisión (server-side): numeración absoluta con offset del backend
+  if (isAdminLike.value) {
+    return (page.value - 1) * pageSize.value + idx + 1
+  }
+  // Líder de grupo (client-side): numeración por página tras filtrar & paginar en cliente
+  return (page.value - 1) * pageSize.value + idx + 1
+}
+
+
+
+
 
 function badgeClass(state){
   const s = String(state || '').toUpperCase()
@@ -247,7 +307,8 @@ const isSuperadmin  = computed(() => role.value === 'superadmin')
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
 
-const items = ref([])          // agentes
+const itemsBase = ref([])
+const items = ref([])
 const groups = ref([])         // grupos (admin)
 const units = ref([])          // todas las unidades (admin)
 const myUnits = ref([])        // unidades de mi grupo (líder grupo)
@@ -317,30 +378,51 @@ async function loadMunicipalities(q=''){
   })
   municipalities.value = data || []
 }
+
+
 async function loadAgents(){
   msg.value = ''
   try {
     if (isAdminLike.value) {
-      const params = {}
-      if (filters.value.groupId !== 'ALL') params.groupId = filters.value.groupId
+      // Server-side pagination + filtros enviados
+      const params = {
+        page: page.value,
+        pageSize: pageSize.value
+      }
+      if (filters.value.groupId !== 'ALL') params.groupId = Number(filters.value.groupId)
+      if (filters.value.q && filters.value.q.trim()) params.q = String(filters.value.q).trim()
+      if (filters.value.cat !== 'ALL') {
+        params.category = filters.value.cat === 'ME' ? 'SO' : filters.value.cat
+      }
+
       const { data } = await axios.get('/admin/agents', {
         params,
         headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
       })
-      items.value = normalizeAgents(data || [])
+
+      items.value = normalizeAgents(data?.items || [])
+      // total y página los dicta el backend
+      total.value = Number(data?.total || 0)
+
     } else if (isLeaderGroup.value) {
+      // Client-side pagination (trae todo de su grupo y paginamos/filtramos localmente)
       const { data } = await axios.get('/my/agents', {
         headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
       })
-      items.value = normalizeAgents(data || [])
+      itemsBase.value = normalizeAgents(data || [])
+      // total se calcula en computed (itemsFiltradosOrdenados) → aquí no tocamos total
     } else {
       items.value = []
+      itemsBase.value = []
+      total.value = 0
       msg.value = 'No tiene permisos suficientes.'
     }
   } catch (e) {
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'Error al cargar'
   }
 }
+
+
 function normalizeAgents(list){
   return list.map(a => ({
     ...a,
@@ -350,9 +432,23 @@ function normalizeAgents(list){
   }))
 }
 
-/* ===== Filtro + Orden ===== */
+// Filtrado + orden (solo para líder de grupo; admin/supervisión ya filtran en backend)
 const itemsFiltradosOrdenados = computed(() => {
-  let arr = items.value.slice()
+  if (isAdminLike.value) {
+    // Admin/Supervisión: confiar en backend (ya viene filtrado/paginado); solo ordenamos por estética
+    const arr = items.value.slice()
+    const order = { 'OF':1, 'SO':2, 'PT':3 }
+    arr.sort((a,b) => {
+      const ca = order[String(a.category).toUpperCase()] || 9
+      const cb = order[String(b.category).toUpperCase()] || 9
+      if (ca !== cb) return ca - cb
+      return String(a.code).localeCompare(String(b.code))
+    })
+    return arr
+  }
+
+  // Líder de grupo: filtrar/ordenar en cliente
+  let arr = itemsBase.value.slice()
 
   const q = filters.value.q.trim().toUpperCase()
   if (q) {
@@ -367,9 +463,7 @@ const itemsFiltradosOrdenados = computed(() => {
     const target = filters.value.cat === 'ME' ? 'SO' : filters.value.cat
     arr = arr.filter(a => String(a.category).toUpperCase() === target)
   }
-  if (isAdminLike.value && filters.value.groupId !== 'ALL') {
-    arr = arr.filter(a => String(a.groupId) === String(filters.value.groupId))
-  }
+  // groupId no aplica a líder de grupo (solo ve su grupo)
 
   const order = { 'OF':1, 'SO':2, 'PT':3 }
   arr.sort((a,b) => {
@@ -380,6 +474,19 @@ const itemsFiltradosOrdenados = computed(() => {
   })
   return arr
 })
+
+// Página actual para pintar en la tabla
+const itemsPagina = computed(() => {
+  if (isAdminLike.value) {
+    // Admin/Supervisión: backend ya paginó → usar tal cual
+    return itemsFiltradosOrdenados.value
+  }
+  // Líder de grupo: paginar en cliente
+  total.value = itemsFiltradosOrdenados.value.length
+  const start = (page.value - 1) * pageSize.value
+  return itemsFiltradosOrdenados.value.slice(start, start + pageSize.value)
+})
+
 
 /* ===== Catálogos helpers ===== */
 function groupCode(id){
