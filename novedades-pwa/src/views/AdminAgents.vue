@@ -259,7 +259,10 @@ const totalPages = computed(() => Math.max(1, Math.ceil((total.value || 0) / (pa
 function gotoPage(n){
   const t = totalPages.value
   const p = Math.min(Math.max(1, Number(n) || 1), t)
-  if (p !== page.value) page.value = p // client-side siempre
+  if (p !== page.value) {
+    page.value = p
+    if (isAdminLike.value) loadAgents()     // 👈 recarga server-side
+  }
 }
 
 function onChangePageSize(){
@@ -323,6 +326,8 @@ const today = ref(formatDateISO(tomorrow))
 
 /* ===== Filtros ===== */
 const filters = ref({ q:'', cat:'ALL', groupId:'ALL' })
+watch(filters, () => { page.value = 1; reloadAdminDebounced() }, { deep: true })
+
 
 /* ===== Estados ===== */
  const estadosValidos = [
@@ -431,6 +436,20 @@ function normalizeAgents(list){
     municipalityName: a.municipalityName || (a.municipalityId ? '' : '')
   }))
 }
+
+// ===== Recarga con debounce (evita bombardear la API al escribir) =====
+const reloadAdminDebounced = (() => {
+  let t = null
+  return () => {
+    clearTimeout(t)
+    t = setTimeout(() => {
+      if (isAdminLike.value) loadAgents()
+    }, 300) // 300ms cómodo para escribir
+  }
+})()
+
+
+
 
 // Filtrado + orden (solo para líder de grupo; admin/supervisión ya filtran en backend)
 const itemsFiltradosOrdenados = computed(() => {
