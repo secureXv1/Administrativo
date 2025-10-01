@@ -98,7 +98,10 @@
                   </thead>
                   <tbody>
                     <tr v-for="(a, i) in agents" :key="a.id">
-                      <td>{{ a.code }}</td>
+                       <td>
+                        <div class="font-medium">{{ a.code }}</div>
+                        <div v-if="a.nickname" class="text-xs text-slate-500 mt-0.5">({{ a.nickname }})</div>
+                      </td>
                       <td>{{ displayCategory(a.category) }}</td>
                       <td>
                         <select class="input" v-model="a.status" @change="onStateChange(a)">

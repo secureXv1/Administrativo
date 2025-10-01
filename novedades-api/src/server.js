@@ -345,6 +345,7 @@ app.get('/catalogs/agents', auth, async (req, res) => {
          a.unitId,
          a.status,
          a.municipalityId,
+         a.nickname,
 
          -- unidad (solo name para evitar columnas inexistentes)
          u.name AS unitName,
@@ -365,7 +366,11 @@ app.get('/catalogs/agents', auth, async (req, res) => {
       [...params, take]
     );
 
-    res.json(rows);
+    res.json(rows.map(r => ({
+      ...r,
+      nickname: decNullable(r.nickname)
+    })));
+   
   } catch (e) {
     console.error('GET /catalogs/agents error:', e); // <— mira la consola del servidor
     res.status(500).json({ error: 'CatalogError', detail: e.message });
@@ -388,7 +393,7 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
   const [rows] = await pool.query(
     `
     SELECT DISTINCT
-      a.id, a.code, a.category, a.status AS status_agent, a.groupId, a.unitId,
+      a.id, a.code, a.category, a.status AS status_agent, a.groupId, a.unitId, a.nickname, 
       COALESCE(l.municipalityId, a.municipalityId) AS effectiveMunicipalityId,
 
       m_da.dept AS dept_da, m_da.name AS name_da,
@@ -443,7 +448,8 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
     municipalityName,
     novelty_start: r.novelty_start || '',
     novelty_end: r.novelty_end || '',
-    novelty_description: r.novelty_description ? decNullable(r.novelty_description) : ''
+    novelty_description: r.novelty_description ? decNullable(r.novelty_description) : '',
+    nickname: decNullable(r.nickname) || null
   };
   });
 
@@ -456,7 +462,7 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
     const groupId = req.user.groupId;
     const [rows] = await pool.query(
       `SELECT 
-         a.id, a.code, a.category, a.status, a.groupId, a.unitId, a.municipalityId,
+         a.id, a.code, a.category, a.status, a.groupId, a.unitId, a.municipalityId, a.nickname,   
          g.code AS groupCode, u.name AS unitName,
          m.dept, m.name
        FROM agent a
@@ -470,7 +476,8 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
 
     res.json(rows.map(r => ({
       ...r,
-      municipalityName: r.municipalityId ? `${r.dept} - ${r.name}` : ''
+      municipalityName: r.municipalityId ? `${r.dept} - ${r.name}` : '',
+      nickname: decNullable(r.nickname) || null
     })));
   } catch (e) {
     console.error('GET /my/agents error:', e);
@@ -1345,10 +1352,10 @@ app.get('/group/agents', auth, requireRole('leader_group', 'leader_unit'), async
     return res.status(403).json({ error: 'No autorizado' });
   }
   const [rows] = await pool.query(
-    `SELECT id, code, category, status, location FROM agent WHERE ${where} ORDER BY code`,
+    `SELECT id, code, category, status, location, nickname FROM agent WHERE ${where} ORDER BY code`,
     params
   );
-  res.json(rows);
+  res.json(rows.map(r => ({ ...r, nickname: decNullable(r.nickname) })));
 });
 
 // ---------- Dashboard y admin ----------
@@ -1713,7 +1720,8 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervi
           a.id, a.code, a.category, a.status,
           a.groupId, g.code AS groupCode,
           a.unitId, u.name AS unitName,
-          a.municipalityId, m.name AS municipalityName, m.dept
+          a.municipalityId, m.name AS municipalityName, m.dept,
+          a.nickname 
         FROM agent a
         LEFT JOIN \`group\` g ON g.id = a.groupId
         LEFT JOIN unit u ON u.id = a.unitId
@@ -1724,12 +1732,16 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervi
       `,
       [...params, ps, offset]
     );
+    const items = rows.map(r => ({
+      ...r,
+      nickname: decNullable(r.nickname)  // << DESCIFRA
+    }));
 
     res.json({
       page: p,
       pageSize: ps,
       total: Number(total) || 0,
-      items: rows,
+      items,
     });
   } catch (e) {
     res.status(500).json({ error: 'AgentListError', detail: e.message });
@@ -1737,9 +1749,11 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervi
 });
 
 
-// Crear agente
+// Crear agente (con nickname cifrado)
 app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
-  const { code, category, groupId, unitId, status, municipalityId } = req.body;
+  const { code, category, groupId, unitId, status, municipalityId, nickname } = req.body;
+
+  // Validaciones existentes
   if (!/^[A-Z][0-9]+$/.test(code)) return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
   if (!['OF','SO','PT'].includes(category)) return res.status(422).json({ error: 'Categoría inválida' });
 
@@ -1766,16 +1780,22 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     if (!m) return res.status(404).json({ error: 'Municipio no existe' });
   }
 
+  // Cifrado de nickname (NULL si viene vacío/undefined)
+  const encNick = encNullable(nickname && String(nickname).trim() !== '' ? String(nickname) : null);
+
   try {
     const [r] = await pool.query(
-      'INSERT INTO agent (code, category, groupId, unitId, status, municipalityId) VALUES (?,?,?,?,?,?)',
-      [code.trim(), category, groupId || null, unitId || null, s, muniId]
+      'INSERT INTO agent (code, category, groupId, unitId, status, municipalityId, nickname) VALUES (?,?,?,?,?,?,?)',
+      [code.trim(), category, groupId || null, unitId || null, s, muniId, encNick]
     );
+
     await logEvent({
       req, userId: req.user.uid,
       action: Actions.AGENT_CREATE,
-      details: { agentId: r.insertId, code: code.trim(), category, groupId: groupId || null, unitId: unitId || null }
+      // No registramos el valor del apodo en claro por privacidad
+      details: { agentId: r.insertId, code: code.trim(), category, groupId: groupId || null, unitId: unitId || null, nickname_set: !!nickname }
     });
+
     res.json({ ok: true });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') res.status(409).json({ error: 'El código ya existe' });
@@ -1784,13 +1804,10 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
 });
 
 
-
-
-// Actualizar agente (parcial)
-// Actualizar agente (parcial)
+// Actualizar agente (parcial, con nickname cifrado)
 app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { id } = req.params;
-  const { code, category, groupId, unitId, status, municipalityId } = req.body;
+  const { code, category, groupId, unitId, status, municipalityId, nickname } = req.body;
 
   const sets = [], params = [];
   const changes = {};
@@ -1839,8 +1856,16 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     changes.municipalityId = municipalityId || null;
   }
 
+  // <<< Nuevo: nickname parcial >>>
+  if (nickname !== undefined) {
+    // Si viene string vacío o null → guardar NULL; si viene valor → cifrar
+    const encNick = encNullable(nickname && String(nickname).trim() !== '' ? String(nickname) : null);
+    sets.push('nickname=?'); params.push(encNick);
+    // Por privacidad no registramos el apodo en claro
+    changes.nickname_set = nickname !== null && String(nickname).trim() !== '' ? true : false;
+  }
+
   // ================== PATCH INTEGRIDAD GRUPO-UNIDAD ==================
-  // 1) Si vienen groupId Y unitId a la vez, validar que la unidad pertenezca al grupo indicado.
   if (('groupId' in changes) && ('unitId' in changes) && changes.groupId && changes.unitId) {
     const [[ux]] = await pool.query(
       'SELECT id FROM unit WHERE id=? AND groupId=? LIMIT 1',
@@ -1849,8 +1874,6 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     if (!ux) return res.status(422).json({ error: 'La unidad no pertenece al nuevo grupo' });
   }
 
-  // 2) Si CAMBIAN groupId y NO mandan unitId en el body, limpiar unitId automáticamente
-  //    (solo si efectivamente se incluyó groupId en la petición)
   if (('groupId' in changes) && changes.groupId !== null && (unitId === undefined)) {
     sets.push('unitId=?'); params.push(null);
     changes.unitId = null;
@@ -1875,7 +1898,6 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     res.status(500).json({ error:'No se pudo actualizar', detail:e.message });
   }
 });
-
 
 // Eliminar agente
 app.delete('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
@@ -2043,7 +2065,8 @@ app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision
   const [rows] = await pool.query(`
     SELECT 
       a.id AS agentId,          
-      a.code, a.category,
+      a.code, a.nickname,
+      a.category,
       da.state,
       da.groupId, g.code AS groupCode,
       da.unitId, u.name AS unitName,
@@ -2062,6 +2085,7 @@ app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision
 
     res.json(rows.map(r => ({
       ...r,
+      nickname: r.nickname ? decNullable(r.nickname) : null,
       novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null
     })));
 

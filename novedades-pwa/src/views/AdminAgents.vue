@@ -53,6 +53,7 @@
               <tr>
                 <th>#</th>
                 <th>Código</th>
+                <th>Agente</th> <!-- Apodo justo después de Código -->
                 <th>Cat.</th>
                 <th>Grupo</th>
                 <th>Unidad</th>
@@ -65,6 +66,7 @@
               <tr v-for="(a, idx) in itemsPagina" :key="a.id">
                 <td :title="'ID: ' + a.id">{{ rowNumber(idx) }}</td>
                 <td>{{ a.code }}</td>
+                <td>{{ a.nickname || '—' }}</td> <!-- Apodo aquí -->
                 <td>{{ catLabel(a.category) }}</td>
                 <td>{{ a.groupCode || groupCode(a.groupId) || '—' }}</td>
                 <td>{{ a.unitName || unitName(a.unitId) || '—' }}</td>
@@ -80,14 +82,12 @@
                 </td>
                 <td class="text-center">
                   <button class="btn-ghost p-1" title="Editar" @click="openEdit(a)">
-                    <!-- icon pencil -->
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path><path d="m16 5 3 3"></path>
                     </svg>
                   </button>
                   <button v-if="isSuperadmin" class="btn-ghost p-1" title="Eliminar" @click="deleteAgent(a)">
-                    <!-- icon trash -->
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/>
@@ -98,10 +98,9 @@
                 </td>
               </tr>
               <tr v-if="itemsPagina.length === 0">
-                <td colspan="8" class="text-center text-slate-500 py-6">Sin agentes</td>
+                <td colspan="9" class="text-center text-slate-500 py-6">Sin agentes</td>
               </tr>
             </tbody>
-
           </table>
 
                           <!-- Paginación (solo admin/supervisión) -->
@@ -152,6 +151,18 @@
             <div v-if="isSuperadmin">
               <label class="label">Código</label>
               <input class="input" v-model="form.code" />
+            </div>
+            <div>
+              <label class="label">Agente</label>
+              <input
+                class="input"
+                v-model="form.nickname"
+                placeholder="Agente"
+                maxlength="120"
+              />
+              <p class="text-xs text-slate-500 mt-1">
+                Se almacena cifrado en la base de datos.
+              </p>
             </div>
             <div v-if="isSuperadmin">
               <label class="label">Categoría</label>
@@ -433,7 +444,8 @@ function normalizeAgents(list){
     ...a,
     groupCode: a.groupCode || null,
     unitName: a.unitName || null,
-    municipalityName: a.municipalityName || (a.municipalityId ? '' : '')
+    municipalityName: a.municipalityName || (a.municipalityId ? '' : ''),
+    nickname: a.nickname || null
   }))
 }
 
@@ -475,7 +487,8 @@ const itemsFiltradosOrdenados = computed(() => {
       String(a.code||'').toUpperCase().includes(q) ||
       catLabel(a.category).includes(q) ||
       String(a.groupCode||'').toUpperCase().includes(q) ||
-      String(a.unitName||'').toUpperCase().includes(q)
+      String(a.unitName||'').toUpperCase().includes(q) ||
+      String(a.nickname||'').toUpperCase().includes(q)
     )
   }
   if (filters.value.cat !== 'ALL') {
@@ -537,7 +550,8 @@ const form = ref({
   id:null, code:'', categoryUi:'OF', groupId:null, unitId:null,
   state:'SIN NOVEDAD',
   municipalityId:null, municipalityName:'',
-  novelty_start:'', novelty_end:'', novelty_description:''
+  novelty_start:'', novelty_end:'', novelty_description:'',
+  nickname:'' 
 })
 
 function openCreate(){
@@ -554,7 +568,8 @@ function openCreate(){
     municipalityName: '',
     novelty_start: '',
     novelty_end: '',
-    novelty_description: ''
+    novelty_description: '',
+    nickname: a.nickname || '' 
   }
 }
 
@@ -680,7 +695,8 @@ async function saveEdit () {
         code,
         category: uiToApiCategory(form.value.categoryUi),
         groupId: form.value.groupId || null,
-        unitId: form.value.unitId || null
+        unitId: form.value.unitId || null,
+        nickname: (form.value.nickname || '').trim() || null
       }, authHeader())
 
       msg.value = 'Agente creado ✅'
@@ -724,7 +740,8 @@ async function saveEdit () {
         code: isSuperadmin.value ? form.value.code : undefined,
         category: isSuperadmin.value ? uiToApiCategory(form.value.categoryUi) : undefined,
         groupId: form.value.groupId || null,
-        unitId: form.value.unitId || null
+        unitId: form.value.unitId || null,
+        nickname: (form.value.nickname ?? '').trim() 
       }, authHeader())
     }
 

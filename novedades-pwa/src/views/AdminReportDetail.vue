@@ -90,6 +90,7 @@
               <thead>
                 <tr>
                   <th>Código</th>
+                  <th>Agente</th>
                   <th>Categoría</th>
                   <th v-if="isGroupMode">Unidad</th>
                   <th>Estado</th>
@@ -102,6 +103,7 @@
               <tbody>
                 <tr v-for="a in agentesFiltrados" :key="a._key">
                   <td class="font-medium text-slate-900">{{ a.code }}</td>
+                   <td>{{ a.nickname || '—' }}</td>
                   <td>{{ displayCat(a.category) }}</td>
                   <td v-if="isGroupMode"><span class="text-slate-700">{{ a.unitName || '—' }}</span></td>
                   <td>
