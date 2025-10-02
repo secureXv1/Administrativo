@@ -2091,8 +2091,6 @@ app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision
 
 });
 
-
-
 // Endpoint: Editar estado/novedad de un agente en un reporte específico
 
 app.put('/admin/report-agents/:reportId/:agentId',
@@ -2219,12 +2217,6 @@ app.put('/admin/report-agents/:reportId/:agentId',
   }
 );
 
-
-
-
-
-
-
 // Listar agentes de un grupo que NO tienen unidad asignada
 app.get('/admin/agents-no-unit', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
   let groupId = req.query.groupId;
@@ -2240,6 +2232,162 @@ app.get('/admin/agents-no-unit', auth, requireRole('superadmin', 'supervision', 
   );
   res.json(rows);
 });
+
+// End point para contador de días de racha por agente (cálculo JS, preciso)
+app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
+  try {
+    const {
+      groupId,
+      unitId,
+      page = 1,
+      pageSize = 100,
+      q,
+      category
+    } = req.query;
+
+    const p = Math.max(parseInt(page, 10) || 1, 1);
+    const ps = Math.min(Math.max(parseInt(pageSize, 10) || 100, 1), 1000);
+    const offset = (p - 1) * ps;
+
+    let where = '1=1';
+    const params = [];
+
+    // RBAC y filtros por rol
+    if (req.user.role === 'leader_group') {
+      where += ' AND a.groupId=?';
+      params.push(req.user.groupId);
+    } else if (groupId) {
+      where += ' AND a.groupId=?';
+      params.push(Number(groupId));
+    }
+    if (unitId) {
+      where += ' AND a.unitId=?';
+      params.push(Number(unitId));
+    }
+
+    // ⬇️ Aquí van los nuevos filtros de búsqueda y categoría
+    if (q && String(q).trim()) {
+      where += ' AND (a.code LIKE ? OR a.nickname LIKE ?)';
+      params.push(`%${q}%`, `%${q}%`);
+    }
+    if (category && category !== 'ALL') {
+      where += ' AND a.category = ?';
+      params.push(category);
+    }
+
+    // Total de agentes (para paginación)
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) AS total FROM agent a WHERE ${where}`, params
+    );
+
+    // Cargar todos los agentes de esta página
+    const [agents] = await pool.query(
+      `
+      SELECT 
+        a.id AS agentId,
+        a.code,
+        a.category,
+        a.status,
+        a.groupId,
+        g.code AS groupCode,
+        g.name AS groupName,
+        a.unitId,
+        a.nickname
+      FROM agent a
+      LEFT JOIN \`group\` g ON g.id = a.groupId
+      WHERE ${where}
+      ORDER BY a.code
+      LIMIT ? OFFSET ?
+      `,
+      [...params, ps, offset]
+    );
+
+
+    // Carga TODOS los reportes de estos agentes
+    const agentIds = agents.map(a => a.agentId);
+    if (agentIds.length === 0) {
+      return res.json({ page: p, pageSize: ps, total: 0, items: [] });
+    }
+    const [reports] = await pool.query(
+      `
+      SELECT
+        dra.agentId,
+        dr.reportDate,
+        dra.state
+      FROM dailyreport_agent dra
+      JOIN dailyreport dr ON dr.id = dra.reportId
+      WHERE dra.agentId IN (${agentIds.map(() => '?').join(',')})
+      ORDER BY dra.agentId, dr.reportDate DESC
+      `,
+      agentIds
+    );
+
+    // Agrupa reportes por agenteId
+    const repMap = {};
+    for (const r of reports) {
+      if (!repMap[r.agentId]) repMap[r.agentId] = [];
+      repMap[r.agentId].push({
+        date: r.reportDate,
+        state: r.state
+      });
+    }
+
+    // Estados válidos para la racha
+    function normalizeState(s) {
+      return String(s || '')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Quita tildes
+        .replace(/\s+/g, ' ') // Espacios múltiples a uno solo
+        .trim()
+        .toUpperCase();
+    }
+
+    const validStatesRaw = [
+      'SIN NOVEDAD',
+      'SERVICIO',
+      'COMISIÓN DEL SERVICIO',
+      'COMISIÓN EN EL EXTERIOR'
+    ];
+
+    // Normaliza los estados válidos una sola vez (¡sin tildes!)
+    const validStates = validStatesRaw.map(normalizeState);
+
+    const streaks = {};
+    for (const agent of agents) {
+      const list = repMap[agent.agentId] || [];
+      let streak = 0;
+      for (const reg of list) {
+        const normalized = normalizeState(reg.state);
+        if (validStates.includes(normalized)) {
+          streak += 1;
+        } else {
+          // LOG solo para debug, puedes quitar luego
+          console.log('NO válido:', reg.state, '→', normalized, '| Valid:', validStates);
+          break;
+        }
+      }
+      streaks[agent.agentId] = streak;
+    }
+
+
+  
+    // Devuelve los agentes con su racha actual
+    res.json({
+      page: p,
+      pageSize: ps,
+      total: Number(total) || 0,
+      items: agents.map(a => ({
+        ...a,
+        nickname: a.nickname ? decNullable(a.nickname) : null,
+        current_streak: streaks[a.agentId] ?? 0
+      })),
+    });
+
+  } catch (e) {
+    console.error('GET /admin/agents-streaks error:', e);
+    res.status(500).json({ error: 'AgentStreakError', detail: e.message });
+  }
+});
+
 
 
 // Para líder de grupo: cumplimiento de unidades de SU grupo
@@ -2633,9 +2781,6 @@ app.get(
 );
 
 
-
-
-
 // GET /dashboard/novelties-by-unit
 app.get('/dashboard/novelties-by-unit', auth, requireRole('leader_group','superadmin','supervision'), async (req, res) => {
   try {
@@ -2763,11 +2908,6 @@ app.get('/dashboard/novelties-by-unit-breakdown',
     res.json({ items: rows });
   }
 );
-
-
-
-
-
 
 
 // Inicia el servidor

@@ -53,12 +53,13 @@
               <tr>
                 <th>#</th>
                 <th>Código</th>
-                <th>Agente</th> <!-- Apodo justo después de Código -->
+                <th>Agente</th>
                 <th>Cat.</th>
                 <th>Grupo</th>
                 <th>Unidad</th>
                 <th>Estado</th>
                 <th>Municipio</th>
+                <th>Días Lab</th> <!-- NUEVO -->
                 <th class="text-center">Acciones</th>
               </tr>
             </thead>
@@ -80,6 +81,28 @@
                   <span v-if="a.municipalityName">{{ a.municipalityName }}</span>
                   <span v-else class="text-slate-400">—</span>
                 </td>
+                <td>
+                  <span
+                    :class="[
+                      'inline-block min-w-[2.5em] text-center rounded px-1',
+                      a.current_streak >= 45
+                        ? 'bg-red-100 text-red-600 font-bold border border-red-200'
+                        : a.current_streak >= 30
+                          ? 'bg-orange-100 text-orange-700 font-semibold border border-orange-200'
+                          : a.current_streak > 0
+                            ? 'bg-green-50 text-green-700 font-semibold border border-green-200'
+                            : 'text-slate-400'
+                    ]"
+                    :title="a.current_streak >= 45
+                      ? '¡Alerta! Racha extremadamente prolongada'
+                      : a.current_streak >= 30
+                        ? 'Racha prolongada: recomienda revisión'
+                        : 'Días consecutivos en servicio o sin novedad'"
+                  >
+                    {{ a.current_streak ?? 0 }}
+                  </span>
+                </td>
+
                 <td class="text-center">
                   <button class="btn-ghost p-1" title="Editar" @click="openEdit(a)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -280,8 +303,6 @@ function onChangePageSize(){
   page.value = 1 // client-side: el computed se recalcula solo
 }
 
-
-
 function rowNumber(idx){
   // Admin/Supervisión (server-side): numeración absoluta con offset del backend
   if (isAdminLike.value) {
@@ -290,10 +311,6 @@ function rowNumber(idx){
   // Líder de grupo (client-side): numeración por página tras filtrar & paginar en cliente
   return (page.value - 1) * pageSize.value + idx + 1
 }
-
-
-
-
 
 function badgeClass(state){
   const s = String(state || '').toUpperCase()
@@ -395,39 +412,33 @@ async function loadMunicipalities(q=''){
   municipalities.value = data || []
 }
 
-
-async function loadAgents(){
+async function loadAgents() {
   msg.value = ''
   try {
-    if (isAdminLike.value) {
-      // Server-side pagination + filtros enviados
+    if (isAdminLike.value || isLeaderGroup.value) {
+      // Siempre usa server-side para ambos roles
       const params = {
         page: page.value,
         pageSize: pageSize.value
       }
-      if (filters.value.groupId !== 'ALL') params.groupId = Number(filters.value.groupId)
-      if (filters.value.q && filters.value.q.trim()) params.q = String(filters.value.q).trim()
-      if (filters.value.cat !== 'ALL') {
+      // Solo admins pueden filtrar por grupo (líder ve solo su grupo, el backend lo filtra)
+      if (isAdminLike.value && filters.value.groupId !== 'ALL')
+        params.groupId = Number(filters.value.groupId)
+      if (filters.value.q && filters.value.q.trim())
+        params.q = String(filters.value.q).trim()
+      if (filters.value.cat !== 'ALL')
         params.category = filters.value.cat === 'ME' ? 'SO' : filters.value.cat
-      }
 
-      const { data } = await axios.get('/admin/agents', {
+      const { data } = await axios.get('/admin/agents-streaks', {
         params,
         headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
       })
 
       items.value = normalizeAgents(data?.items || [])
-      // total y página los dicta el backend
       total.value = Number(data?.total || 0)
 
-    } else if (isLeaderGroup.value) {
-      // Client-side pagination (trae todo de su grupo y paginamos/filtramos localmente)
-      const { data } = await axios.get('/my/agents', {
-        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-      })
-      itemsBase.value = normalizeAgents(data || [])
-      // total se calcula en computed (itemsFiltradosOrdenados) → aquí no tocamos total
     } else {
+      // Otros roles (si aplican, aquí vacía)
       items.value = []
       itemsBase.value = []
       total.value = 0
@@ -455,48 +466,15 @@ const reloadAdminDebounced = (() => {
   return () => {
     clearTimeout(t)
     t = setTimeout(() => {
-      if (isAdminLike.value) loadAgents()
-    }, 300) // 300ms cómodo para escribir
+      loadAgents()
+    }, 300)
   }
 })()
 
-
-
-
 // Filtrado + orden (solo para líder de grupo; admin/supervisión ya filtran en backend)
 const itemsFiltradosOrdenados = computed(() => {
-  if (isAdminLike.value) {
-    // Admin/Supervisión: confiar en backend (ya viene filtrado/paginado); solo ordenamos por estética
-    const arr = items.value.slice()
-    const order = { 'OF':1, 'SO':2, 'PT':3 }
-    arr.sort((a,b) => {
-      const ca = order[String(a.category).toUpperCase()] || 9
-      const cb = order[String(b.category).toUpperCase()] || 9
-      if (ca !== cb) return ca - cb
-      return String(a.code).localeCompare(String(b.code))
-    })
-    return arr
-  }
-
-  // Líder de grupo: filtrar/ordenar en cliente
-  let arr = itemsBase.value.slice()
-
-  const q = filters.value.q.trim().toUpperCase()
-  if (q) {
-    arr = arr.filter(a =>
-      String(a.code||'').toUpperCase().includes(q) ||
-      catLabel(a.category).includes(q) ||
-      String(a.groupCode||'').toUpperCase().includes(q) ||
-      String(a.unitName||'').toUpperCase().includes(q) ||
-      String(a.nickname||'').toUpperCase().includes(q)
-    )
-  }
-  if (filters.value.cat !== 'ALL') {
-    const target = filters.value.cat === 'ME' ? 'SO' : filters.value.cat
-    arr = arr.filter(a => String(a.category).toUpperCase() === target)
-  }
-  // groupId no aplica a líder de grupo (solo ve su grupo)
-
+  // Todos los roles: confiar en backend (ya viene filtrado/paginado); solo ordenamos por estética si quieres
+  const arr = items.value.slice()
   const order = { 'OF':1, 'SO':2, 'PT':3 }
   arr.sort((a,b) => {
     const ca = order[String(a.category).toUpperCase()] || 9
@@ -507,17 +485,11 @@ const itemsFiltradosOrdenados = computed(() => {
   return arr
 })
 
-// Página actual para pintar en la tabla
 const itemsPagina = computed(() => {
-  if (isAdminLike.value) {
-    // Admin/Supervisión: backend ya paginó → usar tal cual
-    return itemsFiltradosOrdenados.value
-  }
-  // Líder de grupo: paginar en cliente
-  total.value = itemsFiltradosOrdenados.value.length
-  const start = (page.value - 1) * pageSize.value
-  return itemsFiltradosOrdenados.value.slice(start, start + pageSize.value)
+  // Ya está paginado por backend, simplemente retorna los items
+  return itemsFiltradosOrdenados.value
 })
+
 
 
 /* ===== Catálogos helpers ===== */
@@ -811,12 +783,9 @@ async function saveEdit () {
 
 }
 
-
-
 function authHeader(){
   return { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
 }
-
 
 async function deleteAgent(a){
   if (!confirm('¿Eliminar este agente?')) return
