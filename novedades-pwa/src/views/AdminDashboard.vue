@@ -1016,11 +1016,18 @@ async function descargarExcel () {
     const out = {}
     for (const k in row) {
       let v = row[k]
-      if (v == null || (typeof v === 'string' && v.trim() === '')) v = 'N/A'
-      out[k] = v
+      // Si el campo es 'descripcion' y la novedad es exactamente 'SIN NOVEDAD'
+      if (k === 'descripcion' && row.novedad === 'SIN NOVEDAD') {
+        out[k] = 'SIN NOVEDAD'
+      } else if (v == null || (typeof v === 'string' && v.trim() === '')) {
+        out[k] = 'N/A'
+      } else {
+        out[k] = v
+      }
     }
     return out
   })
+
   const ws = XLSX.utils.json_to_sheet(normalizado)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'DatosNovedades')
