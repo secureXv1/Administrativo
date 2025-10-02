@@ -14,17 +14,28 @@
       <div v-else-if="!headerOk" class="text-center py-12 text-red-500">No se encontró información para los parámetros.</div>
 
       <template v-else>
-        <!-- Encabezado -->
-        <div class="card">
-          <div class="card-body">
-            <div class="flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-6 items-center text-base sm:text-lg">
-              <div><b>Grupo:</b> <span class="text-brand-700">{{ head.groupCode || '—' }}</span></div>
-              <div v-if="!isGroupMode"><b>Unidad:</b> <span class="text-brand-700">{{ head.unitName || 'N/A' }}</span></div>
-              <div><b>Fecha:</b> {{ head.date }}</div>
-              <div v-if="isGroupMode && unitsInGroup.length" class="flex items-center gap-2">
-                <b>Unidades:</b> <span class="text-slate-700">{{ unitsInGroup.length }}</span>
-              </div>
+        <!-- Filtros: Fecha + Unidad -->
+        <div class="card mb-3">
+          <div class="card-body grid grid-cols-1 sm:grid-cols-6 gap-3 sm:items-end">
+            <div>
+              <label class="label">Fecha</label>
+              <input type="date" v-model="filterDate" class="input" @change="onChangeDate" />
             </div>
+
+            <div class="sm:col-span-3">
+              <label class="label">Unidad</label>
+              <select v-model="filterUnitId" class="input" @change="onChangeUnit">
+                <option value="">Todas las unidades…</option>
+                <option v-for="u in unitOptions" :key="u.id" :value="String(u.id)">
+                  {{ u.name }}
+                </option>
+              </select>
+              <p v-if="!unitOptions.length" class="text-xs text-slate-500 mt-1">
+                No hay unidades para la fecha seleccionada.
+              </p>
+            </div>
+
+            
           </div>
         </div>
 
@@ -309,6 +320,193 @@ const estadosValidos = [
   'HOSPITALIZADO'
 ]
 
+// === Estado de filtros (sin romper tus params existentes) ===
+const filterDate   = ref(dateParam.value)                 // arranca desde query o hoy
+const filterUnitId = ref(String(route.query.unitId || '')) // arranca desde query
+const unitOptions  = ref([]) // [{id, name}] índice para el select
+
+// === Helpers de fecha ===
+function todayStr() {
+  const d = new Date()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${m}-${day}`
+}
+function shiftDate(yyyy_mm_dd, offsetDays) {
+  const [y, m, d] = yyyy_mm_dd.split('-').map(n => parseInt(n, 10))
+  const base = new Date(Date.UTC(y, m - 1, d))
+  base.setUTCDate(base.getUTCDate() + offsetDays)
+  const yy = base.getUTCFullYear()
+  const mm = String(base.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(base.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
+
+// Índice de unidades por fecha (respeta unitId del query si viene)
+async function loadUnitsIndex(date) {
+  try {
+    const params = { date_from: date, date_to: date }
+    if (isGroupMode.value && groupIdQ.value) params.groupId = groupIdQ.value
+
+    const { data } = await axios.get('/dashboard/reports', {
+      params,
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    const items = Array.isArray(data?.items) ? data.items : []
+
+    const map = new Map()
+    for (const r of items) {
+      if (r.unitId && r.unitName) {
+        const key = String(r.unitId)
+        if (!map.has(key)) map.set(key, { id: key, name: r.unitName })
+      }
+    }
+    unitOptions.value = Array.from(map.values()).sort((a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''))
+    )
+
+    // Respeta selección entrante desde Dashboard
+    const qUnit = String(route.query.unitId || '')
+    if (qUnit) {
+      filterUnitId.value = qUnit
+      // Si no está en las opciones del día, la agregamos para que el select la muestre
+      if (!unitOptions.value.some(u => String(u.id) === qUnit)) {
+        try {
+          const { data: u } = await axios.get(`/admin/units/${qUnit}`, {
+            headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+          })
+          if (u?.id) unitOptions.value.unshift({ id: String(u.id), name: u.name || `Unidad ${u.id}` })
+          else unitOptions.value.unshift({ id: qUnit, name: `Unidad ${qUnit}` })
+        } catch {
+          unitOptions.value.unshift({ id: qUnit, name: `Unidad ${qUnit}` })
+        }
+      }
+    } else {
+      // Si no vino unitId y no hay selección previa, puedes sugerir la primera (opcional)
+      if (!filterUnitId.value) {
+        filterUnitId.value = unitOptions.value[0]?.id ? String(unitOptions.value[0].id) : ''
+      }
+    }
+  } catch (e) {
+    console.error('loadUnitsIndex error', e)
+    unitOptions.value = []
+  }
+}
+// Calcula reportId real para (date, unitId) y navega
+async function gotoReportForUnit(date, unitId) {
+  try {
+    const raw = String(unitId ?? '').trim()
+    const unitIdParam = /^\d+$/.test(raw) ? Number(raw) : raw
+
+    const params = { date_from: date, date_to: date, unitId: unitIdParam }
+    if (isGroupMode.value && groupIdQ.value) params.groupId = groupIdQ.value
+
+    const { data } = await axios.get('/dashboard/reports', {
+      params,
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    let items = Array.isArray(data?.items) ? data.items : []
+
+    // Defensa: si el backend no filtró por unidad, filtramos aquí
+    if (items.length) items = items.filter(r => String(r.unitId) === String(unitIdParam))
+
+    if (!items.length) {
+      // No hay reporte para esa unidad/fecha → sincroniza query y sal
+      await router.replace({
+        name: route.name,
+        params: route.params,
+        query: { ...route.query, unitId: String(unitIdParam || ''), date }
+      })
+      return
+    }
+
+    const target = items.sort((a, b) => String(a.id).localeCompare(String(b.id))).pop()
+
+    await router.replace({
+      name: route.name,
+      params: { id: String(target.id) },
+      query: { ...route.query, unitId: String(unitIdParam), date }
+    })
+
+    headerOk.value = false
+    agentes.value = []
+    await loadSingleReport(String(target.id))
+    head.value = { ...head.value, date }
+    headerOk.value = true
+  } catch (e) {
+    console.warn('gotoReportForUnit error:', e?.message || e)
+    await router.replace({
+      name: route.name,
+      params: route.params,
+      query: { ...route.query, unitId: String(unitId || ''), date }
+    })
+  }
+}
+
+
+// === Handlers de UI ===
+async function onChangeDate() {
+  const date = filterDate.value || todayStr()
+  await loadUnitsIndex(date)
+
+  // Si hay unidad seleccionada → navega a su reporte en esa fecha
+  if (filterUnitId.value) {
+    await gotoReportForUnit(date, filterUnitId.value)
+  } else {
+    // Si no hay unidad, en modo grupo recargas lista; en modo single solo sincronizas URL
+    if (isGroupMode.value && groupIdQ.value) {
+      await loadGroupReports(date, groupIdQ.value) // tu función actual (agrega todas las unidades del grupo)
+    }
+    await router.replace({ name: route.name, params: route.params, query: { ...route.query, date, unitId: '' } })
+    head.value = { ...head.value, date }
+  }
+}
+
+async function onChangeUnit() {
+  const date = filterDate.value || todayStr()
+  const unitId = filterUnitId.value
+  if (!unitId) {
+    // Quitaste la unidad → en modo grupo vuelve a vista agregada del grupo y deja unitId vacío
+    if (isGroupMode.value && groupIdQ.value) {
+      await loadGroupReports(date, groupIdQ.value)
+    }
+    await router.replace({ name: route.name, params: route.params, query: { ...route.query, date, unitId: '' } })
+    return
+  }
+  await gotoReportForUnit(date, unitId)
+}
+
+async function goPrevDate() {
+  filterDate.value = shiftDate(filterDate.value || todayStr(), -1)
+  await onChangeDate()
+}
+async function goNextDate() {
+  filterDate.value = shiftDate(filterDate.value || todayStr(), +1)
+  await onChangeDate()
+}
+
+// === Sincroniza si cambia la URL desde fuera (por ejemplo, navegación externa) ===
+watch(
+  () => route.query,
+  async (q) => {
+    const newDate = String(q.date || todayStr())
+    const newUnit = String(q.unitId || '')
+    const changed = (newDate !== filterDate.value) || (newUnit !== filterUnitId.value)
+    if (changed) {
+      filterDate.value = newDate
+      filterUnitId.value = newUnit
+      await loadUnitsIndex(newDate)
+
+      if (newUnit) {
+        // nos aseguramos de estar en el detalle correcto
+        await gotoReportForUnit(newDate, newUnit)
+      } else if (isGroupMode.value && groupIdQ.value) {
+        await loadGroupReports(newDate, groupIdQ.value)
+      }
+    }
+  }
+)
+
 // ===== Helpers
 function formatDate(dateStr) {
   if (!dateStr) return ''
@@ -358,14 +556,15 @@ async function loadSingleReport(id){
     municipality: row.municipalityName && row.dept ? `${row.municipalityName} (${row.dept})` : (row.municipalityName || ''),
     municipalityName: row.municipalityName || null,
     municipalityDept: row.dept || null,
-    municipalityId: row.municipalityId ?? null,         // 👈 usa esto si el backend lo devuelve
+    municipalityId: row.municipalityId ?? null,
     novelty_description: row.novelty_description || row.descripcion,
     reportId: id
   })
   const list = (Array.isArray(ags) ? ags : []).map(map)
   agentes.value = list
   const first = list[0]
-  head.value = { groupCode: first?.groupCode || '', unitName: first?.unitName || '', date: dateParam.value }
+  const shownDate = filterDate.value || dateParam.value
+  head.value = { groupCode: first?.groupCode || '', unitName: first?.unitName || '', date: shownDate }
   headerOk.value = true
 }
 
@@ -631,13 +830,32 @@ async function exportarExcel(){
 onMounted(async () => {
   loading.value = true
   await loadMe()
+
   try {
-    if (isGroupMode.value) {
-      await loadGroupReports(dateParam.value, groupIdQ.value)
-    } else if (reportId.value) {
-      await loadSingleReport(reportId.value)
+    // 1) Tomar parámetros iniciales desde el Dashboard
+    const qDate = String(route.query.date || '')
+    const qUnit = String(route.query.unitId || '')
+
+    // 2) Inicializar filtros con lo que venga del Dashboard (o hoy si falta la fecha)
+    filterDate.value   = qDate || dateParam.value
+    filterUnitId.value = qUnit
+
+    // 3) Cargar índice de unidades respetando la selección entrante (NO pisar)
+    await loadUnitsIndex(filterDate.value)
+
+    // 4) Si vino unitId + date en la URL: calcular reportId y navegar
+    if (filterUnitId.value && filterDate.value) {
+      await gotoReportForUnit(filterDate.value, filterUnitId.value)
     } else {
-      headerOk.value = false
+      // 5) Si NO vino unitId (o vienes en modo grupo), mantén tu lógica anterior
+      if (isGroupMode.value && groupIdQ.value) {
+        await loadGroupReports(filterDate.value, groupIdQ.value)
+      } else if (reportId.value) {
+        await loadSingleReport(reportId.value)
+        head.value = { ...head.value, date: filterDate.value }
+      } else {
+        headerOk.value = false
+      }
     }
   } catch {
     headerOk.value = false
@@ -645,6 +863,49 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+watch(
+  () => route.params.id,
+  async (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      // Limpiar mientras carga (opcional, pero da feedback visual si tienes spinner)
+      headerOk.value = false
+      agentes.value = []
+      try {
+        await loadSingleReport(String(newId))
+      } finally {
+        headerOk.value = true
+      }
+    }
+  }
+)
+
+watch(filterUnitId, async (newUnit, oldUnit) => {
+  if (newUnit !== oldUnit) {
+    await onChangeUnit()
+  }
+})
+
+watch(
+  () => route.query.unitId,
+  async (newUnit, oldUnit) => {
+    if (newUnit !== oldUnit) {
+      const date = String(route.query.date || filterDate.value)
+      filterUnitId.value = String(newUnit || '')
+      if (filterUnitId.value) {
+        await gotoReportForUnit(date, filterUnitId.value)
+      } else if (isGroupMode.value && groupIdQ.value) {
+        headerOk.value = false
+        agentes.value = []
+        await loadGroupReports(date, groupIdQ.value)
+        headerOk.value = true
+      }
+    }
+  }
+)
+
+
+
 </script>
 
 <style scoped>
