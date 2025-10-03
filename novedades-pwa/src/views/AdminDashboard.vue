@@ -658,71 +658,100 @@ function goToGroupReport(r) {
 const municipalitiesMap = ref([])
 
 async function loadMapData () {
-  // Filtros
-  const params = { date: date.value }
-
-  if (isLeaderGroup.value) {
-    // líder: el backend ya te limita a su grupo
+  // 1) Armar filtros coherentes para AMBAS consultas
+  const reportParams = { date_from: date.value, date_to: date.value }
+  if (isLeaderGroup.value && me.value?.groupId) {
+    reportParams.groupId = String(me.value.groupId)
     if (selectedLeaderUnitId.value !== 'all') {
-      // algunos backends aceptan unitId para filtrar extra
-      params.unitId = selectedLeaderUnitId.value
+      reportParams.unitId = String(selectedLeaderUnitId.value)
     }
   } else {
-    // 🛠️ Para admin/supervisor usar groupId / unitId (y duplicar a groups/units por compatibilidad)
-    if (selectedGroupId.value !== 'all') {
-      params.groupId = String(selectedGroupId.value)
-      params.groups  = String(selectedGroupId.value) // compat
-    }
-    if (selectedUnitId.value !== 'all') {
-      params.unitId = String(selectedUnitId.value)
-      params.units  = String(selectedUnitId.value) // compat
-    }
+    if (selectedGroupId.value !== 'all') reportParams.groupId = String(selectedGroupId.value)
+    if (selectedUnitId.value  !== 'all') reportParams.unitId  = String(selectedUnitId.value)
   }
 
-  let list = []
   try {
-    const { data } = await axios.get('/admin/agent-municipalities', {
-      params,
+    // 2) Verificar si hay reportes del día (con los mismos filtros del tablero)
+    const repResp = await axios.get('/dashboard/reports', {
+      params: reportParams,
       headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
     })
-    list = Array.isArray(data) ? data : []
-  } catch (err) {
-    console.error('Error /admin/agent-municipalities:', err)
-    // seguimos con lista vacía para que al menos dibuje el mapa base
-    list = []
-  }
+    const reports = Array.isArray(repResp?.data?.items) ? repResp.data.items : []
 
-  // Filtro adicional para líder por unidad específica
-  if (isLeaderGroup.value && selectedLeaderUnitId.value !== 'all') {
-    list = list.filter(m => String(m.unitId) === String(selectedLeaderUnitId.value))
-  }
-
-  // 👉 arma estructura por municipio con desglose
-  const byMuni = new Map()
-  for (const r of list) {
-    if (!r?.id) continue
-    let entry = byMuni.get(r.id)
-    if (!entry) {
-      entry = {
-        id: r.id, name: r.name, dept: r.dept, lat: r.lat, lon: r.lon,
-        total: 0,
-        breakdown: {}
-      }
-      byMuni.set(r.id, entry)
+    // 👉 Si NO hay reportes, vaciamos marcadores y redibujamos mapa base SIN nada
+    if (reports.length === 0) {
+      municipalitiesMap.value = []
+      setTimeout(drawMap, 0)
+      return
     }
-    const key = isLeaderGroup.value
-      ? (r.unitName || `Unidad ${r.unitId || '—'}`)
-      : (r.groupCode || `Grupo ${r.groupId || '—'}`)
 
-    const n = Number(r.agent_count || 0)
-    entry.total += n
-    entry.breakdown[key] = (entry.breakdown[key] || 0) + n
+    // 3) Si SÍ hay reportes, pedimos la agregación por municipios (como antes)
+    const muniParams = { date: date.value }
+    if (isLeaderGroup.value) {
+      if (selectedLeaderUnitId.value !== 'all') {
+        muniParams.unitId = String(selectedLeaderUnitId.value)
+      }
+      // (el backend ya limita por groupId del líder)
+    } else {
+      if (selectedGroupId.value !== 'all') {
+        muniParams.groupId = String(selectedGroupId.value)
+        muniParams.groups  = String(selectedGroupId.value) // compat
+      }
+      if (selectedUnitId.value !== 'all') {
+        muniParams.unitId = String(selectedUnitId.value)
+        muniParams.units  = String(selectedUnitId.value) // compat
+      }
+    }
+
+    let list = []
+    try {
+      const { data } = await axios.get('/admin/agent-municipalities', {
+        params: muniParams,
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+      })
+      list = Array.isArray(data) ? data : []
+    } catch (err) {
+      console.error('Error /admin/agent-municipalities:', err)
+      list = []
+    }
+
+    // 4) Filtros adicionales y armado de estructura por municipio (igual a tu lógica actual)
+    // — respeta tu filtro de líder por unidad —
+    if (isLeaderGroup.value && selectedLeaderUnitId.value !== 'all') {
+      list = list.filter(m => String(m.unitId) === String(selectedLeaderUnitId.value))
+    }
+
+    const byMuni = new Map()
+    for (const r of list) {
+      if (!r?.id) continue
+      let entry = byMuni.get(r.id)
+      if (!entry) {
+        entry = {
+          id: r.id, name: r.name, dept: r.dept, lat: r.lat, lon: r.lon,
+          total: 0,
+          breakdown: {}
+        }
+        byMuni.set(r.id, entry)
+      }
+      const key = isLeaderGroup.value
+        ? (r.unitName || `Unidad ${r.unitId || '—'}`)
+        : (r.groupCode || `Grupo ${r.groupId || '—'}`)
+
+      const n = Number(r.agent_count || 0)
+      entry.total += n
+      entry.breakdown[key] = (entry.breakdown[key] || 0) + n
+    }
+
+    municipalitiesMap.value = [...byMuni.values()]
+    setTimeout(drawMap, 0)
+
+  } catch (err) {
+    console.error('Error verificando reportes/mapa:', err)
+    municipalitiesMap.value = []
+    setTimeout(drawMap, 0)
   }
-
-  municipalitiesMap.value = [...byMuni.values()]
-  // dibuja aunque esté vacío (así no “desaparece” el mapa si hay error de datos)
-  setTimeout(drawMap, 0)
 }
+
 
 
 
