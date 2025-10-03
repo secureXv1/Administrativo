@@ -234,27 +234,31 @@
               <label class="label">Fecha inicio</label>
               <input type="date" class="input" v-model="form.novelty_start" />
             </div>
-
-
           </div>
 
-          <div v-if="form.state === 'COMISIÓN DEL SERVICIO'">
-            <label class="label">Municipio</label>
-            <input class="input"
-                   v-model="form.municipalityName"
-                   list="municipios-list"
-                   @input="onMunicipalityInput"
-                   placeholder="Depto - Municipio (escribe para buscar)"
-                   autocomplete="off" />
-            <datalist id="municipios-list">
-              <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
-            </datalist>
-            <p v-if="form.municipalityName && !form.municipalityId" class="text-xs text-red-600 mt-1">
-              Selecciona un municipio válido de la lista.
-            </p>
-          </div>
+          <!-- MUNICIPIO: editable solo en COMISIÓN DEL SERVICIO, solo lectura en SERVICIO -->
+            <div v-if="form.state === 'COMISIÓN DEL SERVICIO'">
+              <label class="label">Municipio</label>
+              <input class="input"
+                    v-model="form.municipalityName"
+                    list="municipios-list"
+                    @input="onMunicipalityInput"
+                    placeholder="Depto - Municipio (escribe para buscar)"
+                    autocomplete="off" />
+              <datalist id="municipios-list">
+                <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
+              </datalist>
+              <p v-if="form.municipalityName && !form.municipalityId" class="text-xs text-red-600 mt-1">
+                Selecciona un municipio válido de la lista.
+              </p>
+            </div>
+            <div v-else-if="form.state === 'SERVICIO'">
+              <label class="label">Municipio</label>
+              <div class="input bg-slate-100 text-slate-700">{{ form.municipalityName }}</div>
+            </div>
 
-                    <div v-if="
+
+            <div v-if="
               form.state === 'SERVICIO' ||
               form.state === 'COMISIÓN DEL SERVICIO' ||
               otrosRequierenFechas.includes(form.state) ||
@@ -449,10 +453,10 @@ async function loadAgents() {
   }
 }
 
-
 function normalizeAgents(list){
   return list.map(a => ({
     ...a,
+    id: a.id ?? a.agentId,        // Usa id si existe, si no agentId
     groupCode: a.groupCode || null,
     unitName: a.unitName || null,
     municipalityName: a.municipalityName || (a.municipalityId ? '' : ''),
@@ -545,45 +549,45 @@ function openCreate(){
   }
 }
 
-
-
-
-
-async function openEdit(a){
-  editing.value = a
-  // valores base (por si no hay novedad previa)
-  form.value = {
-    id: a.id,
-    code: a.code,
-    categoryUi: catLabel(a.category),
-    groupId: a.groupId ?? null,
-    unitId: a.unitId ?? null,
-    state: a.status || 'SIN NOVEDAD',
-    municipalityId: a.municipalityId || null,
-    municipalityName: a.municipalityName || '',
-    novelty_start: a.novelty_start ? String(a.novelty_start).slice(0,10) : '',
-    novelty_end:   a.novelty_end ? String(a.novelty_end).slice(0,10)   : '',
-    novelty_description: a.novelty_description || ''
-  }
-
+async function openEdit(a) {
+  editing.value = null;
   try {
+    // Siempre pide el objeto REAL del backend
+    const { data } = await axios.get(`/admin/agents/${a.id}`, authHeader());
+
+    // valores base (por si no hay novedad previa)
+    form.value = {
+      id: data.id,
+      code: data.code,
+      categoryUi: catLabel(data.category),
+      groupId: data.groupId ?? null,
+      unitId: data.unitId ?? null,
+      state: data.status || 'SIN NOVEDAD',
+      municipalityId: data.municipalityId || null,
+      municipalityName: data.municipalityName || '',
+      novelty_start: data.novelty_start ? String(data.novelty_start).slice(0,10) : '',
+      novelty_end:   data.novelty_end ? String(data.novelty_end).slice(0,10)   : '',
+      novelty_description: data.novelty_description || '',
+      nickname: data.nickname || ''
+    }
+
+    editing.value = data;
+
     // 👉 pide la última novedad (o la válida hasta la fecha seleccionada)
-    const det = await loadAgentNovelty(a.id)
+    const det = await loadAgentNovelty(data.id)
     if (det) {
       form.value.state = det.state || form.value.state
       form.value.novelty_start = det.novelty_start || ''
       form.value.novelty_end   = det.novelty_end   || ''
       form.value.novelty_description = det.novelty_description || ''
 
-      // municipio mostrado en el input tipo datalist
-      if (det.municipalityId) {
+      // MUNICIPIO: Asigna SIEMPRE el de la novedad si existe, o el por defecto (sin dejar el viejo)
+      if (det.municipalityId && det.municipalityName) {
         form.value.municipalityId = det.municipalityId
-        // el datalist usa formato "Depto - Municipio"
-        form.value.municipalityName = det.dept && det.municipalityName
+        form.value.municipalityName = det.dept
           ? `${det.dept} - ${det.municipalityName}`
-          : form.value.municipalityName
+          : det.municipalityName
       } else if (['SERVICIO','SIN NOVEDAD'].includes(form.value.state)) {
-        // coherente con tu UI actual
         form.value.municipalityId = 11001
         form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
       } else {
@@ -592,56 +596,55 @@ async function openEdit(a){
       }
     }
   } catch(e) {
-    msg.value = e?.response?.data?.detail || e?.message || 'No se pudo cargar la novedad'
+    msg.value = e?.response?.data?.detail || e?.message || 'No se pudo cargar el agente'
   }
 
-  onStateChange(true)  // ajusta reglas (fechas/descr/muni) según estado final
+  // 👇 ¡Llama esto siempre al final!
+  onStateChange(true);  // ajusta reglas (fechas/descr/muni) según estado final
 }
 
 function closeEdit(){ editing.value = null; isCreating.value = false }
 
 
 function onStateChange(preserve = false){
-  const s = form.value.state
+  const s = form.value.state;
   if (s === 'SIN NOVEDAD') {
-    form.value.municipalityId = 11001
-    form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
+    form.value.municipalityId = 11001;
+    form.value.municipalityName = 'CUNDINAMARCA - Bogotá';
     if (!preserve) {
-      form.value.novelty_start = ''
-      form.value.novelty_end = ''
-      form.value.novelty_description = ''
+      form.value.novelty_start = '';
+      form.value.novelty_end = '';
+      form.value.novelty_description = '';
     }
   } else if (s === 'SERVICIO') {
-    form.value.municipalityId = 11001
-    form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
+    form.value.municipalityId = 11001;
+    form.value.municipalityName = 'CUNDINAMARCA - Bogotá';
   } else if (s === 'COMISIÓN DEL SERVICIO') {
-    form.value.municipalityId = null
-    form.value.municipalityName = ''
+    // SOLO limpia municipio si NO preserve
     if (!preserve) {
-      form.value.novelty_start = ''
-      form.value.novelty_end = ''
-      form.value.novelty_description = ''
+      form.value.municipalityId = null;
+      form.value.municipalityName = '';
+      form.value.novelty_start = '';
+      form.value.novelty_end = '';
+      form.value.novelty_description = '';
     }
   } else if (s === 'FRANCO FRANCO') {
-    form.value.municipalityId = null
-    form.value.municipalityName = ''
     if (!preserve) {
-      form.value.novelty_start = ''
-      form.value.novelty_end = ''
-      form.value.novelty_description = ''
+      form.value.municipalityId = null;
+      form.value.municipalityName = '';
+      form.value.novelty_start = '';
+      form.value.novelty_end = '';
+      form.value.novelty_description = '';
     }
   } else if (s === 'HOSPITALIZADO') {
-    // 👇 importante: sin fin
-    if (!preserve) form.value.novelty_end = ''
-    form.value.municipalityId = null
-    form.value.municipalityName = ''
+    if (!preserve) form.value.novelty_end = '';
+    form.value.municipalityId = null;
+    form.value.municipalityName = '';
   } else {
-    // VACACIONES / LICENCIAS / EXCUSA / PERMISO / COMISIÓN EXTERIOR / SUSPENDIDO ...
-    form.value.municipalityId = null
-    form.value.municipalityName = ''
+    form.value.municipalityId = null;
+    form.value.municipalityName = '';
   }
 }
-
 
 function onMunicipalityInput(e){
   const q = (form.value.municipalityName || '').trim().toLowerCase()

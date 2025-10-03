@@ -666,14 +666,6 @@ async function recalcDailyReport(reportId, connArg = null) {
   `, [feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov, reportId]);
 }
 
-
-
-
-
-
-
-
-
 // PUT: guardar/actualizar novedad de un agente en una fecha específica
 app.put('/admin/agents/:id/novelty',
   auth,
@@ -782,13 +774,13 @@ app.put('/admin/agents/:id/novelty',
 
           await conn.query(`
             INSERT INTO dailyreport
-              (reportDate, groupId, unitId,
-               OF_effective, SO_effective, PT_effective,
-               OF_available, SO_available, PT_available,
-               OF_nov, SO_nov, PT_nov)
-            VALUES (?, ?, ?, 0,0,0, 0,0,0, 0,0,0)
+              (reportDate, groupId, unitId, leaderUserId,
+              OF_effective, SO_effective, PT_effective,
+              OF_available, SO_available, PT_available,
+              OF_nov, SO_nov, PT_nov)
+            VALUES (?, ?, ?, ?, 0,0,0, 0,0,0, 0,0,0)
             ON DUPLICATE KEY UPDATE updatedAt=CURRENT_TIMESTAMP(3)
-          `, [isoDate, useGroupId, useUnitId]);
+          `, [isoDate, useGroupId, useUnitId, req.user.uid]);
 
           const [[dr]] = await conn.query(`
             SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1
@@ -2233,7 +2225,7 @@ app.get('/admin/agents-no-unit', auth, requireRole('superadmin', 'supervision', 
   res.json(rows);
 });
 
-// End point para contador de días de racha por agente (cálculo JS, preciso)
+// End point para contador de días de racha por agente (cálculo JS, preciso + municipio/depto última novedad)
 app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
   try {
     const {
@@ -2265,7 +2257,7 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       params.push(Number(unitId));
     }
 
-    // ⬇️ Aquí van los nuevos filtros de búsqueda y categoría
+    // Filtros búsqueda/categoría
     if (q && String(q).trim()) {
       where += ' AND (a.code LIKE ? OR a.nickname LIKE ?)';
       params.push(`%${q}%`, `%${q}%`);
@@ -2280,7 +2272,7 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       `SELECT COUNT(*) AS total FROM agent a WHERE ${where}`, params
     );
 
-    // Cargar todos los agentes de esta página
+    // Agentes de la página
     const [agents] = await pool.query(
       `
       SELECT 
@@ -2302,12 +2294,44 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       [...params, ps, offset]
     );
 
-
-    // Carga TODOS los reportes de estos agentes
     const agentIds = agents.map(a => a.agentId);
     if (agentIds.length === 0) {
       return res.json({ page: p, pageSize: ps, total: 0, items: [] });
     }
+
+    // Última novedad (municipio/depto) de cada agente
+    const [latestMunicipalities] = await pool.query(
+      `
+      SELECT
+        da.agentId,
+        da.municipalityId,
+        m.name AS municipalityName,
+        m.dept
+      FROM dailyreport_agent da
+      JOIN dailyreport dr ON dr.id = da.reportId
+      LEFT JOIN municipality m ON m.id = da.municipalityId
+      WHERE da.agentId IN (${agentIds.map(() => '?').join(',')})
+        AND dr.reportDate = (
+          SELECT MAX(dr2.reportDate)
+          FROM dailyreport_agent da2
+          JOIN dailyreport dr2 ON dr2.id = da2.reportId
+          WHERE da2.agentId = da.agentId
+        )
+      ORDER BY da.agentId
+      `,
+      agentIds
+    );
+
+    const municipalityMap = {};
+    for (const row of latestMunicipalities) {
+      municipalityMap[row.agentId] = {
+        municipalityId: row.municipalityId,
+        municipalityName: row.municipalityId ? `${row.dept} - ${row.municipalityName}` : '',
+        dept: row.dept || ''
+      };
+    }
+
+    // Cargar reportes de los agentes (para la racha)
     const [reports] = await pool.query(
       `
       SELECT
@@ -2347,8 +2371,6 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       'COMISIÓN DEL SERVICIO',
       'COMISIÓN EN EL EXTERIOR'
     ];
-
-    // Normaliza los estados válidos una sola vez (¡sin tildes!)
     const validStates = validStatesRaw.map(normalizeState);
 
     const streaks = {};
@@ -2360,17 +2382,13 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
         if (validStates.includes(normalized)) {
           streak += 1;
         } else {
-          // LOG solo para debug, puedes quitar luego
-          console.log('NO válido:', reg.state, '→', normalized, '| Valid:', validStates);
           break;
         }
       }
       streaks[agent.agentId] = streak;
     }
 
-
-  
-    // Devuelve los agentes con su racha actual
+    // Devuelve los agentes con su racha actual y municipio última novedad
     res.json({
       page: p,
       pageSize: ps,
@@ -2378,7 +2396,10 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       items: agents.map(a => ({
         ...a,
         nickname: a.nickname ? decNullable(a.nickname) : null,
-        current_streak: streaks[a.agentId] ?? 0
+        current_streak: streaks[a.agentId] ?? 0,
+        municipalityId: municipalityMap[a.agentId]?.municipalityId ?? null,
+        municipalityName: municipalityMap[a.agentId]?.municipalityName ?? '',
+        dept: municipalityMap[a.agentId]?.dept ?? ''
       })),
     });
 
@@ -2388,6 +2409,36 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
   }
 });
 
+
+// Obtener un agente por id (incluye joins útiles)
+app.get('/admin/agents/:id', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
+  const { id } = req.params;
+  const [[ag]] = await pool.query(
+    `SELECT 
+        a.id, a.code, a.category, a.status,
+        a.groupId, g.code AS groupCode,
+        a.unitId, u.name AS unitName,
+        a.municipalityId, m.name AS municipalityName, m.dept,
+        a.nickname
+      FROM agent a
+      LEFT JOIN \`group\` g ON g.id = a.groupId
+      LEFT JOIN unit u ON u.id = a.unitId
+      LEFT JOIN municipality m ON a.municipalityId = m.id
+     WHERE a.id = ? LIMIT 1`,
+    [id]
+  );
+  if (!ag) return res.status(404).json({ error: 'Agente no encontrado' });
+
+  // Seguridad: leader_group solo ve agentes de su grupo
+  if (req.user.role === 'leader_group' && ag.groupId !== req.user.groupId) {
+    return res.status(403).json({ error: 'No autorizado' });
+  }
+
+  res.json({
+    ...ag,
+    nickname: ag.nickname ? decNullable(ag.nickname) : null
+  });
+});
 
 
 // Para líder de grupo: cumplimiento de unidades de SU grupo
