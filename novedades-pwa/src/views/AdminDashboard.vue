@@ -637,7 +637,10 @@ function formatTime (ts) {
 }
 
 function goToGroupDetail (r) {
-  router.push(`/admin/report/${r.id}`)
+  router.push({
+    path: `/admin/report/${r.id}`,
+    query: { date: date.value }
+  })
 }
 
 function goToGroupReport(r) {
