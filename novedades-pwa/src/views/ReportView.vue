@@ -199,7 +199,15 @@
                 >
                   <div class="flex justify-between items-center mb-2">
                     <div>
-                      <div class="font-bold text-base">{{ a.code }} <span class="font-normal text-xs">({{ displayCategory(a.category) }})</span></div>
+                      <div class="font-bold text-base">
+                        {{ a.code }}
+                        <span class="font-normal text-xs">
+                          ({{ displayCategory(a.category) }})
+                        </span>
+                        <span v-if="a.nickname" class="font-normal text-xs text-slate-500">
+                          — {{ a.nickname }}
+                        </span>
+                      </div>
                       <div class="text-xs text-gray-500 mt-0.5">Estado</div>
                     </div>
                     <button class="text-red-600 text-xs underline" @click="removeAgent(a.id)">Quitar</button>
