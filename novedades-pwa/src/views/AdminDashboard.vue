@@ -157,45 +157,15 @@
           <input type="date" v-model="date" class="input" />
         </div>
 
-        <!-- Admin/Supervisión: Grupo + Unidad -->
-        <template v-if="isAdminView">
-          <div>
-            <label class="label">Grupo</label>
-            <select v-model="selectedGroupId" class="input" @change="onChangeGrupo">
-              <option value="all">Todas</option>
-              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">
-                {{ g.code }} ({{ g.name }})
-              </option>
-            </select>
-          </div>
-          <div>
-            <label class="label">Unidad</label>
-            <select v-model="selectedUnitId" class="input">
-              <option value="all">Todas</option>
-              <option v-for="u in unitsOfSelectedGroup" :key="u.id" :value="String(u.id)">
-                {{ u.name }}
-              </option>
-            </select>
-          </div>
-        </template>
-
-        <!-- Líder de grupo: filtro de UNIDAD (para el mapa) -->
-        <template v-else-if="isLeaderGroup">
-          <div class="sm:col-span-2">
-            <label class="label">Unidad</label>
-            <select v-model="selectedLeaderUnitId" class="input">
-              <option value="all">Todas</option>
-              <option v-for="u in myUnits" :key="u.id" :value="String(u.id)">
-                {{ u.name }}
-              </option>
-            </select>
-          </div>
-        </template>
-
         <!-- Acciones -->
         <div class="flex gap-2 sm:col-span-2">
-          <button @click="applyFilters" class="btn-primary flex-1 sm:flex-none">Aplicar</button>
-          <button @click="descargarExcel" class="btn-ghost flex-1 sm:flex-none">Descargar</button>
+          <button
+            @click="descargarExcel"
+            class="flex-1 sm:flex-none inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700"
+            style="min-width: 90px;"
+          >
+            Descargar
+          </button>
         </div>
       </div>
     </div>
@@ -255,24 +225,15 @@
           <tbody>
             <tr v-for="r in tableRows" :key="r._key" class="hover:bg-slate-50">
               <td>
-                <template v-if="!isAdminView">
-                  <span class="inline-flex items-center gap-2 cursor-pointer hover:underline text-brand-700" @click="goToGroupDetail(r)">
-                    <span class="h-2 w-2 rounded-full bg-brand-600"></span>
-                    {{ r.unitName || r.groupCode }}
-                  </span>
-                </template>
-
-                <!-- ADMIN / SUPERVISOR: botón que navega al detalle del grupo -->
-                <template v-else>
-                  <button
-                    class="inline-flex items-center gap-2 text-brand-700 hover:underline"
-                    @click="goToGroupReport(r)"
-                    title="Ver detalle del grupo"
-                  >
-                    <span class="h-2 w-2 rounded-full" :class="r.isComplete ? 'bg-green-600' : 'bg-amber-600'"></span>
-                    {{ r.groupCode }}
-                  </button>
-                </template>
+                <button
+                  class="inline-flex items-center gap-2 text-brand-700 hover:underline"
+                  @click="goToGroupReport(r)"
+                  title="Ver detalle del grupo"
+                  style="background:none;border:none;padding:0;margin:0;cursor:pointer;"
+                >
+                  <span class="h-2 w-2 rounded-full" :class="r.isComplete ? 'bg-green-600' : 'bg-amber-600'"></span>
+                  {{ r.unitName || r.groupCode }}
+                </button>
               </td>
               <td>{{ fmtFechaColombia(r.submittedAt || r.time) }}</td>
               <td>{{ fmtHoraColombia(r.time || r.submittedAt) }}</td>
@@ -506,7 +467,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+
+import {ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
@@ -533,6 +495,7 @@ function tomorrowStr () {
   d.setDate(d.getDate() + 1)
   return d.toISOString().slice(0, 10)
 }
+
 const date = ref(tomorrowStr())
 
 const selectedGroupId = ref('all')
@@ -596,8 +559,6 @@ const novTotalDash = computed(() =>
   // o: feTotalDash.value - fdTotalDash.value
 )
 
-
-
 // === Helpers de fecha/hora en Colombia (America/Bogota) ===
 function toDateSafe(v) {
   if (!v) return null;
@@ -635,32 +596,58 @@ function fmtHoraColombia(v) {
   }).format(d);
 }
 
-
 function formatTime (ts) {
   if (!ts) return '—'
   const d = new Date(ts)
   return Number.isNaN(d.getTime()) ? '—' : d.toISOString().substring(11,16)
 }
 
-function goToGroupDetail (r) {
-  router.push({
-    path: `/admin/report/${r.id}`,
-    query: { date: date.value }
-  })
-}
-
 function goToGroupReport(r) {
-  const gid = r.groupId || r.group_id; // fallback por si el nombre cambia
-  if (!gid) {
-    console.warn('No se encontró groupId en la fila seleccionada', r);
+  let groupId = r.groupId || r.group_id || (me.value?.groupId);
+  // 🚨 unitId viene directamente en la fila r (si la tabla lo tiene)
+  let unitId = (typeof r.unitId !== 'undefined') ? String(r.unitId) : '';
+
+  if (!groupId) {
+    console.warn('No se encontró groupId para detalle de reporte', r);
     return;
   }
   router.push({
     path: '/admin/report',
-    query: { date: r.date, groupId: String(gid) }
+    query: {
+      date: r.date || date.value,
+      groupId: String(groupId),
+      unitId // 👉 lleva el que venga (puede ser vacío)
+    }
   });
 }
 
+async function goToGroupDetailButton() {
+  if (!selectedGroupId.value || selectedGroupId.value === 'all') return
+  try {
+    // Buscar el dailyreport de ese grupo en la fecha seleccionada
+    const { data } = await axios.get('/dashboard/reports', {
+      params: { date_from: date.value, date_to: date.value, groupId: selectedGroupId.value },
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    const items = Array.isArray(data?.items) ? data.items : []
+    if (!items.length) {
+      alert('No hay reporte para este grupo en la fecha seleccionada.')
+      return
+    }
+    // Navega al último reporte de ese grupo en esa fecha (usualmente solo uno)
+    const target = items.sort((a, b) => String(a.id).localeCompare(String(b.id))).pop()
+    router.push({
+      path: '/admin/report',
+      query: {
+        date: target.date || date.value,
+        groupId: String(target.groupId),
+        unitId: '' // O puedes ponerle 'all' si usas ese valor
+      }
+    })
+  } catch (e) {
+    alert('No se pudo encontrar el reporte para este grupo.')
+  }
+}
 
 
 // ===== Mapa
@@ -761,9 +748,6 @@ async function loadMapData () {
   }
 }
 
-
-
-
 function drawMap () {
   if (window.myMap) { window.myMap.remove(); window.myMap = null }
   const hasFsPlugin = !!(L.Control && L.Control.Fullscreen)
@@ -796,8 +780,6 @@ function drawMap () {
     }).addTo(window.myMap).bindPopup(popupHtml)
   })
 }
-
-
 
 // Fullscreen (fallback nativo)
 function toggleFullscreen () {
@@ -1112,8 +1094,6 @@ function buildCommonParams() {
   return params
 }
 
-
-
 // --- Detalle discriminado por novedad (por grupo/unidad)
 const novAmbitoDetRows = ref([]) // [{ label, novedad, OF, ME, PT, total }]
 
@@ -1192,10 +1172,6 @@ async function loadNovDetails() {
   )
 }
 
-
-
-
-
 async function applyFilters () {
   await load()
   if (isLeaderGroup.value) await loadComplianceLeader()
@@ -1235,6 +1211,10 @@ onMounted(async () => {
   document.addEventListener('click', onComplianceOutsideClick)
 })
 onBeforeUnmount(() => document.removeEventListener('click', onComplianceOutsideClick))
+
+watch([date, selectedGroupId, selectedUnitId], async () => {
+  await applyFilters()
+})
 </script>
 
 <style scoped>

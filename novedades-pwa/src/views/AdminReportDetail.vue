@@ -21,7 +21,17 @@
               <label class="label">Fecha</label>
               <input type="date" v-model="filterDate" class="input" @change="onChangeDate" />
             </div>
-
+            <div>
+              <label class="label">Grupo</label>
+              <!-- Solo para superadmin/supervision es editable -->
+              <select v-model="selectedGroupId" class="input" :disabled="isLeaderGroup">
+                <option value="all" v-if="!isLeaderGroup">Todos</option>
+                <option v-for="g in grupos" :key="g.id" :value="String(g.id)">
+                  {{ g.code }} ({{ g.name }})
+                </option>
+              </select>
+              
+            </div>
             <div class="sm:col-span-3">
               <label class="label">Unidad</label>
               <select v-model="filterUnitId" class="input" @change="onChangeUnit">
@@ -260,6 +270,25 @@ import { saveAs } from 'file-saver'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
 
+// ===== Grupos (para el filtro) =====
+const grupos = ref([])
+
+async function loadGrupos() {
+  try {
+    const { data } = await axios.get('/admin/groups', {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    grupos.value = Array.isArray(data) ? data : []
+    // Opcional debug:
+    // console.log("Grupos:", grupos.value)
+  } catch {
+    grupos.value = []
+  }
+}
+
+const isLeaderGroup = computed(() => me.value && me.value.role === 'leader_group')
+const selectedGroupId = ref('all')
+
 const route = useRoute()
 const router = useRouter()
 
@@ -365,6 +394,7 @@ async function loadUnitsIndex(date) {
       String(a.name || '').localeCompare(String(b.name || ''))
     )
 
+    
     // Respeta selección entrante desde Dashboard
     const qUnit = String(route.query.unitId || '')
     if (qUnit) {
@@ -382,11 +412,10 @@ async function loadUnitsIndex(date) {
         }
       }
     } else {
-      // Si no vino unitId y no hay selección previa, puedes sugerir la primera (opcional)
-      if (!filterUnitId.value) {
-        filterUnitId.value = unitOptions.value[0]?.id ? String(unitOptions.value[0].id) : ''
-      }
+      // NO rellenar la unidad por defecto, solo dejar vacío
+      filterUnitId.value = ''
     }
+
   } catch (e) {
     console.error('loadUnitsIndex error', e)
     unitOptions.value = []
@@ -830,6 +859,11 @@ async function exportarExcel(){
 onMounted(async () => {
   loading.value = true
   await loadMe()
+  await loadGrupos()
+
+  // Inicializa con lo que venga del query
+  const groupIdQInit = route.query.groupId ? String(route.query.groupId) : (isLeaderGroup.value && grupos.value[0] ? String(grupos.value[0].id) : 'all')
+  selectedGroupId.value = groupIdQInit
 
   try {
     // 1) Tomar parámetros iniciales desde el Dashboard
@@ -856,6 +890,9 @@ onMounted(async () => {
       } else {
         headerOk.value = false
       }
+    }
+    if (isLeaderGroup.value && grupos.value.length) {
+      selectedGroupId.value = String(grupos.value[0].id)
     }
   } catch {
     headerOk.value = false
@@ -903,8 +940,43 @@ watch(
     }
   }
 )
+watch(selectedGroupId, async (newG, oldG) => {
+  if (newG !== oldG) {
+    // Cambia groupId en la URL (y quita unitId, para que la unidad se refresque)
+    await router.replace({
+      name: route.name,
+      params: route.params,
+      query: {
+        ...route.query,
+        groupId: newG === 'all' ? undefined : newG,
+        unitId: '', // resetea la unidad al cambiar de grupo
+      },
+    })
+    // Carga nuevas unidades de ese grupo y resetea filtros si es necesario
+    await loadUnitsIndex(filterDate.value)
+    // Si quieres recargar la tabla o dashboard
+    if (newG !== 'all') {
+      await loadGroupReports(filterDate.value, newG)
+    } else {
+      // Puedes mostrar todas las unidades o dejar vacío
+      agentes.value = []
+      headerOk.value = false
+    }
+  }
+})
 
-
+watch(
+  () => route.query.groupId,
+  (newG) => {
+    // Esto sincroniza si navegas con el browser o pegas un link
+    if (newG && String(selectedGroupId.value) !== String(newG)) {
+      selectedGroupId.value = String(newG)
+    }
+    if (!newG && selectedGroupId.value !== 'all') {
+      selectedGroupId.value = 'all'
+    }
+  }
+)
 
 </script>
 
