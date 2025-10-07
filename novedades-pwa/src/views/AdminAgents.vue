@@ -2,7 +2,7 @@
   <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
     <!-- Encabezado -->
     <div class="card-body flex items-center justify-between">
-        <h2 class="font-semibold text-slate-800">Listado de agentes</h2>
+        <h1 class="font-semibold text-slate-800">Listado de agentes</h1>
         <div class="flex items-center gap-3">
           <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
           <button v-if="isSuperadmin" class="btn-primary" @click="openCreate">Nuevo agente</button>
@@ -434,9 +434,13 @@ async function loadAgents() {
         params.category = filters.value.cat === 'ME' ? 'SO' : filters.value.cat
 
       const { data } = await axios.get('/admin/agents-streaks', {
-        params,
+        params: {
+          ...params,
+          date: today.value // <-- Agrega la fecha seleccionada
+        },
         headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
       })
+
 
       items.value = normalizeAgents(data?.items || [])
       total.value = Number(data?.total || 0)
@@ -802,6 +806,11 @@ async function deleteAgent(a){
     msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo eliminar'
   }
 }
+watch(today, () => {
+  page.value = 1
+  loadAgents()
+})
+
 
 /* ===== Init ===== */
 onMounted(async () => {

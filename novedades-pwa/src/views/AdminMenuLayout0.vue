@@ -69,69 +69,69 @@
                 </div>
                 </transition>
             </div>
-
-            <!-- VEHICULOS -->
-            <div>
-                <button
-                class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                @click="selectAccordion('vehiculos')"
-                :class="openSection === 'vehiculos' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-                >
-                <Car class="w-5 h-5" />
-                <span class="flex-1 text-left">Vehículos</span>
-                <svg :class="['size-4 transition-transform', openSection === 'vehiculos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                </svg>
-                </button>
-                <transition name="fade">
-                <div v-if="openSection === 'vehiculos'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin/vehicles" icon="vehicles" :collapsed="collapsed" label="Vehículos" dark />
-                </div>
-                </transition>
-            </div>
-
-            <!-- SERVICIOS -->
-            <div>
-                <button
-                class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                @click="selectAccordion('servicios')"
-                :class="openSection === 'servicios' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-                >
-                <Wrench class="w-5 h-5" />
-                <span class="flex-1 text-left">Servicios</span>
-                <svg :class="['size-4 transition-transform', openSection === 'servicios' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                </svg>
-                </button>
-                <transition name="fade">
-                <div v-if="openSection === 'servicios'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin/services" icon="services" :collapsed="collapsed" label="Servicios" dark />
-                </div>
-                </transition>
-            </div>
-
-            <!-- GASTOS -->
-            <div>
-                <button
-                class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                @click="selectAccordion('gastos')"
-                :class="openSection === 'gastos' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-                >
-                <Wallet class="w-5 h-5" />
-                <span class="flex-1 text-left">Gastos</span>
-                <svg :class="['size-4 transition-transform', openSection === 'gastos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                </svg>
-                </button>
-                <transition name="fade">
-                <div v-if="openSection === 'gastos'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin/expenses" icon="expenses" :collapsed="collapsed" label="Gastos" dark />
-                </div>
-                </transition>
-            </div>
-
-            <!-- CONFIGURACIÓN (solo superadmin) -->
+              <!-- solo superadmin -->
             <template v-if="canSee(['superadmin'])">
+                <!-- VEHICULOS -->
+                <div>
+                    <button
+                    class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                    @click="selectAccordion('vehiculos')"
+                    :class="openSection === 'vehiculos' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+                    >
+                    <Car class="w-5 h-5" />
+                    <span class="flex-1 text-left">Vehículos</span>
+                    <svg :class="['size-4 transition-transform', openSection === 'vehiculos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    </button>
+                    <transition name="fade">
+                    <div v-if="openSection === 'vehiculos'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                        <SidebarItem to="/admin/vehicles" icon="vehicles" :collapsed="collapsed" label="Vehículos" dark />
+                    </div>
+                    </transition>
+                </div>
+
+                <!-- SERVICIOS -->
+                <div>
+                    <button
+                    class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                    @click="selectAccordion('servicios')"
+                    :class="openSection === 'servicios' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+                    >
+                    <Wrench class="w-5 h-5" />
+                    <span class="flex-1 text-left">Servicios</span>
+                    <svg :class="['size-4 transition-transform', openSection === 'servicios' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    </button>
+                    <transition name="fade">
+                    <div v-if="openSection === 'servicios'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                        <SidebarItem to="/admin/services" icon="services" :collapsed="collapsed" label="Servicios" dark />
+                    </div>
+                    </transition>
+                </div>
+                
+                <!-- GASTOS -->
+                <div>
+                    <button
+                    class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                    @click="selectAccordion('gastos')"
+                    :class="openSection === 'gastos' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+                    >
+                    <Wallet class="w-5 h-5" />
+                    <span class="flex-1 text-left">Gastos</span>
+                    <svg :class="['size-4 transition-transform', openSection === 'gastos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    </button>
+                    <transition name="fade">
+                    <div v-if="openSection === 'gastos'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                        <SidebarItem to="/admin/expenses" icon="expenses" :collapsed="collapsed" label="Gastos" dark />
+                    </div>
+                    </transition>
+                </div>
+
+                <!-- CONFIGURACIÓN -->
                 <div>
                 <button
                     class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"

@@ -1045,10 +1045,6 @@ app.get('/catalogs/municipalities', auth, async (req, res) => {
   }
 });
 
-
-
-
-
 // ---------- Guardar reporte (actualiza solo agent y dailyreport) ----------
 app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmin', 'supervision'), async (req, res) => {
   const { reportDate, people = [] } = req.body;
@@ -2294,16 +2290,20 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       [...params, ps, offset]
     );
 
+    // === AGREGA BLOQUE DE FECHA Y AGENTES ===
+    const dateLimit = req.query.date || new Date().toISOString().slice(0,10);
+
     const agentIds = agents.map(a => a.agentId);
     if (agentIds.length === 0) {
       return res.json({ page: p, pageSize: ps, total: 0, items: [] });
     }
 
-    // Última novedad (municipio/depto) de cada agente
-    const [latestMunicipalities] = await pool.query(
+    // ======= ÚLTIMA NOVEDAD DEL AGENTE (ESTADO) HASTA ESA FECHA =======
+    const [latestNovedades] = await pool.query(
       `
       SELECT
         da.agentId,
+        da.state AS status,
         da.municipalityId,
         m.name AS municipalityName,
         m.dept
@@ -2315,23 +2315,23 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
           SELECT MAX(dr2.reportDate)
           FROM dailyreport_agent da2
           JOIN dailyreport dr2 ON dr2.id = da2.reportId
-          WHERE da2.agentId = da.agentId
+          WHERE da2.agentId = da.agentId AND dr2.reportDate <= ?
         )
       ORDER BY da.agentId
       `,
-      agentIds
+      [...agentIds, dateLimit]
     );
-
-    const municipalityMap = {};
-    for (const row of latestMunicipalities) {
-      municipalityMap[row.agentId] = {
+    const novedadesMap = {};
+    for (const row of latestNovedades) {
+      novedadesMap[row.agentId] = {
+        status: row.status,
         municipalityId: row.municipalityId,
         municipalityName: row.municipalityId ? `${row.dept} - ${row.municipalityName}` : '',
         dept: row.dept || ''
       };
     }
 
-    // Cargar reportes de los agentes (para la racha)
+    // ======= DÍAS LABORADOS (SOLO HASTA ESA FECHA) =======
     const [reports] = await pool.query(
       `
       SELECT
@@ -2341,12 +2341,11 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       FROM dailyreport_agent dra
       JOIN dailyreport dr ON dr.id = dra.reportId
       WHERE dra.agentId IN (${agentIds.map(() => '?').join(',')})
+        AND dr.reportDate <= ?
       ORDER BY dra.agentId, dr.reportDate DESC
       `,
-      agentIds
+      [...agentIds, dateLimit]
     );
-
-    // Agrupa reportes por agenteId
     const repMap = {};
     for (const r of reports) {
       if (!repMap[r.agentId]) repMap[r.agentId] = [];
@@ -2356,11 +2355,10 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       });
     }
 
-    // Estados válidos para la racha
     function normalizeState(s) {
       return String(s || '')
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Quita tildes
-        .replace(/\s+/g, ' ') // Espacios múltiples a uno solo
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
         .trim()
         .toUpperCase();
     }
@@ -2388,7 +2386,7 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       streaks[agent.agentId] = streak;
     }
 
-    // Devuelve los agentes con su racha actual y municipio última novedad
+    // ==== RESPUESTA FINAL: Incluye estado y municipio para ese día ====
     res.json({
       page: p,
       pageSize: ps,
@@ -2397,9 +2395,10 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
         ...a,
         nickname: a.nickname ? decNullable(a.nickname) : null,
         current_streak: streaks[a.agentId] ?? 0,
-        municipalityId: municipalityMap[a.agentId]?.municipalityId ?? null,
-        municipalityName: municipalityMap[a.agentId]?.municipalityName ?? '',
-        dept: municipalityMap[a.agentId]?.dept ?? ''
+        status: novedadesMap[a.agentId]?.status || a.status || null,
+        municipalityId: novedadesMap[a.agentId]?.municipalityId ?? null,
+        municipalityName: novedadesMap[a.agentId]?.municipalityName ?? '',
+        dept: novedadesMap[a.agentId]?.dept ?? ''
       })),
     });
 
@@ -2408,6 +2407,7 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
     res.status(500).json({ error: 'AgentStreakError', detail: e.message });
   }
 });
+
 
 
 // Obtener un agente por id (incluye joins útiles)
