@@ -1,16 +1,20 @@
+// src/router/index.js
 import { createRouter, createWebHistory } from 'vue-router'
 import ReportView from '../views/ReportView.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
 import AdminGroups from '../views/AdminGroups.vue'
 import AdminUsers from '../views/AdminUsers.vue'
-import AdminAgents from '../views/AdminAgents.vue'
 import Perfil from '../views/Perfil.vue'
 import AdminUnits from '../views/AdminUnits.vue'
-import AdminMenuLayout from '../views/AdminMenuLayout.vue'
+import AdminAgents from '../views/AdminAgents.vue'
+import MainDashboard from '../views/MainDashboard.vue'
+
+// ⬇️ Usa el layout con sidebar:
+import AdminMenuLayout0 from '../views/AdminMenuLayout0.vue'
+
 const AdminReportDetail = () => import('../views/AdminReportDetail.vue')
 import { http } from '../lib/http'
-
 // Helper: redirigir por rol
 function homeByRole(role) {
   const r = String(role || '').toLowerCase()
@@ -18,6 +22,7 @@ function homeByRole(role) {
   // superadmin / supervision / leader_group
   return '/admin'
 }
+
 
 // Rutas
 const routes = [
@@ -36,36 +41,22 @@ const routes = [
 
   // Todo lo de admin bajo el layout
   {
-    path: '/admin',
-    component: AdminMenuLayout,
-    meta: { requiresAuth: true },
-    children: [
-      // Dashboard (superadmin/supervision/leader_group)
-      { path: '', name: 'AdminHome', component: AdminDashboard, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-
-      // Grupos (superadmin/supervision)
-      { path: 'groups', name: 'AdminGroups', component: AdminGroups, meta: { roles: ['superadmin', 'supervision'] } },
-
-      // Unidades (superadmin/supervision/leader_group)
-      { path: 'units',  name: 'AdminUnits',  component: AdminUnits,  meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-
-      // Usuarios: SOLO superadmin
-      { path: 'users',  name: 'AdminUsers',  component: AdminUsers,  meta: { roles: ['superadmin'] } },
-
-      // Agentes (superadmin/supervision/leader_group)
-      { path: 'agents', name: 'AdminAgents', component: AdminAgents, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-
-      // (Opcional) Perfil también bajo /admin, pero con roles explícitos (incluye leader_unit)
-      { path: 'perfil', name: 'PerfilAdmin', component: Perfil, meta: { roles: ['superadmin','supervision','leader_group','leader_unit'] } },
-
-      // Detalle de reporte: permitido a superadmin/supervision/leader_group
-      { path: 'report/:id', name: 'ReportUnit', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-      { path: 'report',     name: 'ReportGroup', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-
-      // Log de eventos (solo superadmin)
-      { path: 'audit', name: 'AuditLog', component: () => import('@/views/AdminAuditLog.vue'), meta: { roles: ['superadmin'] } },
-    ]
-  },
+  path: '/admin',
+  component: AdminMenuLayout0, // ⬅️ aquí el cambio
+  meta: { requiresAuth: true },
+  children: [
+    { path: '', name: 'AdminHome', component: AdminDashboard, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
+    { path: 'groups', name: 'AdminGroups', component: AdminGroups, meta: { roles: ['superadmin', 'supervision'] } },
+    { path: 'units',  name: 'AdminUnits',  component: AdminUnits,  meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
+    { path: 'users',  name: 'AdminUsers',  component: AdminUsers,  meta: { roles: ['superadmin'] } },
+    { path: 'agents', name: 'AdminAgents', component: AdminAgents, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
+    { path: 'perfil', name: 'PerfilAdmin', component: Perfil, meta: { roles: ['superadmin','supervision','leader_group','leader_unit'] } },
+    { path: 'report/:id', name: 'ReportUnit', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
+    { path: 'report',     name: 'ReportGroup', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
+    { path: 'audit', name: 'AuditLog', component: () => import('@/views/AdminAuditLog.vue'), meta: { roles: ['superadmin'] } },
+    {  path: '/admin/dashboard',  name: 'MainDashboard',  component: MainDashboard,  meta: { roles: ['superadmin', 'supervision', 'leader_group'] }},
+  ]
+},
 
   // Fallback
   { path: '/:pathMatch(.*)*', redirect: '/admin' }
