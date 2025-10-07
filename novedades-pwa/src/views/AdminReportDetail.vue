@@ -73,22 +73,14 @@
                   <option v-for="s in estadosValidos" :key="s" :value="s">{{ s }}</option>
                 </select>
               </div>
-              <div v-if="isGroupMode">
-                <label class="label">Unidad</label>
-                <select v-model="filters.unitId" class="input">
-                  <option value="ALL">Todas</option>
-                  <option v-for="u in unitsInGroup" :key="u.id" :value="String(u.id)">
-                    {{ u.name }}
-                  </option>
-                </select>
-              </div>
+              
               <div class="flex items-center gap-2 mt-2 sm:mt-0">
                 <input id="solo-nov" type="checkbox" v-model="filters.onlyNovelties" class="h-4 w-4" />
                 <label class="label cursor-pointer" for="solo-nov">Solo novedades</label>
               </div>
               <div class="flex gap-2">
-                <button class="btn-primary flex-1 sm:flex-none" @click="reload">Aplicar</button>
-                <button class="btn-ghost flex-1 sm:flex-none" @click="exportarExcel">Exportar</button>
+                
+                <button             class="flex-1 sm:flex-none inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700" @click="exportarExcel">Descargar</button>
               </div>
             </div>
 

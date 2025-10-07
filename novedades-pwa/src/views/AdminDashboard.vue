@@ -438,14 +438,16 @@
           <table class="table w-full text-sm">
             <thead>
               <tr class="bg-slate-50">
-                <th class="w-[40%]">Código</th>
-                <th class="w-[20%]">Cat.</th>
-                <th class="w-[40%]">Grupo</th>
+                <th class="w-[25%]">Código</th>
+                <th class="w-[25%]">Agente</th>
+                <th class="w-[25%]">Cat.</th>
+                <th class="w-[25%]">Grupo</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="a in agentesSinUnidadList" :key="a.id">
                 <td class="font-semibold">{{ a.code }}</td>
+                <td class="font-semibold">{{ a.nickname }}</td>
                 <td>{{ a.category === 'SO' ? 'ME' : a.category }}</td>
                 <td>{{ a.groupCode || ('G'+(a.groupId ?? '—')) }}</td>
               </tr>
