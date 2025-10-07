@@ -1,163 +1,60 @@
 <template>
-  <!-- Filtros -->
-  <div class="card mb-2">
-    <div class="card-body">
-      <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 sm:items-end">
-        <div>
-          <label class="label">Fecha</label>
-          <input type="date" v-model="date" class="input" />
-        </div>
-
-        <!-- Admin/Supervisión: Grupo + Unidad -->
-        <template v-if="isAdminView">
-          <div>
-            <label class="label">Grupo</label>
-            <select v-model="selectedGroupId" class="input" @change="onChangeGrupo">
-              <option value="all">Todas</option>
-              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">
-                {{ g.code }} ({{ g.name }})
-              </option>
-            </select>
-          </div>
-          <div>
-            <label class="label">Unidad</label>
-            <select v-model="selectedUnitId" class="input">
-              <option value="all">Todas</option>
-              <option v-for="u in unitsOfSelectedGroup" :key="u.id" :value="String(u.id)">
-                {{ u.name }}
-              </option>
-            </select>
-          </div>
-        </template>
-
-        <!-- Líder de grupo: filtro de UNIDAD (para el mapa) -->
-        <template v-else-if="isLeaderGroup">
-          <div class="sm:col-span-2">
-            <label class="label">Unidad</label>
-            <select v-model="selectedLeaderUnitId" class="input">
-              <option value="all">Todas</option>
-              <option v-for="u in myUnits" :key="u.id" :value="String(u.id)">
-                {{ u.name }}
-              </option>
-            </select>
-          </div>
-        </template>
-
-        <!-- Acciones -->
-        <div class="flex gap-2 sm:col-span-2">
-          <button @click="applyFilters" class="btn-primary flex-1 sm:flex-none">Aplicar</button>
-          <button @click="descargarExcel" class="btn-ghost flex-1 sm:flex-none">Descargar</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-    <!-- KPIs -->
-   
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div class="kpi">
-            <div class="card-body">
-              <h4>FE total (OF/ME/PT)</h4>
-              <div class="value text-lg">
-                {{ kpiFE }}
-                <span class="text-sm text-slate-500"> ({{ feTotalDash }})</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="kpi">
-            <div class="card-body">
-              <h4>FD total (OF/ME/PT)</h4>
-              <div class="value text-lg">
-                {{ kpiFD }}
-                <span class="text-sm text-slate-500"> ({{ fdTotalDash }})</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="kpi">
-            <div class="card-body">
-              <div class="flex items-center justify-between gap-2">
-                <h4>Novedades totales (OF/ME/PT)</h4>
-                <button class="btn-ghost h-8 px-2 text-xs" @click="openNovModal">Detalles</button>
-              </div>
-              <div class="value text-lg">
-                {{ kpiNOV }}
-                <span class="text-sm text-slate-500"> ({{ novTotalDash }})</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-
-
- 
-  <!-- Agentes sin unidad -->
-<div class="flex flex-col sm:flex-row gap-3">
-  <div
-    class="kpi flex-1 border"
-    :class="agentesSinUnidad > 0 ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'"
-  >
-    <div class="card-body">
-      <div class="flex items-center justify-between">
-        <h4 class="font-semibold text-slate-800">Agentes sin unidad</h4>
-        <button
-          v-if="agentesSinUnidad > 0"
-          class="btn-ghost h-8 px-2 text-xs"
-          @click="openSinUnidadModal"
-        >
-          Ver detalle
-        </button>
-      </div>
-      <div
-        class="value font-bold text-xl"
-        :class="agentesSinUnidad > 0 ? 'text-amber-700' : 'text-slate-700'"
-        @click="agentesSinUnidad > 0 && openSinUnidadModal()"
-        style="cursor: pointer;"
-        title="Clic para ver los agentes sin unidad"
-      >
-        {{ agentesSinUnidad }}
-      </div>
-    
-    </div>
-  </div>
-</div>
-
-
-  <!-- Mapa -->
-  <div class="card">
-    <div class="card-body">
-      <h3 class="font-semibold mb-3 text-slate-700">Mapa de ubicación de agentes</h3>
-      <div class="relative">
-        <div id="mapa-agentes"
-             class="relative z-0"
-             style="height:300px;min-height:200px;width:100%;border-radius:12px;box-shadow:0 2px 8px #0001;background:#eee;">
-        </div>
-        <!-- Botón overlay Pantalla Completa -->
-        <button class="map-fs-btn" type="button" title="Pantalla completa" aria-label="Pantalla completa del mapa"
-                @click="toggleFullscreen">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-            <path d="M9 3H3v6M3 3l6 6M15 21h6v-6M21 21l-6-6M21 9V3h-6M15 9l6-6M3 15v6h6M9 15l-6 6"
-                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-  </div>
-
+<div class="space-y-4"> <!-- Este div es el "stack" vertical de tus tarjetas -->
   <!-- Cumplimiento -->
   <div class="card" ref="complianceBox">
-    <div class="card-body space-y-4">
-      <div class="flex items-center justify-between flex-wrap">
+  <div class="card-body space-y-4">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div class="flex items-center gap-2">
         <h3 class="font-semibold text-slate-800">
           Cumplimiento <span class="text-slate-500 font-normal">(diario)</span>
           <template v-if="isAdminView">
             <span class="text-slate-400 font-normal text-sm ml-2">Grupos completos = todas sus unidades</span>
           </template>
         </h3>
-        <button class="btn-ghost" @click="reloadCompliance">Actualizar</button>
+        <button class="btn-ghost ml-2" @click="reloadCompliance">Actualizar</button>
       </div>
+      <!-- KPI agentes sin unidad a la derecha -->
+      <div
+        class="hidden sm:flex items-center gap-2"
+      >
+        <div
+          class="border rounded-xl px-4 py-1 flex items-center gap-2 text-xs font-medium"
+          :class="agentesSinUnidad > 0 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-700'"
+          style="min-width:120px;"
+        >
+          <span>Funcionarios sin unidad:</span>
+          <span class="font-bold text-lg">{{ agentesSinUnidad }}</span>
+          <button
+            v-if="agentesSinUnidad > 0"
+            class="btn-ghost px-1 py-0 h-7 text-xs"
+            @click="openSinUnidadModal"
+            title="Ver detalle"
+          >
+            Detalle
+          </button>
+        </div>
+      </div>
+    </div>
 
+    <!-- Para MOBILE: debajo del header -->
+    <div class="flex sm:hidden mt-3">
+      <div
+        class="border rounded-xl px-4 py-1 flex items-center gap-2 text-xs font-medium w-full"
+        :class="agentesSinUnidad > 0 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-700'"
+      >
+        <span>Agentes sin unidad:</span>
+        <span class="font-bold text-lg">{{ agentesSinUnidad }}</span>
+        <button
+          v-if="agentesSinUnidad > 0"
+          class="btn-ghost px-1 py-0 h-7 text-xs"
+          @click="openSinUnidadModal"
+          title="Ver detalle"
+        >
+          Detalle
+        </button>
+      </div>
+    </div>
+      
       <!-- Líder de grupo -->
       <template v-if="isLeaderGroup">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -251,7 +148,95 @@
       </template>
     </div>
   </div>
+  <!-- Filtros -->
+  <div class="card mb-2">
+    <div class="card-body">
+      <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 sm:items-end">
+        <div>
+          <label class="label">Fecha</label>
+          <input type="date" v-model="date" class="input" />
+        </div>
 
+        <!-- Admin/Supervisión: Grupo + Unidad -->
+        <template v-if="isAdminView">
+          <div>
+            <label class="label">Grupo</label>
+            <select v-model="selectedGroupId" class="input" @change="onChangeGrupo">
+              <option value="all">Todas</option>
+              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">
+                {{ g.code }} ({{ g.name }})
+              </option>
+            </select>
+          </div>
+          <div>
+            <label class="label">Unidad</label>
+            <select v-model="selectedUnitId" class="input">
+              <option value="all">Todas</option>
+              <option v-for="u in unitsOfSelectedGroup" :key="u.id" :value="String(u.id)">
+                {{ u.name }}
+              </option>
+            </select>
+          </div>
+        </template>
+
+        <!-- Líder de grupo: filtro de UNIDAD (para el mapa) -->
+        <template v-else-if="isLeaderGroup">
+          <div class="sm:col-span-2">
+            <label class="label">Unidad</label>
+            <select v-model="selectedLeaderUnitId" class="input">
+              <option value="all">Todas</option>
+              <option v-for="u in myUnits" :key="u.id" :value="String(u.id)">
+                {{ u.name }}
+              </option>
+            </select>
+          </div>
+        </template>
+
+        <!-- Acciones -->
+        <div class="flex gap-2 sm:col-span-2">
+          <button @click="applyFilters" class="btn-primary flex-1 sm:flex-none">Aplicar</button>
+          <button @click="descargarExcel" class="btn-ghost flex-1 sm:flex-none">Descargar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+   
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="kpi">
+            <div class="card-body">
+              <h4>FE total (OF/ME/PT)</h4>
+              <div class="value text-lg">
+                {{ kpiFE }}
+                <span class="text-sm text-slate-500"> ({{ feTotalDash }})</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kpi">
+            <div class="card-body">
+              <h4>FD total (OF/ME/PT)</h4>
+              <div class="value text-lg">
+                {{ kpiFD }}
+                <span class="text-sm text-slate-500"> ({{ fdTotalDash }})</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kpi">
+            <div class="card-body">
+              <div class="flex items-center justify-between gap-2">
+                <h4>Novedades totales (OF/ME/PT)</h4>
+                <button class="btn-ghost h-8 px-2 text-xs" @click="openNovModal">Detalles</button>
+              </div>
+              <div class="value text-lg">
+                {{ kpiNOV }}
+                <span class="text-sm text-slate-500"> ({{ novTotalDash }})</span>
+              </div>
+            </div>
+          </div>
+        </div>
   <!-- Tabla -->
   <div class="card">
     <div class="card-body p-0">
@@ -301,6 +286,27 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mapa -->
+  <div class="card">
+    <div class="card-body">
+      <h3 class="font-semibold mb-3 text-slate-700">Mapa de ubicación de agentes</h3>
+      <div class="relative">
+        <div id="mapa-agentes"
+             class="relative z-0"
+             style="height:300px;min-height:200px;width:100%;border-radius:12px;box-shadow:0 2px 8px #0001;background:#eee;">
+        </div>
+        <!-- Botón overlay Pantalla Completa -->
+        <button class="map-fs-btn" type="button" title="Pantalla completa" aria-label="Pantalla completa del mapa"
+                @click="toggleFullscreen">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M9 3H3v6M3 3l6 6M15 21h6v-6M21 21l-6-6M21 9V3h-6M15 9l6-6M3 15v6h6M9 15l-6 6"
+                  stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </div>
     </div>
   </div>
@@ -493,7 +499,7 @@
     </div>
   </div>
 </div>
-
+</div>
 
 
 
@@ -827,8 +833,16 @@ async function loadAgentesSinUnidad () {
       headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
     })
 
-    // 3) Filtrar por seguridad (unitId null/0)
-    let list = (Array.isArray(data) ? data : []).filter(a => !a.unitId)
+   // 3) Filtrar por seguridad (unitId null/0)
+    let arr = Array.isArray(data.items) ? data.items : [];
+    let list = arr.filter(a =>
+      !a.unitId ||
+      a.unitId === null ||
+      a.unitId === undefined ||
+      a.unitId === '' ||
+      a.unitId === 0 ||
+      a.unitId === 'null'
+    );
 
     // 4) Ordenar por categoría y código
     const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }

@@ -157,7 +157,7 @@
             </nav>
 
             <div class="mt-auto p-2 text-[11px] text-slate-300" v-if="!collapsed">
-            TZ: America/Bogota
+            Bogota
             </div>
         </div>
         </aside>

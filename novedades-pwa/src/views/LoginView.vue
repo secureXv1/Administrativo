@@ -15,8 +15,8 @@
         <div class="w-16 h-16 rounded-full bg-gradient-to-tr from-brand-600 to-blue-500 shadow-lg flex items-center justify-center text-white text-3xl font-extrabold">
           <svg class="w-10 h-10" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="24" fill="url(#grad1)"/><text x="50%" y="60%" text-anchor="middle" fill="#fff" font-size="26" font-family="Arial" dy=".3em">N</text><defs><linearGradient id="grad1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop stop-color="#0ea5e9"/><stop offset="1" stop-color="#1e40af"/></linearGradient></defs></svg>
         </div>
-        <h1 class="text-2xl font-bold text-slate-900 tracking-tight mt-1">Novedades</h1>
-        <p class="text-xs text-slate-500">Accede a tu panel institucional</p>
+        <h1 class="text-2xl font-bold text-slate-900 tracking-tight mt-1"></h1>
+        <p class="text-xs text-slate-500 text-center">Está ingresando a un sistema de información, su uso no autorizado incurre en el incumplimiento de las políticas de seguridad de la información.</p>
       </div>
       <!-- Login form -->
       <form @submit.prevent="login" class="w-full flex flex-col gap-5">
@@ -75,9 +75,7 @@
         <!-- Recordar y botón -->
         <div class="flex items-center justify-between">
           <label class="inline-flex items-center gap-2 text-xs text-slate-600">
-            <input type="checkbox" class="form-checkbox rounded text-brand-600" v-model="remember" />
-            Recordarme
-          </label>
+           </label>
           <button
             type="submit"
             class="bg-brand-600 hover:bg-brand-700 transition text-white font-bold px-8 py-2 rounded-full shadow-lg text-base"
@@ -90,11 +88,7 @@
       </form>
       <!-- Footer -->
       <div class="flex justify-between items-center mt-8 w-full text-xs text-slate-400">
-        <div class="flex gap-3">
-          <a href="https://www.tusitio.com" target="_blank" class="hover:text-brand-600 transition"><svg class="w-5 h-5" fill="currentColor"><circle cx="12" cy="12" r="12" fill="#0ea5e9"/></svg></a>
-          <a href="#" class="hover:text-brand-600 transition"><svg class="w-5 h-5" fill="currentColor"><rect width="20" height="20" x="2" y="2" rx="5" fill="#1e40af"/></svg></a>
-        </div>
-        <span>© {{ new Date().getFullYear() }} Sistema Novedades</span>
+        <span>© {{ new Date().getFullYear() }} itsnvds</span>
       </div>
     </div>
   </div>
@@ -128,7 +122,7 @@ async function login () {
     if (me?.role === 'superadmin' || me?.role === 'supervision') {
       router.push('/admin/dashboard')
     } else if (me?.role === 'leader_group') {
-      router.push('/admin/dashboard')
+      router.push('/admin/')
     } else if (me?.role === 'leader_unit') {
       router.push('/report')
     } else {
