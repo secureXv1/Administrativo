@@ -62,7 +62,7 @@ const routes = [
   { path: '/:pathMatch(.*)*', redirect: '/admin' }
 ]
 
-const router = createRouter({ history: createWebHistory(), routes })
+const router = createRouter({ history: createWebHistory('/login/'), routes })
 
 // ====== Guarda de navegación ======
 async function getMe() {
