@@ -1739,9 +1739,8 @@ app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervi
 
 // Crear agente (con nickname cifrado)
 app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
-  const { code, category, groupId, unitId, status, municipalityId, nickname } = req.body;
+  const { code, category, groupId, unitId, nickname } = req.body;
 
-  // Validaciones existentes
   if (!/^[A-Z][0-9]+$/.test(code)) return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
   if (!['OF','SO','PT'].includes(category)) return res.status(422).json({ error: 'Categoría inválida' });
 
@@ -1754,37 +1753,18 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     if (!u) return res.status(404).json({ error: 'Unidad no existe' });
   }
 
-  let s = String(status || 'SIN NOVEDAD').toUpperCase().trim();
-  if (!isValidState(s)) return res.status(422).json({ error: 'Estado inválido', detail: `Recibido: ${status}` });
-
-  let muniId = municipalityId ? Number(municipalityId) : null;
-  if (s === 'SIN NOVEDAD' || s === 'SERVICIO') muniId = 11001;
-  else if (s === 'COMISIÓN DEL SERVICIO' && !muniId) return res.status(422).json({ error: 'Falta municipalityId para Comisión del servicio' });
-  else if (s === 'FRANCO FRANCO') muniId = null;
-  else muniId = null;
-
-  if (muniId) {
-    const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [muniId]);
-    if (!m) return res.status(404).json({ error: 'Municipio no existe' });
-  }
-
-  // Cifrado de nickname (NULL si viene vacío/undefined)
   const encNick = encNullable(nickname && String(nickname).trim() !== '' ? String(nickname) : null);
 
+  // ❌ ignorar cualquier status/municipalityId que envíen
+  const status = 'SIN NOVEDAD';
+  const municipalityId = 11001; // o null si no quieres setear por defecto
+
   try {
-    const [r] = await pool.query(
+    await pool.query(
       'INSERT INTO agent (code, category, groupId, unitId, status, municipalityId, nickname) VALUES (?,?,?,?,?,?,?)',
-      [code.trim(), category, groupId || null, unitId || null, s, muniId, encNick]
+      [code.trim(), category, groupId || null, unitId || null, status, municipalityId, encNick]
     );
-
-    await logEvent({
-      req, userId: req.user.uid,
-      action: Actions.AGENT_CREATE,
-      // No registramos el valor del apodo en claro por privacidad
-      details: { agentId: r.insertId, code: code.trim(), category, groupId: groupId || null, unitId: unitId || null, nickname_set: !!nickname }
-    });
-
-    res.json({ ok: true });
+    res.json({ ok:true });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') res.status(409).json({ error: 'El código ya existe' });
     else res.status(500).json({ error: 'No se pudo crear', detail: e.message });
@@ -1792,18 +1772,24 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
 });
 
 
-// Actualizar agente (parcial, con nickname cifrado)
+// Actualizar agente (SOLO campos propios de agent; sin status/municipalityId)
 app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { id } = req.params;
-  const { code, category, groupId, unitId, status, municipalityId, nickname } = req.body;
+  let { code, category, groupId, unitId, nickname } = req.body;
+
+  // ❌ Ignorar explícitamente campos que NO deben tocarse desde este flujo
+  // (si llegan, se desechan para no romper compatibilidad con front viejos)
+  delete req.body.status;
+  delete req.body.municipalityId;
 
   const sets = [], params = [];
   const changes = {};
 
   if (code !== undefined) {
     if (!/^[A-Z][0-9]+$/.test(String(code))) return res.status(422).json({ error:'Código inválido' });
-    sets.push('code=?'); params.push(String(code).trim().toUpperCase());
-    changes.code = String(code).trim().toUpperCase();
+    const codeUp = String(code).trim().toUpperCase();
+    sets.push('code=?'); params.push(codeUp);
+    changes.code = codeUp;
   }
 
   if (category !== undefined) {
@@ -1830,43 +1816,18 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     changes.unitId = unitId || null;
   }
 
-  if (status !== undefined) {
-    sets.push('status=?'); params.push(String(status));
-    changes.status = String(status);
-  }
-
-  if (municipalityId !== undefined) {
-    if (municipalityId) {
-      const [[m]] = await pool.query('SELECT id FROM municipality WHERE id=? LIMIT 1', [municipalityId]);
-      if (!m) return res.status(404).json({ error:'Municipio no existe' });
-    }
-    sets.push('municipalityId=?'); params.push(municipalityId || null);
-    changes.municipalityId = municipalityId || null;
-  }
-
-  // <<< Nuevo: nickname parcial >>>
+  // nickname (cifrado)
   if (nickname !== undefined) {
-    // Si viene string vacío o null → guardar NULL; si viene valor → cifrar
     const encNick = encNullable(nickname && String(nickname).trim() !== '' ? String(nickname) : null);
     sets.push('nickname=?'); params.push(encNick);
-    // Por privacidad no registramos el apodo en claro
-    changes.nickname_set = nickname !== null && String(nickname).trim() !== '' ? true : false;
+    changes.nickname_set = !!(nickname && String(nickname).trim() !== '');
   }
 
-  // ================== PATCH INTEGRIDAD GRUPO-UNIDAD ==================
-  if (('groupId' in changes) && ('unitId' in changes) && changes.groupId && changes.unitId) {
-    const [[ux]] = await pool.query(
-      'SELECT id FROM unit WHERE id=? AND groupId=? LIMIT 1',
-      [changes.unitId, changes.groupId]
-    );
-    if (!ux) return res.status(422).json({ error: 'La unidad no pertenece al nuevo grupo' });
-  }
-
+  // Integridad: si cambias groupId sin unitId, forzar unitId=null
   if (('groupId' in changes) && changes.groupId !== null && (unitId === undefined)) {
     sets.push('unitId=?'); params.push(null);
     changes.unitId = null;
   }
-  // ================== FIN PATCH INTEGRIDAD ===========================
 
   if (!sets.length) return res.status(400).json({ error:'Nada para actualizar' });
 
@@ -1886,6 +1847,7 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
     res.status(500).json({ error:'No se pudo actualizar', detail:e.message });
   }
 });
+
 
 // Eliminar agente
 app.delete('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {

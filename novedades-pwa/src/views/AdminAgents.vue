@@ -57,10 +57,8 @@
                 <th>Cat.</th>
                 <th>Grupo</th>
                 <th>Unidad</th>
-                <th>Estado</th>
-                <th>Municipio</th>
-                <th>Días Lab</th> <!-- NUEVO -->
-                <th class="text-center">Acciones</th>
+                <th>Días Lab</th>
+                <th v-if="isEditableRole" style="text-align: center">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -71,16 +69,6 @@
                 <td>{{ catLabel(a.category) }}</td>
                 <td>{{ a.groupCode || groupCode(a.groupId) || '—' }}</td>
                 <td>{{ a.unitName || unitName(a.unitId) || '—' }}</td>
-                <td>
-                  <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border"
-                        :class="badgeClass(a.status)">
-                    {{ a.status }}
-                  </span>
-                </td>
-                <td>
-                  <span v-if="a.municipalityName">{{ a.municipalityName }}</span>
-                  <span v-else class="text-slate-400">—</span>
-                </td>
                 <td>
                   <span
                     :class="[
@@ -104,13 +92,13 @@
                 </td>
 
                 <td class="text-center">
-                  <button class="btn-ghost p-1" title="Editar" @click="openEdit(a)">
+                  <button v-if="isEditableRole" class="btn-ghost p-1" title="Editar" @click="openEdit(a)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path><path d="m16 5 3 3"></path>
                     </svg>
                   </button>
-                  <button v-if="isSuperadmin" class="btn-ghost p-1" title="Eliminar" @click="deleteAgent(a)">
+                  <button v-if="isSuperadmin" class="btn-ghost p-1" title="Eliminar" @click="requestDelete(a)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
                       stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/>
@@ -156,132 +144,174 @@
       </div>
     </div>
 
-    <!-- Modal Edición -->
-    <div v-if="editing" class="fixed inset-0 bg-black/30 z-50 flex items-center justify-center p-4"
-         @click.self="closeEdit">
-      <div class="bg-white rounded-xl shadow max-w-2xl w-full">
-        <div class="p-4 border-b flex items-center justify-between">
-          <div class="font-semibold text-slate-800">
-            <template v-if="isCreating">Crear agente</template>
-            <template v-else>Editar agente — {{ editing.code }} ({{ catLabel(editing.category) }})</template>
-          </div>
+    <!-- Modal -->
+    <div v-if="editing" class="fixed inset-0 z-50 flex items-center justify-center">
+      <!-- Backdrop -->
+      <div class="absolute inset-0 bg-black/40" @click="closeEdit"></div>
 
-          <button class="btn-ghost" @click="closeEdit">Cerrar</button>
+      <!-- Card -->
+      <form
+        class="relative z-10 w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-200 flex flex-col max-h-[90vh]"
+        @submit.prevent="saveEdit"
+      >
+        <!-- Header -->
+        <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <h3 class="font-semibold text-slate-800">
+            {{ isCreating ? 'Crear agente' : 'Editar agente' }}
+          </h3>
+          <button type="button" class="btn-ghost" @click="closeEdit">✕</button>
         </div>
 
-        <div class="p-4 space-y-4">
+        <!-- Body -->
+        <div class="p-5 overflow-auto">
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div v-if="isSuperadmin">
-              <label class="label">Código</label>
-              <input class="input" v-model="form.code" />
-            </div>
             <div>
-              <label class="label">Agente</label>
-              <input
-                class="input"
-                v-model="form.nickname"
-                placeholder="Agente"
-                maxlength="120"
-              />
-              <p class="text-xs text-slate-500 mt-1">
-                Se almacena cifrado en la base de datos.
-              </p>
+              <label class="label">Código</label>
+              <input class="input" v-model="form.code" :disabled="!isSuperadmin && isCreating" placeholder="EJ: A123" />
+              <p class="text-[11px] text-slate-500 mt-1">Formato: LETRA + números</p>
             </div>
-            <div v-if="isSuperadmin">
+
+            <div>
+              <label class="label">Nickname</label>
+              <input class="input" v-model="form.nickname" maxlength="120" placeholder="Apodo del agente" />
+            </div>
+
+            <div>
               <label class="label">Categoría</label>
-              <select class="input" v-model="form.categoryUi">
+              <select class="input" v-model="form.categoryUi" :disabled="!isSuperadmin">
                 <option value="OF">OF</option>
                 <option value="ME">ME</option>
                 <option value="PT">PT</option>
               </select>
             </div>
-            <div v-if="isAdminLike">
+
+            <div>
               <label class="label">Grupo</label>
               <select class="input" v-model="form.groupId">
                 <option :value="null">Sin grupo</option>
                 <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.code }}</option>
               </select>
             </div>
-            <div v-if="isAdminLike || isLeaderGroup">
+
+            <div>
               <label class="label">Unidad</label>
               <select class="input" v-model="form.unitId">
                 <option :value="null">Sin unidad</option>
-                <option v-for="u in unitsForSelect" :key="u.id" :value="u.id">
-                  {{ u.name }}
-                </option>
+                <option v-for="u in unitsForSelect" :key="u.id" :value="u.id">{{ u.name }}</option>
               </select>
             </div>
           </div>
+        </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <label class="label">Estado / Novedad</label>
-              <select class="input" v-model="form.state" @change="onStateChange()">
-                <option v-for="s in estadosValidos" :key="s" :value="s">{{ s }}</option>
-              </select>
-            </div>
+        <!-- Footer -->
+        <div class="px-5 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+          <button type="button" class="btn-ghost" @click="closeEdit">Cancelar</button>
 
-            <div v-if="form.state === 'SERVICIO' || otrosRequierenFechas.includes(form.state)">
-              <label class="label">Fecha inicio</label>
-              <input type="date" class="input" v-model="form.novelty_start" />
-            </div>
-            <div v-if="form.state === 'SERVICIO' || otrosRequierenFechas.includes(form.state)">
-              <label class="label">Fecha fin</label>
-              <input type="date" class="input" v-model="form.novelty_end" />
-            </div>
-            <!-- HOSPITALIZADO: solo INICIO -->
-            <div v-else-if="form.state === 'HOSPITALIZADO'">
-              <label class="label">Fecha inicio</label>
-              <input type="date" class="input" v-model="form.novelty_start" />
-            </div>
+          <!-- Guardar SIEMPRE visible cuando tienes permiso para la acción -->
+          <button
+            v-if="canShowSave"
+            type="submit"
+            class="btn-primary"
+            :disabled="!canSubmit"
+          >
+            Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- Toasts -->
+  <div class="fixed inset-x-0 top-3 z-[9999] flex justify-center pointer-events-none">
+    <div class="w-full max-w-md space-y-2 px-3">
+      <div v-for="t in toasts" :key="t.id"
+          class="pointer-events-auto rounded-xl border p-3 shadow-lg
+                  bg-white"
+          :class="{
+            'border-emerald-300': t.type==='success',
+            'border-red-300'   : t.type==='error',
+            'border-slate-200' : t.type==='info'
+          }">
+        <div class="flex items-start gap-2">
+          <div class="text-lg leading-none">
+            <span v-if="t.type==='success'">✅</span>
+            <span v-else-if="t.type==='error'">⚠️</span>
+            <span v-else>ℹ️</span>
           </div>
-
-          <!-- MUNICIPIO: editable solo en COMISIÓN DEL SERVICIO, solo lectura en SERVICIO -->
-            <div v-if="form.state === 'COMISIÓN DEL SERVICIO'">
-              <label class="label">Municipio</label>
-              <input class="input"
-                    v-model="form.municipalityName"
-                    list="municipios-list"
-                    @input="onMunicipalityInput"
-                    placeholder="Depto - Municipio (escribe para buscar)"
-                    autocomplete="off" />
-              <datalist id="municipios-list">
-                <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
-              </datalist>
-              <p v-if="form.municipalityName && !form.municipalityId" class="text-xs text-red-600 mt-1">
-                Selecciona un municipio válido de la lista.
-              </p>
-            </div>
-            <div v-else-if="form.state === 'SERVICIO'">
-              <label class="label">Municipio</label>
-              <div class="input bg-slate-100 text-slate-700">{{ form.municipalityName }}</div>
-            </div>
-
-
-            <div v-if="
-              form.state === 'SERVICIO' ||
-              form.state === 'COMISIÓN DEL SERVICIO' ||
-              otrosRequierenFechas.includes(form.state) ||
-              form.state === 'HOSPITALIZADO'
-            ">
-              <label class="label">Descripción</label>
-              <textarea class="input" rows="2" v-model="form.novelty_description" placeholder="Motivo / detalle..."></textarea>
-            </div>
-
-          <div class="flex justify-end gap-2 pt-2">
-            <button class="btn-ghost" @click="closeEdit">Cancelar</button>
-            <button class="btn-primary" @click="saveEdit">Guardar</button>
+          <div class="flex-1">
+            <div class="font-medium text-slate-800">{{ t.title }}</div>
+            <div v-if="t.desc" class="text-sm text-slate-600 mt-0.5">{{ t.desc }}</div>
           </div>
+          <button class="text-slate-500 hover:text-slate-800" @click="closeToast(t.id)">✕</button>
         </div>
       </div>
     </div>
-
   </div>
+
+  <!-- Modal Confirmar Eliminación -->
+  <div
+    v-if="pendingDelete"
+    class="fixed inset-0 z-[9998] flex items-center justify-center"
+    @keydown.esc="cancelDelete"
+  >
+    <div class="absolute inset-0 bg-black/40" @click="cancelDelete"></div>
+
+    <div class="relative z-10 w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-xl p-5">
+      <h3 class="font-semibold text-slate-800 text-lg">Eliminar agente</h3>
+      <p class="text-slate-600 mt-2">
+        ¿Seguro que deseas eliminar al agente <b>{{ pendingDelete.code }}</b>?
+        Esta acción no se puede deshacer.
+      </p>
+
+      <div class="mt-4 flex justify-end gap-2">
+        <button class="btn-ghost" @click="cancelDelete" :disabled="deleting">Cancelar</button>
+        <button
+          class="px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+          @click="confirmDelete"
+          :disabled="deleting"
+        >
+          <span v-if="!deleting">Sí, eliminar</span>
+          <span v-else>Eliminando…</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import axios from 'axios'
+
+// Confirmación borrar
+const pendingDelete = ref(null)
+const deleting = ref(false)
+
+function requestDelete(a) {
+  pendingDelete.value = { id: a.id, code: a.code }
+}
+
+function cancelDelete() {
+  if (deleting.value) return
+  pendingDelete.value = null
+}
+
+async function confirmDelete() {
+  if (!pendingDelete.value || deleting.value) return
+  deleting.value = true
+  try {
+    const id = pendingDelete.value.id
+    await axios.delete(`/admin/agents/${id}`, authHeader())
+    toast?.({ type:'success', title:'Agente eliminado', desc: pendingDelete.value.code })
+    await loadAgents()
+  } catch (e) {
+    const detail = e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'Error al eliminar'
+    toast?.({ type:'error', title:'No se pudo eliminar', desc: detail })
+  } finally {
+    deleting.value = false
+    pendingDelete.value = null
+  }
+}
 
 
 /* ===== Helpers UI ===== */
@@ -522,141 +552,76 @@ const unitsForSelect = computed(() => {
   return isAdminLike.value ? units.value : []
 })
 
-/* ===== Modal edición ===== */
+/* ===== Modal edición (solo tabla agent) ===== */
+const isEditableRole = computed(() => !!(isSuperadmin.value || isAdminLike.value)) // excluye leader_group
 
-const isCreating = ref(false)
-const editing = ref(null) // row original
-const form = ref({
-  id:null, code:'', categoryUi:'OF', groupId:null, unitId:null,
-  state:'SIN NOVEDAD',
-  municipalityId:null, municipalityName:'',
-  novelty_start:'', novelty_end:'', novelty_description:'',
-  nickname:'' 
+const canShowSave = computed(() => {
+  // Crear: solo Superadmin
+  if (isCreating.value) return !!isSuperadmin.value
+  // Editar: Admin/Supervisión o Líder de grupo
+  return !!(isAdminLike.value || isLeaderGroup.value)
 })
 
-function openCreate(){
+// Validación mínima para habilitar "Guardar"
+const canSubmit = computed(() => {
+  const codeOk = /^[A-Z][0-9]+$/.test(String(form.value.code || '').trim())
+  const catOk  = ['OF','ME','PT'].includes(String(form.value.categoryUi))
+  // Crear requiere superadmin + code válido
+  if (isCreating.value) return isSuperadmin.value && codeOk && catOk
+  // Editar: con code válido (aunque no lo cambies) + categoría válida
+  return codeOk && catOk
+})
+
+const isCreating = ref(false)
+const editing = ref(null) // fila original cargada del backend
+const form = ref({
+  id: null,
+  code: '',
+  categoryUi: 'OF',   // UI: OF/ME/PT
+  groupId: null,
+  unitId: null,
+  nickname: ''
+})
+
+function openCreate () {
   isCreating.value = true
-  editing.value = { id: null } // solo para mostrar el modal
+  editing.value = { id: null } // muestra el modal en modo crear
   form.value = {
     id: null,
     code: '',
     categoryUi: 'OF',
     groupId: null,
     unitId: null,
-    state: 'SIN NOVEDAD',
-    municipalityId: null,
-    municipalityName: '',
-    novelty_start: '',
-    novelty_end: '',
-    novelty_description: '',
-    nickname: a.nickname || '' 
+    nickname: '' // 👈 evita usar a.nickname (no existe aquí)
   }
 }
 
-async function openEdit(a) {
-  editing.value = null;
+async function openEdit (a) {
+  editing.value = null
   try {
     // Siempre pide el objeto REAL del backend
-    const { data } = await axios.get(`/admin/agents/${a.id}`, authHeader());
+    const { data } = await axios.get(`/admin/agents/${a.id}`, authHeader())
 
-    // valores base (por si no hay novedad previa)
     form.value = {
       id: data.id,
       code: data.code,
-      categoryUi: catLabel(data.category),
+      categoryUi: catLabel(data.category), // OF/ME/PT
       groupId: data.groupId ?? null,
       unitId: data.unitId ?? null,
-      state: data.status || 'SIN NOVEDAD',
-      municipalityId: data.municipalityId || null,
-      municipalityName: data.municipalityName || '',
-      novelty_start: data.novelty_start ? String(data.novelty_start).slice(0,10) : '',
-      novelty_end:   data.novelty_end ? String(data.novelty_end).slice(0,10)   : '',
-      novelty_description: data.novelty_description || '',
       nickname: data.nickname || ''
     }
 
-    editing.value = data;
-
-    // 👉 pide la última novedad (o la válida hasta la fecha seleccionada)
-    const det = await loadAgentNovelty(data.id)
-    if (det) {
-      form.value.state = det.state || form.value.state
-      form.value.novelty_start = det.novelty_start || ''
-      form.value.novelty_end   = det.novelty_end   || ''
-      form.value.novelty_description = det.novelty_description || ''
-
-      // MUNICIPIO: Asigna SIEMPRE el de la novedad si existe, o el por defecto (sin dejar el viejo)
-      if (det.municipalityId && det.municipalityName) {
-        form.value.municipalityId = det.municipalityId
-        form.value.municipalityName = det.dept
-          ? `${det.dept} - ${det.municipalityName}`
-          : det.municipalityName
-      } else if (['SERVICIO','SIN NOVEDAD'].includes(form.value.state)) {
-        form.value.municipalityId = 11001
-        form.value.municipalityName = 'CUNDINAMARCA - Bogotá'
-      } else {
-        form.value.municipalityId = null
-        form.value.municipalityName = ''
-      }
-    }
-  } catch(e) {
+    editing.value = data
+  } catch (e) {
     msg.value = e?.response?.data?.detail || e?.message || 'No se pudo cargar el agente'
   }
 
-  // 👇 ¡Llama esto siempre al final!
-  onStateChange(true);  // ajusta reglas (fechas/descr/muni) según estado final
+  // ❌ Quitado: onStateChange(true) y cualquier lógica de novedad
 }
 
-function closeEdit(){ editing.value = null; isCreating.value = false }
-
-
-function onStateChange(preserve = false){
-  const s = form.value.state;
-  if (s === 'SIN NOVEDAD') {
-    form.value.municipalityId = 11001;
-    form.value.municipalityName = 'CUNDINAMARCA - Bogotá';
-    if (!preserve) {
-      form.value.novelty_start = '';
-      form.value.novelty_end = '';
-      form.value.novelty_description = '';
-    }
-  } else if (s === 'SERVICIO') {
-    form.value.municipalityId = 11001;
-    form.value.municipalityName = 'CUNDINAMARCA - Bogotá';
-  } else if (s === 'COMISIÓN DEL SERVICIO') {
-    // SOLO limpia municipio si NO preserve
-    if (!preserve) {
-      form.value.municipalityId = null;
-      form.value.municipalityName = '';
-      form.value.novelty_start = '';
-      form.value.novelty_end = '';
-      form.value.novelty_description = '';
-    }
-  } else if (s === 'FRANCO FRANCO') {
-    if (!preserve) {
-      form.value.municipalityId = null;
-      form.value.municipalityName = '';
-      form.value.novelty_start = '';
-      form.value.novelty_end = '';
-      form.value.novelty_description = '';
-    }
-  } else if (s === 'HOSPITALIZADO') {
-    if (!preserve) form.value.novelty_end = '';
-    form.value.municipalityId = null;
-    form.value.municipalityName = '';
-  } else {
-    form.value.municipalityId = null;
-    form.value.municipalityName = '';
-  }
-}
-
-function onMunicipalityInput(e){
-  const q = (form.value.municipalityName || '').trim().toLowerCase()
-  if (!q) { form.value.municipalityId = null; return }
-  // carga dinámica si escribe
-  loadMunicipalities(q)
-  const m = municipalities.value.find(m => (`${m.dept} - ${m.name}`.toLowerCase() === q))
-  form.value.municipalityId = m ? m.id : null
+function closeEdit () {
+  editing.value = null
+  isCreating.value = false
 }
 
 async function saveEdit () {
@@ -664,131 +629,71 @@ async function saveEdit () {
   const id = form.value.id
 
   try {
-    // --- Crear nuevo agente (solo superadmin) ---
+    // === Crear (solo superadmin) ===
     if (isCreating.value) {
       if (!isSuperadmin.value) { msg.value = 'No autorizado'; return }
+
       const code = String(form.value.code || '').toUpperCase().trim()
-      if (!/^[A-Z][0-9]+$/.test(code)) { msg.value = 'Código inválido (LETRA+números)'; return }
+      if (!/^[A-Z][0-9]+$/.test(code)) {
+        msg.value = 'Código inválido (LETRA+números)'
+        return
+      }
 
       await axios.post('/admin/agents', {
         code,
-        category: uiToApiCategory(form.value.categoryUi),
+        category: uiToApiCategory(form.value.categoryUi), // OF/ME/PT -> API
         groupId: form.value.groupId || null,
         unitId: form.value.unitId || null,
         nickname: (form.value.nickname || '').trim() || null
       }, authHeader())
 
       msg.value = 'Agente creado ✅'
+      toast({ type:'success', title:'Agente creado', desc:`${form.value.code} guardado.` })
       closeEdit()
       await loadAgents()
-      return
     }
 
-    const requiereFechasYDescr = (s) => s === 'SERVICIO' || otrosRequierenFechas.includes(s)
-
-          // Comisión del servicio (igual que tenías)
-          if (form.value.state === 'COMISIÓN DEL SERVICIO' && !form.value.municipalityId) {
-            msg.value = 'Selecciona un municipio válido para Comisión del servicio'
-            return
-          }
-          if (form.value.state === 'COMISIÓN DEL SERVICIO' && !String(form.value.novelty_description||'').trim()) {
-            msg.value = 'La descripción es obligatoria para Comisión del servicio'
-            return
-          }
-
-          // HOSPITALIZADO: inicio + descripción, sin fin
-          if (form.value.state === 'HOSPITALIZADO') {
-            if (!form.value.novelty_start) { msg.value = 'Falta fecha inicio (HOSPITALIZADO)'; return }
-            if (!String(form.value.novelty_description||'').trim()) { msg.value = 'La descripción es obligatoria (HOSPITALIZADO)'; return }
-          }
-
-          // Estados con inicio+fin+descr (incluye SUSPENDIDO)
-          if (requiereFechasYDescr(form.value.state)) {
-            if (!form.value.novelty_start || !form.value.novelty_end) { msg.value = 'Completa fecha inicio y fin'; return }
-            if (!String(form.value.novelty_description||'').trim()) { msg.value = 'La descripción es obligatoria'; return }
-          }
-
-
-    // Actualizar grupo/unidad/código/categoría según rol
+    // === Editar: SOLO campos de agent ===
     if (isLeaderGroup.value) {
+      // Líder de grupo: solo mover de unidad (si cambió)
       if ((editing.value.unitId || null) !== (form.value.unitId || null)) {
-        await axios.put(`/my/agents/${id}/unit`, { unitId: form.value.unitId || null }, authHeader())
+        await axios.put(
+          `/my/agents/${id}/unit`,
+          { unitId: form.value.unitId || null },
+          authHeader()
+        )
       }
     } else if (isAdminLike.value) {
-      await axios.put(`/admin/agents/${id}`, {
-        code: isSuperadmin.value ? form.value.code : undefined,
+      // Admin/supervisión: code/category (si superadmin), groupId, unitId, nickname
+      const payload = {
+        // Solo superadmin puede cambiar code/category
+        code: isSuperadmin.value ? String(form.value.code || '').toUpperCase().trim() : undefined,
         category: isSuperadmin.value ? uiToApiCategory(form.value.categoryUi) : undefined,
         groupId: form.value.groupId || null,
         unitId: form.value.unitId || null,
-        nickname: (form.value.nickname ?? '').trim() 
-      }, authHeader())
-    }
-
-    // ¿Cambió la novedad?
-    const novChanged =
-      String(editing.value.status||'') !== String(form.value.state||'') ||
-      String(editing.value.municipalityId||'') !== String(form.value.municipalityId||'') ||
-      (editing.value.novelty_start||'') !== (form.value.novelty_start||'') ||
-      (editing.value.novelty_end||'')   !== (form.value.novelty_end||'') ||
-      (editing.value.novelty_description||'') !== (form.value.novelty_description||'')
-
-    if (novChanged) {
-      const state = String(form.value.state || '').toUpperCase()
-      const isHosp = state === 'HOSPITALIZADO'
-      const requiresDates = (s) => s === 'SERVICIO' || otrosRequierenFechas.includes(s)
-
-      // municipalityId: number o se omite
-      let municipalityId = null
-      if (state === 'COMISIÓN DEL SERVICIO') {
-        municipalityId = form.value.municipalityId ? Number(form.value.municipalityId) : null
-      } else if (state === 'SERVICIO' || state === 'SIN NOVEDAD') {
-        municipalityId = 11001
+        nickname: (form.value.nickname ?? '').trim() || null
       }
 
-      // Fechas y descripción (solo agrega si aplica y hay valor)
-      const payload = {
-        date: today.value,
-        state
-      }
+      // Limpia undefined para no enviar claves vacías
+      Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k])
 
-      if (municipalityId !== null) payload.municipalityId = municipalityId
-
-      const start = (requiresDates(state) || isHosp) ? (form.value.novelty_start || '').trim() : ''
-      const end   =  requiresDates(state)            ? (form.value.novelty_end   || '').trim() : ''
-      const descNeeded = (state === 'COMISIÓN DEL SERVICIO') || (state === 'SERVICIO') || requiresDates(state) || isHosp
-      const desc  = descNeeded ? (form.value.novelty_description || '').trim() : ''
-
-      if (start) payload.novelty_start = start
-      if (end && !isHosp) payload.novelty_end = end   // 👈 nunca para HOSPITALIZADO
-      if (desc) payload.novelty_description = desc
-
-      // Debug útil: ver exactamente qué enviamos
-      console.log('[PUT] /admin/agents/:id/novelty payload →', payload)
-
-      await axios.put(`/admin/agents/${id}/novelty`, payload, authHeader())
+      await axios.put(`/admin/agents/${id}`, payload, authHeader())
     }
-
 
     msg.value = 'Cambios guardados ✅'
+    toast({ type:'success', title:'Agente actualizado', desc:`${form.value.code} actualizado.` })
     closeEdit()
     await loadAgents()
-
   } catch (e) {
-        const data = e?.response?.data
-        console.error('saveEdit error →', {
-          status: e?.response?.status,
-          data,
-          payloadHint: {
-            state: form.value.state,
-            municipalityId: form.value.municipalityId,
-            start: form.value.novelty_start,
-            end: form.value.novelty_end,
-          }
-        })
-        msg.value = data?.detail || data?.error || e?.message || 'Error al guardar'
-      }
-
+    const data = e?.response?.data
+    console.error('saveEdit error →', {
+      status: e?.response?.status,
+      data
+    })
+    toast({ type:'error', title:'No se pudo guardar', desc: msg.value })
+  }
 }
+
 
 function authHeader(){
   return { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
@@ -810,6 +715,20 @@ watch(today, () => {
   page.value = 1
   loadAgents()
 })
+
+// TOASTS
+const toasts = ref([]) // {id, type: 'success'|'error'|'info', title, desc}
+let toastSeq = 0
+
+function toast({ type = 'info', title = '', desc = '', timeout = 4000 } = {}) {
+  const id = ++toastSeq
+  toasts.value.push({ id, type, title, desc })
+  if (timeout) setTimeout(() => closeToast(id), timeout)
+}
+function closeToast(id) {
+  toasts.value = toasts.value.filter(t => t.id !== id)
+}
+
 
 
 /* ===== Init ===== */

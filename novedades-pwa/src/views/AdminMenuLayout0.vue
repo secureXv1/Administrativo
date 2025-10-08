@@ -428,9 +428,9 @@ function toggleCollapse () {
   collapsed.value = !collapsed.value
 }
 
-function logout () {
+function logout() {
   localStorage.removeItem('token')
-  router.push('/login')
+  window.location.href = '/login/'
 }
 
 const pageTitle = computed(() => {
