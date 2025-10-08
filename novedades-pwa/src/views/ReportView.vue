@@ -133,9 +133,18 @@
                         <template v-else-if="a.status === 'SERVICIO'">
                           <input class="input mb-1 bg-slate-100 cursor-not-allowed" :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'" readonly tabindex="-1" />
                           <div class="flex gap-1 mb-1">
-                            <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                            <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                            <input class="input" type="date"
+                                  v-model="a.novelty_start"
+                                  :class="{'!border-red-500': agentHasRangeError(a)}"
+                                  placeholder="Fecha inicio" />
+                            <input class="input" type="date"
+                                  v-model="a.novelty_end"
+                                  :class="{'!border-red-500': agentHasRangeError(a)}"
+                                  placeholder="Fecha fin" />
                           </div>
+                          <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-1">
+                            La fecha fin no puede ser menor a la fecha inicio.
+                          </p>
                           <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                         </template>
                         <template v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
@@ -155,9 +164,18 @@
                       <!-- SUSPENDIDO: inicio, fin, descripción -->
                       <template v-else-if="a.status === 'SUSPENDIDO'">
                         <div class="flex gap-1 mb-1">
-                          <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                          <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                          <input class="input" type="date"
+                                v-model="a.novelty_start"
+                                :class="{'!border-red-500': agentHasRangeError(a)}"
+                                placeholder="Fecha inicio" />
+                          <input class="input" type="date"
+                                v-model="a.novelty_end"
+                                :class="{'!border-red-500': agentHasRangeError(a)}"
+                                placeholder="Fecha fin" />
                         </div>
+                        <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-1">
+                          La fecha fin no puede ser menor a la fecha inicio.
+                        </p>
                         <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                       </template>
 
@@ -173,9 +191,18 @@
 
                         <template v-else>
                           <div class="flex gap-1 mb-1">
-                            <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                            <input class="input" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                            <input class="input" type="date"
+                                  v-model="a.novelty_start"
+                                  :class="{'!border-red-500': agentHasRangeError(a)}"
+                                  placeholder="Fecha inicio" />
+                            <input class="input" type="date"
+                                  v-model="a.novelty_end"
+                                  :class="{'!border-red-500': agentHasRangeError(a)}"
+                                  placeholder="Fecha fin" />
                           </div>
+                          <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-1">
+                            La fecha fin no puede ser menor a la fecha inicio.
+                          </p>
                           <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                         </template>
                       </td>
@@ -238,9 +265,19 @@
                   <div v-else-if="a.status === 'SERVICIO'">
                     <input class="input w-full bg-slate-100" :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'" readonly />
                     <div class="flex gap-2 mt-2">
-                      <input class="input flex-1" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                      <input class="input flex-1" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                      <input class="input flex-1" type="date"
+                            v-model="a.novelty_start"
+                            :class="{'!border-red-500': agentHasRangeError(a)}"
+                            placeholder="Fecha inicio" />
+                      <input class="input flex-1" type="date"
+                            v-model="a.novelty_end"
+                            :class="{'!border-red-500': agentHasRangeError(a)}"
+                            placeholder="Fecha fin" />
                     </div>
+                    <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 mt-1">
+                      La fecha fin no puede ser menor a la fecha inicio.
+                    </p>
+
                     <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                   </div>
                   <div v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
@@ -260,9 +297,18 @@
                                 <!-- SUSPENDIDO: inicio, fin, descripción -->
                   <div v-else-if="a.status === 'SUSPENDIDO'">
                     <div class="flex gap-2 mt-2">
-                      <input class="input flex-1" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                      <input class="input flex-1" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                      <input class="input flex-1" type="date"
+                            v-model="a.novelty_start"
+                            :class="{'!border-red-500': agentHasRangeError(a)}"
+                            placeholder="Fecha inicio" />
+                      <input class="input flex-1" type="date"
+                            v-model="a.novelty_end"
+                            :class="{'!border-red-500': agentHasRangeError(a)}"
+                            placeholder="Fecha fin" />
                     </div>
+                    <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 mt-1">
+                      La fecha fin no puede ser menor a la fecha inicio.
+                    </p>
                     <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                   </div>
 
@@ -273,29 +319,29 @@
                     </div>
                     <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                   </div>
-
-
-
-
-
-
                   <div v-else>
                     <div class="flex gap-2 mt-2">
-                      <input class="input flex-1" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                      <input class="input flex-1" type="date" v-model="a.novelty_end" placeholder="Fecha fin" />
+                      <input class="input flex-1" type="date"
+                            v-model="a.novelty_start"
+                            :class="{'!border-red-500': agentHasRangeError(a)}"
+                            placeholder="Fecha inicio" />
+                      <input class="input flex-1" type="date"
+                            v-model="a.novelty_end"
+                            :class="{'!border-red-500': agentHasRangeError(a)}"
+                            placeholder="Fecha fin" />
                     </div>
+                    <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 mt-1">
+                      La fecha fin no puede ser menor a la fecha inicio.
+                    </p>
                     <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                   </div>
                 </div>
                 <div v-if="agents.length === 0" class="text-center text-slate-500 py-4">
                   Sin agentes en tu Unidad.
                 </div>
-
-
-
               </div>
 
-                        <!-- Aclaración antes de KPIs -->
+          <!-- Aclaración antes de KPIs -->
           <div class="text-center py-2">
             <h3 class="text-base font-semibold text-slate-700">
               Novedades enviadas a nivel central
@@ -305,9 +351,7 @@
             </p>
           </div>
 
-
-
-         <!-- KPIs calculados -->
+        <!-- KPIs calculados -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div class="kpi">
             <div class="card-body">
@@ -340,7 +384,6 @@
           </div>
         </div>
 
-
 <!-- Acciones -->
 <div class="flex flex-wrap items-center gap-3">
   <button @click="save" class="btn-primary">
@@ -350,12 +393,7 @@
   <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
 </div>
 
-
-
-
-
-
-          <!-- Aclaración antes del resumen discriminado -->
+<!-- Aclaración antes del resumen discriminado -->
 <div class="text-center py-2">
   <h3 class="text-base font-semibold text-slate-700">
     Novedades para unidad externa
@@ -364,10 +402,6 @@
     Este detalle refleja las novedades discriminadas de los agentes en su unidad.
   </p>
 </div>
-
-          
-
-          
 
   <!-- Novedades en su unidad (desplegable) -->
 <div class="rounded-2xl border-2 border-yellow-400 bg-yellow-50">
@@ -1040,6 +1074,39 @@ async function checkIfReportExists() {
     existeReporte.value = !!(data && data.length > 0);
   } catch { existeReporte.value = false }
 }
+
+// === Helpers de fechas ===
+function toDate(s) {
+  if (!s) return null
+  // forzamos formato YYYY-MM-DD a Date (00:00 local)
+  const [y, m, d] = String(s).split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d)
+}
+function isRangeInvalid(start, end) {
+  const d1 = toDate(start), d2 = toDate(end)
+  if (!d1 || !d2) return false // solo validamos cuando ambas existen
+  return d2 < d1
+}
+// Estados que piden dos fechas (inicio y fin)
+function needsBothDates(state) {
+  const s = String(state || '').toUpperCase()
+  return [
+    'SERVICIO',
+    'SUSPENDIDO',
+    // genéricos: todas las que en tu UI piden inicio y fin
+    'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA',
+    'LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD','PERMISO',
+    'COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO'
+  ].includes(s)
+}
+// ¿El agente tiene error de rango?
+function agentHasRangeError(a) {
+  if (!needsBothDates(a.status)) return false
+  return isRangeInvalid(a.novelty_start, a.novelty_end)
+}
+// Computado global: ¿hay algún error de fechas en el listado?
+const hasDateErrors = computed(() => agents.value.some(agentHasRangeError))
 
 watch(reportDate, async () => {
   msg.value = ''
