@@ -651,6 +651,7 @@ async function saveEdit () {
       toast({ type:'success', title:'Agente creado', desc:`${form.value.code} guardado.` })
       closeEdit()
       await loadAgents()
+      return;
     }
 
     // === Editar: SOLO campos de agent ===

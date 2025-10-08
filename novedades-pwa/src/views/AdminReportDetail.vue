@@ -187,6 +187,7 @@
                       :close-on-select="true"
                       :preserve-search="true"
                       :show-labels="false"
+                      :allow-empty="true"
                       placeholder="Escribe para buscar…"
                       label="label"
                       track-by="id"
@@ -205,7 +206,6 @@
                       </template>
                     </Multiselect>
                     <div class="text-xs text-slate-500 mt-1">
-                    Para “Comisión del servicio” el municipio es obligatorio (sin fechas).
                     </div>
                   </div>
 
@@ -577,7 +577,7 @@ async function loadSingleReport(id){
     municipality: row.municipalityName && row.dept ? `${row.municipalityName} (${row.dept})` : (row.municipalityName || ''),
     municipalityName: row.municipalityName || null,
     municipalityDept: row.dept || null,
-    municipalityId: row.municipalityId ?? null,
+    municipalityId: row.municipalityId != null ? Number(row.municipalityId) : null,
     novelty_description: row.novelty_description || row.descripcion,
     reportId: id
   })
@@ -613,7 +613,7 @@ async function loadGroupReports(date, groupId){
       municipality: a.municipalityName && a.dept ? `${a.municipalityName} (${a.dept})` : (a.municipalityName || ''),
       municipalityName: a.municipalityName || null,
       municipalityDept: a.dept || null,
-      municipalityId: a.municipalityId ?? null,         // 👈 usa esto si el backend lo devuelve
+      municipalityId: a.municipalityId != null ? Number(a.municipalityId) : null,
       novelty_description: a.novelty_description || a.descripcion,
       reportId: r.id
     }))
@@ -697,21 +697,68 @@ const needsDescripcion = computed(() => [
 
 const needsMunicipio = computed(() => form.value.state === 'COMISIÓN DEL SERVICIO')
 
+
 function openEdit(a){
   if (!canEdit.value) return
   editRow.value = a
+
+  const state = String(a.state || '').toUpperCase()
+  const isCDS = state === 'COMISIÓN DEL SERVICIO'
+
+  // Precargar municipio SOLO para COMISIÓN DEL SERVICIO
+  let selectedMuni = null
+  if (isCDS) {
+    const id   = a.municipalityId != null ? Number(a.municipalityId) : null
+    const name = a.municipalityName || null
+    const dept = a.municipalityDept || null
+    if (id) {
+      // inyecta (si no existe) y devuelve la opción real del array
+      selectedMuni = ensureMuniInOptions(id, name, dept)
+    }
+  }
+
   form.value = {
-    state: a.state,
-    municipio: a.municipalityId
-      ? { id: a.municipalityId, label: a.municipalityName ? `${a.municipalityName} (${a.municipalityDept||''})` : `id ${a.municipalityId}` }
-      : null,
+    state,
+    municipio: selectedMuni,                 // 👈 queda seleccionado
     novelty_start: a.novelty_start || '',
     novelty_end: a.novelty_end || '',
     novelty_description: a.novelty_description || ''
   }
+
   editOpen.value = true
 }
+
+watch(() => form.value.state, (newS) => {
+  const s = String(newS || '').toUpperCase()
+  if (s !== 'COMISIÓN DEL SERVICIO') {
+    form.value.municipio = null
+  } else {
+    // Si entras a CDS sin opción cargada y el registro original traía municipio, vuelve a inyectarlo
+    const a = editRow.value
+    if (a?.municipalityId && !form.value.municipio) {
+      form.value.municipio = ensureMuniInOptions(a.municipalityId, a.municipalityName, a.municipalityDept)
+    }
+  }
+})
+
+
 function closeEdit(){ editOpen.value = false; editRow.value = null }
+function ensureMuniOption(id, name, dept) {
+  if (!id) return
+  const numId = Number(id)
+  const exists = (muniOptions.value || []).some(m => Number(m.id) === numId)
+  if (!exists) {
+    const label = name ? `${name} (${dept || ''})` : `id: ${numId}`
+    // la insertamos al inicio para que Multiselect la reconozca
+    muniOptions.value.unshift({ id: numId, label })
+  }
+}
+
+function selectMuniInOptionsById(id) {
+  const numId = Number(id)
+  const found = (muniOptions.value || []).find(m => Number(m.id) === numId)
+  if (found) form.value.municipio = found
+}
 
 // ===== Autocomplete municipios
 const muniOptions = ref([])
@@ -740,6 +787,16 @@ async function searchMunicipios(term){
   }, 250)
 }
 
+function ensureMuniInOptions(id, name, dept) {
+  if (!id) return null
+  const numId = Number(id)
+  let found = muniOptions.value.find(o => Number(o.id) === numId)
+  if (!found) {
+    found = { id: numId, label: name ? `${name} (${dept || ''})` : `id ${numId}` }
+    muniOptions.value = [found, ...muniOptions.value]
+  }
+  return found
+}
 
 // ===== Guardar
 async function saveEdit(){
