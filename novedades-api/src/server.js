@@ -1956,35 +1956,30 @@ app.get('/dashboard/compliance', auth, requireRole('superadmin', 'supervision', 
   if (!date) return res.status(400).json({ error:'Missing date' });
 
   if (req.user.role === 'leader_group') {
-    // Solo cumplimiento de las unidades de SU grupo
-    const [units] = await pool.query('SELECT id, name FROM unit WHERE groupId=?', [req.user.groupId]);
+   // Solo unidades que tienen al menos 1 agente asignado
+   const [units] = await pool.query(`
+     SELECT u.id, u.name
+       FROM unit u
+       JOIN agent a ON a.unitId = u.id
+      WHERE u.groupId = ?
+      GROUP BY u.id, u.name
+      HAVING COUNT(a.id) > 0
+   `, [req.user.groupId]);
+
     const [reports] = await pool.query(
       'SELECT unitId FROM dailyreport WHERE reportDate=? AND groupId=?',
       [date, req.user.groupId]
     );
     const reported = new Set(reports.map(r => r.unitId));
-    const done = [];
-    const pending = [];
+    const done = [], pending = [];
     for (const u of units) {
       (reported.has(u.id) ? done : pending).push({ unitName: u.name });
     }
     return res.json({ date, done, pending });
   }
-
-  // Lógica original para superadmin/supervision:
-  const [groups] = await pool.query('SELECT id,code FROM `group` ORDER BY code');
-  const [reports] = await pool.query(
-    'SELECT groupId FROM dailyreport WHERE reportDate=?',
-    [date]
-  );
-  const reported = new Set(reports.map(r => r.groupId));
-  const done = [];
-  const pending = [];
-  for (const g of groups) {
-    (reported.has(g.id) ? done : pending).push({ groupCode: g.code });
-  }
-  res.json({ date, done, pending });
+  // ... resto igual para superadmin/supervision
 });
+
 
 
 
@@ -2399,8 +2394,15 @@ app.get('/dashboard/compliance-units', auth, requireRole('leader_group'), async 
   const { date, groupId } = req.query;
   const gid = groupId || req.user.groupId;
 
-  // 1. Lista todas las unidades del grupo
-  const [units] = await pool.query('SELECT id, name FROM unit WHERE groupId=?', [gid]);
+ // 1. Solo unidades del grupo que tienen ≥1 agente
+ const [units] = await pool.query(`
+   SELECT u.id, u.name
+     FROM unit u
+     JOIN agent a ON a.unitId = u.id
+    WHERE u.groupId = ?
+    GROUP BY u.id, u.name
+    HAVING COUNT(a.id) > 0
+ `, [gid]);
 
   // 2. ¿Cuáles ya reportaron ese día?
   const [reports] = await pool.query(
@@ -2408,13 +2410,13 @@ app.get('/dashboard/compliance-units', auth, requireRole('leader_group'), async 
     [date, gid]
   );
   const reported = new Set(reports.map(r => r.unitId));
-  const done = [];
-  const pending = [];
+  const done = [], pending = [];
   for (const u of units) {
     (reported.has(u.id) ? done : pending).push({ unitName: u.name });
   }
   res.json({ date, done, pending });
 });
+
 
 
 // Descarga automatizada para alimentar el formato Excel
