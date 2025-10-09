@@ -340,13 +340,7 @@
           </div>
         </div>
       </header>
-      <FechasBanner
-    top-offset="top-14"
-    color="amber"  
-  />
       
-      
-
       <!-- Contenido -->
     <main class="flex-1 p-3 md:p-4 overflow-y-auto w-full">
         <router-view />

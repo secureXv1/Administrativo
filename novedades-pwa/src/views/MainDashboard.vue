@@ -32,8 +32,10 @@
   <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-4">
     <!-- Gráfico 1 -->
     <div class="card flex flex-col p-6 h-[340px]">
-      <h2 class="text-lg font-bold mb-2">Reporte por día</h2>
-      <Bar :data="barData" :options="barOptions" class="flex-1" />
+      <FechasBanner
+        top-offset="top-14"
+        color="amber"  
+      />
     </div>
     <!-- Gráfico 2 -->
     <div class="card flex flex-col p-6 h-[340px]">
@@ -51,6 +53,7 @@
 </template>
 
 <script setup>
+import FechasBanner from '@/components/FechasBanner.vue'
 import { Bar, Pie } from 'vue-chartjs'
 import {
   Chart,
