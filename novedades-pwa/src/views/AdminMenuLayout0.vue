@@ -46,7 +46,8 @@
                 <transition name="fade">
                 <div v-if="openSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
                     <SidebarItem to="/admin" icon="dashboard" :collapsed="collapsed" label="Reporte" dark />
-                </div>
+                    <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed" @navigate="onNavigate" />
+                  </div>
                 </transition>
             </div>
 
@@ -207,7 +208,9 @@
                 <transition name="fade">
                     <div v-if="openMobileSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
                     <SidebarItem to="/admin" icon="dashboard" :collapsed="collapsed" label="Reporte" :exact="true" />
-                    </div>
+                    <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed" @navigate="onNavigate" />
+
+                  </div>
                 </transition>
                 </div>
 
@@ -436,7 +439,17 @@ function logout() {
 const pageTitle = computed(() => {
   return route.meta?.title || route.matched?.[route.matched.length - 1]?.meta?.title || ''
 })
+
+// 👉 Fecha actual en formato YYYY-MM-DD
+const today = computed(() => {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+})
 </script>
+
 
 
 <style scoped>

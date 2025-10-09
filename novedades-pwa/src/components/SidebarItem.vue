@@ -24,15 +24,28 @@ const props = defineProps({
   label: { type: String, required: true },
   icon: { type: String, default: 'dot' },
   collapsed: { type: Boolean, default: false },
-  exact: { type: Boolean, default: false }
+  exact: { type: Boolean, default: false },
+  matchDescendants: { type: Boolean, default: false }
 })
 
 const route = useRoute()
 
 const isActive = computed(() => {
-  if (props.exact) return route.path === (typeof props.to === 'string' ? props.to : props.to.path || '')
+  const current = route.path
   const base = typeof props.to === 'string' ? props.to : (props.to.path || '')
-  return route.path.startsWith(base)
+  if (!base) return false
+
+  // Coincidencia exacta
+  if (props.exact) return current === base
+
+  // ¿Debe coincidir con descendientes?
+  if (props.matchDescendants) {
+    const withSlash = base.endsWith('/') ? base : base + '/'
+    return current === base || current.startsWith(withSlash)
+  }
+
+  // Por defecto: SOLO exacto
+  return current === base
 })
 
 const iconPaths = {

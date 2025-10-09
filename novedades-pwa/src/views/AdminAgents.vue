@@ -58,6 +58,7 @@
                 <th>Grupo</th>
                 <th>Unidad</th>
                 <th>Días Lab</th>
+                <th style="text-align: center">Historial Nov</th>
                 <th v-if="isEditableRole" style="text-align: center">Acciones</th>
               </tr>
             </thead>
@@ -90,7 +91,14 @@
                     {{ a.current_streak ?? 0 }}
                   </span>
                 </td>
-
+                <td class="text-center">
+                  <button class="btn-ghost p-1" title="Historial" @click="openHistory(a)">
+                    <!-- icono reloj -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"></circle>
+                    </svg>
+                  </button>
+                </td>
                 <td class="text-center">
                   <button v-if="isEditableRole" class="btn-ghost p-1" title="Editar" @click="openEdit(a)">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
@@ -272,6 +280,107 @@
           <span v-if="!deleting">Sí, eliminar</span>
           <span v-else>Eliminando…</span>
         </button>
+      </div>
+    </div>
+  </div>
+  <!-- Modal Historial (versión utilidades Tailwind) -->
+  <div v-if="historyModal.open" class="fixed inset-0 z-[9998] grid place-items-center p-4">
+    <div class="absolute inset-0 bg-black/40" @click="historyModal.open=false"></div>
+
+    <div class="relative z-10 w-full max-w-5xl rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-200">
+      <!-- Header -->
+      <div class="px-5 py-4 rounded-t-2xl text-white flex items-center justify-between
+                  bg-gradient-to-r from-slate-900 via-indigo-700 to-blue-600
+                  dark:from-slate-950 dark:via-indigo-900 dark:to-blue-800">
+        <div class="flex items-center gap-3">
+          <div class="text-xl font-semibold tracking-tight">
+            Historial — {{ historyModal.agent?.code }}
+            <span v-if="historyModal.agent?.nickname" class="opacity-80 text-sm">({{ historyModal.agent.nickname }})</span>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs bg-white/15 text-white">
+            {{ monthLabel }}
+          </span>
+        </div>
+        <button class="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white hover:bg-white/10"
+                @click="historyModal.open=false">✕</button>
+      </div>
+
+      <!-- Controles -->
+      <div class="px-5 py-3 flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2">
+          <button class="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm bg-white border border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700"
+                  @click="prevMonth">◀</button>
+          <button class="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm bg-white border border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700"
+                  @click="todayMonth">Hoy</button>
+          <button class="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm bg-white border border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700"
+                  @click="nextMonth">▶</button>
+
+          <span class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
+            {{ monthFrom }} → {{ monthTo }}
+          </span>
+        </div>
+
+        <!-- Tabs -->
+        <div class="ml-auto inline-flex rounded-full p-1 bg-slate-200/70 dark:bg-slate-700/60">
+          <button :class="['px-3 py-1.5 text-sm rounded-full', viewTab==='calendar' ? 'bg-white shadow-sm text-slate-900 dark:bg-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-200']"
+                  @click="viewTab='calendar'">Calendario</button>
+          <button :class="['px-3 py-1.5 text-sm rounded-full', viewTab==='timeline' ? 'bg-white shadow-sm text-slate-900 dark:bg-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-200']"
+                  @click="viewTab='timeline'">Línea de tiempo</button>
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div class="px-5 pb-5 max-h-[70vh] overflow-auto">
+        <!-- Calendario -->
+        <div v-if="viewTab==='calendar'">
+          <div class="grid grid-cols-7 gap-2 text-xs font-medium text-slate-600 mb-1">
+            <div class="text-center">L</div><div class="text-center">M</div><div class="text-center">X</div>
+            <div class="text-center">J</div><div class="text-center">V</div><div class="text-center">S</div>
+            <div class="text-center">D</div>
+          </div>
+
+          <div class="grid grid-cols-7 gap-2">
+            <div v-for="cell in calendarCells" :key="cell.key" :title="cell.title"
+                class="h-20 rounded-xl p-2 flex flex-col transition-all border border-slate-200 dark:border-slate-700 hover:shadow-md hover:-translate-y-[1px]"
+                :class="[
+                  cell.state ? (colorClass(cell.state)?.bg || 'bg-slate-100') : 'bg-white dark:bg-slate-400/60',
+                  cell.isToday && 'ring-2 ring-blue-500/70'
+                ]">
+              <div class="text-[11px] font-medium opacity-60">{{ cell.day || '' }}</div>
+              <div class="mt-auto text-center text-lg leading-none" v-if="cell.state">{{ iconFor(cell.state) }}</div>
+              <div v-if="cell.state" class="text-[11px] text-center truncate mt-1 opacity-85">{{ shortState(cell.state) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Línea de tiempo (todo; si es comisión, muestra municipio) -->
+        <div v-else class="space-y-4 relative">
+          <div class="absolute left-3 top-0 bottom-0 w-px bg-gradient-to-b from-slate-300 via-slate-200 to-slate-300 dark:from-slate-700 dark:via-slate-800 dark:to-slate-700" />
+          <div v-for="(s, i) in segments" :key="i" class="flex items-center gap-3 pl-4">
+            <div class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200 dark:border-slate-900"
+                :class="colorClass(s.state)?.dot || 'bg-slate-400'"></div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs shadow-sm"
+                :class="colorClass(s.state)?.pill || 'bg-slate-100 text-slate-700'">
+              {{ iconFor(s.state) }}
+              <span>
+                {{ s.state }}
+                <template v-if="s.municipalityName"> — 📍 {{ s.municipalityName }}</template>
+              </span>
+              <span class="opacity-70">({{ s.from }} → {{ s.to }})</span>
+              <span class="opacity-70">• {{ s.count }} día(s)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Leyenda (solo visible en modo calendario) -->
+        <div v-if="viewTab === 'calendar'" class="mt-5 flex flex-wrap gap-2 text-xs">
+          <div v-for="st in legendStates" :key="st"
+              class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs shadow-sm"
+              :class="colorClass(st)?.pill || 'bg-slate-100 text-slate-700'">
+            {{ iconFor(st) }} {{ shortState(st) }}
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -730,7 +839,187 @@ function closeToast(id) {
   toasts.value = toasts.value.filter(t => t.id !== id)
 }
 
+// ==== HISTORIAL: estado + utils de fecha (sin dependencias) ==================
+const historyModal = ref({ open: false, agent: null })
+const viewTab = ref('calendar')
 
+const historyItems = ref([]) // [{date:'YYYY-MM-DD', state:'SERVICIO', ...}]
+const monthCursor = ref(new Date()) // mes visible
+
+function ymd(d){ return d.toISOString().slice(0,10) }
+function startOfMonth(d){
+  const x = new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x
+}
+function endOfMonth(d){
+  const x = new Date(d); x.setMonth(x.getMonth()+1,0); x.setHours(0,0,0,0); return x
+}
+function addMonths(d, n){
+  const x = new Date(d); x.setMonth(x.getMonth()+n); return x
+}
+function monthNameES(d){
+  return new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' }).format(d)
+}
+function dowMonday0(d){ // lunes=0 ... domingo=6
+  const i = d.getDay() // 0..6 (domingo..sábado)
+  return (i + 6) % 7
+}
+
+// Mapeos icono / color
+function iconFor(state){
+  const s = String(state || '').toUpperCase()
+  const map = {
+    'SIN NOVEDAD':'✅','SERVICIO':'🧭','COMISIÓN DEL SERVICIO':'📌',
+    'FRANCO FRANCO':'🛌','VACACIONES':'🏖️','LICENCIA DE MATERNIDAD':'👶',
+    'LICENCIA DE LUTO':'🕊️','LICENCIA REMUNERADA':'📝','LICENCIA NO REMUNERADA':'📝',
+    'EXCUSA DEL SERVICIO':'📝','LICENCIA PATERNIDAD':'🍼','PERMISO':'⏳',
+    'COMISIÓN EN EL EXTERIOR':'✈️','COMISIÓN DE ESTUDIO':'🎓',
+    'SUSPENDIDO':'⛔','HOSPITALIZADO':'🏥'
+  }
+  return map[s] || '•'
+}
+function colorClass(state){
+  const s = String(state || '').toUpperCase()
+  const c = {
+    'SIN NOVEDAD'           : { bg:'bg-emerald-100', pill:'bg-emerald-100 text-emerald-800', dot:'bg-emerald-500' },
+    'SERVICIO'              : { bg:'bg-sky-100',     pill:'bg-sky-100 text-sky-800',         dot:'bg-sky-500' },
+    'COMISIÓN DEL SERVICIO' : { bg:'bg-indigo-100',  pill:'bg-indigo-100 text-indigo-800',   dot:'bg-indigo-500' },
+    'FRANCO FRANCO'         : { bg:'bg-gray-100',    pill:'bg-gray-100 text-gray-800',       dot:'bg-gray-500' },
+    'VACACIONES'            : { bg:'bg-amber-100',   pill:'bg-amber-100 text-amber-800',     dot:'bg-amber-500' },
+    'SUSPENDIDO'            : { bg:'bg-rose-100',    pill:'bg-rose-100 text-rose-800',       dot:'bg-rose-500' },
+    'HOSPITALIZADO'         : { bg:'bg-rose-100',    pill:'bg-rose-100 text-rose-800',       dot:'bg-rose-500' },
+  }
+  return c[s] || { bg:'bg-slate-100', pill:'bg-slate-100 text-slate-700', dot:'bg-slate-400' }
+}
+function shortState(s){
+  const t = String(s || '')
+  if (t.length <= 16) return t
+  return t.slice(0,16)+'…'
+}
+
+const monthFrom = computed(() => ymd(startOfMonth(monthCursor.value)))
+const monthTo   = computed(() => ymd(endOfMonth(monthCursor.value)))
+const monthLabel = computed(() => monthNameES(monthCursor.value))
+
+function prevMonth(){ monthCursor.value = addMonths(monthCursor.value, -1); loadHistory() }
+function nextMonth(){ monthCursor.value = addMonths(monthCursor.value, +1); loadHistory() }
+function todayMonth() {
+  // usa la fecha del filtro "today" para abrir ese mes
+  monthCursor.value = new Date(today.value + 'T00:00:00')
+  loadHistory()
+}
+
+async function openHistory(agent){
+  historyModal.value = { open:true, agent }
+  monthCursor.value = new Date(today.value + 'T00:00:00') // arrancar en el mes de la fecha del filtro
+  await loadHistory()
+}
+
+function closeHistory(){
+  historyModal.value = { open:false, agent:null }
+  historyItems.value = []
+}
+
+async function loadHistory(){
+  if (!historyModal.value.agent) return
+  try{
+    const { data } = await axios.get(`/admin/agents/${historyModal.value.agent.id}/history`, {
+      params: { from: monthFrom.value, to: monthTo.value },
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+    historyItems.value = Array.isArray(data?.items) ? data.items : []
+  } catch (e) {
+    toast({ type:'error', title:'No se pudo cargar el historial', desc: e?.response?.data?.error || e.message })
+    historyItems.value = []
+  }
+}
+
+// Calendario: celdas del mes (con padding inicial para lunes=0)
+const calendarCells = computed(() => {
+  const start = startOfMonth(monthCursor.value)
+  const end = endOfMonth(monthCursor.value)
+  const firstPad = dowMonday0(start)
+  const days = end.getDate()
+  const map = new Map(historyItems.value.map(h => [String(h.date), h]))
+  const cells = []
+
+  for (let i=0;i<firstPad;i++) cells.push({ key:'pad-'+i, day:'', state:null, title:'' })
+  for (let d=1; d<=days; d++){
+    const dt = new Date(start); dt.setDate(d)
+    const key = ymd(dt)
+    const rec = map.get(key)
+    const state = rec?.state || null
+    const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — '+rec.municipalityName : ''}` : key
+    cells.push({ key, day:d, state, title })
+  }
+  while (cells.length % 7) cells.push({ key:'tail-'+cells.length, day:'', state:null, title:'' })
+  return cells
+})
+
+// Timeline: agrupar días consecutivos por estado
+// Timeline: agrupar días consecutivos por estado;
+// si es COMISIÓN DEL SERVICIO, también agrupar por municipio
+const segments = computed(() => {
+  const days = [...historyItems.value]
+    .sort((a,b)=> String(a.date).localeCompare(String(b.date)))
+
+  const out = []
+  for (const d of days){
+    const state = (d.state || 'SIN NOVEDAD')
+    const isCommission = String(state).toUpperCase() === 'COMISIÓN DEL SERVICIO'
+    const muni = isCommission ? (d.municipalityName || '—') : null
+    const key = isCommission ? `${state}::${muni}` : state
+
+    const last = out[out.length-1]
+    if (last && last.key === key){
+      last.to = d.date
+      last.count += 1
+    } else {
+      out.push({
+        key,
+        state,
+        municipalityName: muni, // null si no es comisión
+        from: d.date,
+        to: d.date,
+        count: 1
+      })
+    }
+  }
+  return out
+})
+
+// Segmentos de COMISIÓN DEL SERVICIO agrupados por municipio
+const commissionSegments = computed(() => {
+  const days = [...historyItems.value]
+    .filter(d => String(d.state).toUpperCase() === 'COMISIÓN DEL SERVICIO')
+    .sort((a,b)=> String(a.date).localeCompare(String(b.date)))
+
+  const out = []
+  for (const d of days) {
+    const muni = d.municipalityName || '—'
+    const last = out[out.length-1]
+    if (last && last.municipalityName === muni) {
+      last.to = d.date
+      last.count += 1
+    } else {
+      out.push({ municipalityName: muni, from: d.date, to: d.date, count: 1 })
+    }
+  }
+  return out
+})
+
+function openCommission(agent){
+  // Solo abre el mismo modal, en la vista timeline (sin filtrar por estado)
+  historyModal.value = { open:true, agent }
+  viewTab.value = 'timeline'
+  monthCursor.value = new Date(today.value + 'T00:00:00')
+  loadHistory()
+}
+
+const legendStates = [
+  'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','VACACIONES',
+  'FRANCO FRANCO','SUSPENDIDO','HOSPITALIZADO'
+]
+// ==== FIN HISTORIAL ==========================================================
 
 /* ===== Init ===== */
 onMounted(async () => {
@@ -748,4 +1037,5 @@ onMounted(async () => {
 .card { @apply bg-white rounded-xl shadow; }
 .card-body { @apply p-4; }
 .table th, .table td { @apply whitespace-nowrap; }
+
 </style>

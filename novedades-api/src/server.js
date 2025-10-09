@@ -2915,6 +2915,57 @@ app.get('/dashboard/novelties-by-unit-breakdown',
   }
 );
 
+// GET /admin/agents/:id/history?from=YYYY-MM-01&to=YYYY-MM-31
+app.get('/admin/agents/:id/history',
+  auth,
+  requireRole('superadmin','supervision','leader_group'),
+  async (req, res) => {
+    const { id } = req.params;
+    const { from, to } = req.query;
+
+    // Seguridad y existencia del agente (mismo patrón que /admin/agents/:id/novelty)
+    const [[ag]] = await pool.query(
+      'SELECT id, groupId FROM agent WHERE id=? LIMIT 1', [id]
+    );
+    if (!ag) return res.status(404).json({ error: 'Agente no encontrado' });
+    if (String(req.user.role).toLowerCase() === 'leader_group' && ag.groupId !== req.user.groupId) {
+      return res.status(403).json({ error: 'No autorizado' });
+    }
+
+    // Rango obligatorio
+    if (!from || !to) return res.status(422).json({ error: 'Faltan from/to (YYYY-MM-DD)' });
+
+    const [rows] = await pool.query(`
+      SELECT
+        DATE_FORMAT(dr.reportDate, '%Y-%m-%d') AS date,
+        da.state,
+        da.municipalityId,
+        m.dept, m.name AS municipalityName,
+        da.novelty_start, da.novelty_end,
+        da.novelty_description
+      FROM dailyreport_agent da
+      JOIN dailyreport dr ON dr.id = da.reportId
+      LEFT JOIN municipality m ON m.id = da.municipalityId
+      WHERE da.agentId = ?
+        AND dr.reportDate BETWEEN ? AND ?
+      ORDER BY dr.reportDate ASC
+    `, [id, from, to]);
+
+    // Descifrar descripción si existe y normalizar payload
+    const data = rows.map(r => ({
+      date: r.date,
+      state: r.state,
+      municipalityId: r.municipalityId,
+      municipalityName: r.municipalityId ? `${r.dept} - ${r.municipalityName}` : '',
+      novelty_start: r.novelty_start ? String(r.novelty_start).slice(0,10) : null,
+      novelty_end:   r.novelty_end   ? String(r.novelty_end).slice(0,10)   : null,
+      novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null
+    }));
+
+    res.json({ items: data });
+  }
+);
+
 
 // Inicia el servidor
 
