@@ -1,7 +1,6 @@
 <template>
 <div class="space-y-4"> <!-- Este div es el "stack" vertical de tus tarjetas -->
   <!-- KPIs de novedades -->
-  <h1 class="text-lg font-bold mb-2">PARTE</h1>
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
     <div class="kpi card-body">
       <h4>FE total (OF/ME/PT)</h4>
@@ -28,7 +27,6 @@
       </div>
     </div>
   </div>
-  <h1 class="text-lg font-bold mb-2">CUMPLEAÑOS</h1>
   <div class="w-full grid grid-cols-1 md:grid-cols-3 gap-4">
     <!-- Gráfico 1 -->
     <div class="card flex flex-col p-6 h-[340px]">

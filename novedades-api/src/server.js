@@ -11,9 +11,6 @@ import { computeNovelties } from './utils.js';
 import { logEvent, Actions } from './audit.js';
 import { requireSuperadmin } from './middlewares.js';
 
-
-
-
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
 
@@ -3017,6 +3014,17 @@ const fechasSemanaHandler = async (req, res) => {
 app.get('/fechas/semana', auth, fechasSemanaHandler);
 // …y añade este alias para que funcione con tu patrón /api/...
 app.get('/api/fechas/semana', auth, fechasSemanaHandler);
+
+
+//VEHICULOS
+
+
+
+
+
+
+
+
 
 
 // Inicia el servidor

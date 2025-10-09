@@ -144,14 +144,20 @@ const colorClass = computed(() => {
 
 const topClass = computed(() => props.topOffset || 'top-14')
 
-// API base (LAN friendly)
+// dentro del componente, reemplaza tu cálculo de API:
 const API = computed(() => {
+  // 1) si pasas apiBase como prop, se usa
   if (props.apiBase) return props.apiBase
+  // 2) si tienes VITE_API_URL en prod, úsala (p.ej. 'https://tudominio.com')
   const env = import.meta.env?.VITE_API_URL
   if (env) return env
-  const host = window.location.hostname
-  return `${window.location.protocol}//${host}:8080`
+  // 3) fallback: MISMO ORIGEN (sin puertos raros)
+  return window.location.origin
 })
+
+// y llama:
+const url = `${API.value}/api/fechas/semana`
+
 
 async function loadWeek() {
   loading.value = true
