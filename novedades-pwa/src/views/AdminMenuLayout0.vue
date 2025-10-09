@@ -1,4 +1,5 @@
 <template>
+  
   <div class="min-h-screen flex bg-slate-50">
     <!-- Sidebar desktop -->
     <aside
@@ -339,6 +340,12 @@
           </div>
         </div>
       </header>
+      <FechasBanner
+    top-offset="top-14"
+    color="amber"  
+  />
+      
+      
 
       <!-- Contenido -->
     <main class="flex-1 p-3 md:p-4 overflow-y-auto w-full">
@@ -346,9 +353,11 @@
       </main>
     </div>
   </div>
+  
 </template>
 
 <script setup>
+import FechasBanner from '@/components/FechasBanner.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SidebarItem from '../components/SidebarItem.vue'
