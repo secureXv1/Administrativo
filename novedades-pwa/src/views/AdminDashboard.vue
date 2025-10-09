@@ -1039,22 +1039,44 @@ async function descargarExcel () {
     if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
     if (selectedUnitId.value  !== 'all') params.unitId  = selectedUnitId.value
   }
+
   const { data } = await axios.get('/reports/export', {
-    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    params,
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
+
   const normalizado = data.map(row => {
     const out = {}
+
+    // 🔸 Copia de valores con reglas personalizadas
     for (const k in row) {
       let v = row[k]
-      // Si el campo es 'descripcion' y la novedad es exactamente 'SIN NOVEDAD'
+
+      // ✅ 1. Si el estado es "SIN NOVEDAD" → descripción igual
       if (k === 'descripcion' && row.novedad === 'SIN NOVEDAD') {
         out[k] = 'SIN NOVEDAD'
+
+      // ✅ 2. Si el estado es "FRANCO FRANCO" → descripción igual
+      } else if (k === 'descripcion' && row.novedad === 'FRANCO FRANCO') {
+        out[k] = 'FRANCO FRANCO'
+
+      // ✅ 3. Normaliza estados con "COMISIÓN" (quita tilde y ajusta nombres)
+      } else if (k === 'novedad' && typeof v === 'string') {
+        let nv = v.normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita tildes
+        if (nv.toUpperCase() === 'COMISION DEL SERVICIO') nv = 'COMISION SERVICIO'
+        else if (nv.toUpperCase() === 'COMISION DE ESTUDIO') nv = 'COMISION ESTUDIO'
+        out[k] = nv
+
+      // ✅ 4. Campos vacíos → N/A
       } else if (v == null || (typeof v === 'string' && v.trim() === '')) {
         out[k] = 'N/A'
+
+      // ✅ 5. Por defecto copia tal cual
       } else {
         out[k] = v
       }
     }
+
     return out
   })
 

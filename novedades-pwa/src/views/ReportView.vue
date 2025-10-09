@@ -9,72 +9,10 @@
         </div>
       </div>
     </header>
-    <!-- === BANNER SEMANAL FECHAS CONMEMORATIVAS === -->
-    <div class="sticky top-14 z-30">
-      <div
-        class="mx-auto max-w-6xl px-2"
-      >
-        <div
-          class="rounded-xl border p-2 sm:p-3
-                bg-amber-100 border-amber-300 text-amber-900"
-          role="region" aria-label="Fechas conmemorativas de la semana"
-        >
-          <!-- Encabezado del banner -->
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <div class="text-[11px] leading-4 text-amber-700">
-                Semana {{ weekLabel }}
-              </div>
-
-              <!-- Modo cerrado: una sola línea con elipsis -->
-              <div v-if="!fechasExpanded" class="text-sm font-medium whitespace-nowrap overflow-hidden text-ellipsis">
-                Fechas conmemorativas:
-                <span class="font-normal">
-                  {{ summaryLine }}
-                </span>
-              </div>
-
-              <!-- Modo abierto: solo el título, sin descripción -->
-              <div v-else class="text-sm font-medium">
-                Fechas conmemorativas
-              </div>
-            </div>
-
-            <button
-              class="shrink-0 text-xs underline hover:no-underline px-1"
-              @click="fechasExpanded = !fechasExpanded"
-            >
-              {{ fechasExpanded ? 'Ocultar' : 'Ver detalles' }}
-            </button>
-          </div>
-
-
-          <!-- Detalle desplegable -->
-          <transition name="fade">
-            <div v-if="fechasExpanded" class="mt-2 pt-2 border-t border-amber-200">
-              <div v-if="fechasLoading" class="text-xs text-amber-700">Cargando…</div>
-              <div v-else-if="fechasItems.length === 0" class="text-xs text-amber-700">Sin registros para esta semana.</div>
-              <ul v-else class="space-y-1">
-                <li
-                  v-for="it in fechasItems"
-                  :key="it.id"
-                  class="rounded-md px-2 py-1 bg-white/50 border border-amber-200"
-                >
-                  <div class="text-[11px] text-amber-700">
-                    {{ formatFechaBonita(it.fecha) }} • {{ it.gao }}
-                  </div>
-                  <div class="text-sm text-amber-900">
-                    {{ it.description }}
-                  </div>
-                </li>
-              </ul>
-            </div>
-          </transition>
-        </div>
-      </div>
-    </div>
-    <!-- === /BANNER === -->
-
+    <FechasBanner
+      top-offset="top-14"
+      color="amber"
+    />
 
     <main class="max-w-5xl mx-auto px-4 py-6 space-y-6">
       <div v-if="me" class="mb-4 text-sm text-slate-700">
@@ -576,14 +514,13 @@
 
 import axios from 'axios'
 import { ref, computed, onMounted, watch } from 'vue'
+import FechasBanner from '@/components/FechasBanner.vue'
 
 const toast = ref({ visible: false, text: '', kind: 'success' })
 function showToast(text, kind = 'success') {
   toast.value = { visible: true, text, kind }
   setTimeout(() => (toast.value.visible = false), 2500)
 }
-
-
 
 function tomorrowStr() {
   const d = new Date()
@@ -603,7 +540,6 @@ const existeReporte = ref(false)
 const agentOwnershipMsg = ref('')     // Mensaje "Agente pertenece a XX unidad"
 const canAddSelected     = ref(false) // Habilita/inhabilita el botón Agregar
 
-
 async function loadMe() {
   try {
     me.value = await axios.get('/me/profile', {
@@ -618,10 +554,6 @@ const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
 function displayCategory(c) {
   return String(c || '') === 'SO' ? 'ME' : c
 }
-
-
-
-
 
 async function loadAgents() {
   try {
@@ -1160,85 +1092,6 @@ onMounted(async () => {
   await checkIfReportExists();
 });
 
-// Si ya tienes una fecha seleccionada en el ReportView, enlázala aquí.
-// O usa la fecha de hoy por defecto.
-const hoyYMD = () => {
-  const d = new Date()
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0')
-  return `${y}-${m}-${day}`
-}
-
-// ⚠️ Si tu vista ya tiene "date" (v-model de un <input type="date"> o similar),
-// sustituye "fechaActual" por un computed que apunte a ese estado:
-// const fechaActual = computed({ get: () => date.value, set: v => date.value = v })
-const fechaActual = ref(hoyYMD())
-
-// Estado del banner
-const fechasItems = ref([])
-const fechasWeekStart = ref('')
-const fechasWeekEnd = ref('')
-const fechasLoading = ref(false)
-const fechasExpanded = ref(false)
-
-const weekLabel = computed(() => {
-  if (!fechasWeekStart.value || !fechasWeekEnd.value) return '—'
-  return `${fechasWeekStart.value} a ${fechasWeekEnd.value}`
-})
-
-// Línea compacta: juntamos descriptions (si están vacías, mostramos gao)
-const summaryLine = computed(() => {
-  if (fechasLoading.value) return 'Cargando…'
-  if (!fechasItems.value.length) return 'Sin registros esta semana'
-  const parts = fechasItems.value.map(it => `${formatFechaBonita(it.fecha)} • ${it.gao}`)
-  return parts.join(' • ')
-})
-
-
-async function loadFechasSemana() {
-  fechasLoading.value = true
-  try {
-    const token = localStorage.getItem('token')
-    const API = import.meta.env.VITE_API_URL || 'http://localhost:8080' // ← backend
-
-    const { data } = await axios.get(`${API}/api/fechas/semana`, {
-      params: { date: fechaActual.value },
-      headers: { Authorization: 'Bearer ' + token }
-    })
-
-    fechasWeekStart.value = data?.week_start || ''
-    fechasWeekEnd.value   = data?.week_end || ''
-    fechasItems.value     = Array.isArray(data?.items) ? data.items : []
-  } catch (e) {
-    console.error('fechas/semana:', e)
-    fechasItems.value = []
-  } finally {
-    fechasLoading.value = false
-  }
-}
-
-const MONTHS_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
-
-function toDateLocal(x) {
-  // Soporta 'YYYY-MM-DD' y 'YYYY-MM-DDTHH:mm:ss.sssZ'
-  if (!x) return null
-  // Si viene con 'T', deja que Date lo parsee; si no, trátalo como local (YYYY-MM-DD)
-  return x.includes('T') ? new Date(x) : new Date(x + 'T00:00:00')
-}
-
-function formatFechaBonita(x) {
-  const d = toDateLocal(String(x))
-  if (!d || isNaN(d)) return String(x)
-  const dia = String(d.getDate()).padStart(2, '0')
-  const mes = MONTHS_ES[d.getMonth()]
-  // Capitaliza el mes
-  const mesCap = mes.charAt(0).toUpperCase() + mes.slice(1)
-  return `${dia} de ${mesCap}`
-}
-
-
-onMounted(loadFechasSemana)
-// Si tu vista permite cambiar de fecha, vuelve a cargar
-watch(fechaActual, loadFechasSemana)
 
 </script>
 
