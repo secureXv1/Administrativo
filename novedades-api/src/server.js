@@ -2966,6 +2966,58 @@ app.get('/admin/agents/:id/history',
   }
 );
 
+// === Fechas conmemorativas (ANIVERSARIOS): semana domingo-sábado por MM-DD ===
+// Reusa tu lógica actual como handler
+const fechasSemanaHandler = async (req, res) => {
+  try {
+    const todayStr = new Date().toISOString().slice(0,10);
+    const dateStr = String(req.query.date || todayStr).slice(0,10);
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const base = new Date(y, m - 1, d);
+
+    const dayIdx = base.getDay(); // 0=Dom .. 6=Sáb
+    const start = new Date(base); start.setDate(base.getDate() - dayIdx);
+
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const dt = new Date(start); dt.setDate(start.getDate() + i);
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      days.push({ date: dt, mmdd: `${mm}-${dd}` });
+    }
+
+    const isLeap = (y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0));
+    const mdList = days.map(d => d.mmdd).filter(md => isLeap ? true : md !== '02-29');
+
+    if (!mdList.length) {
+      const fmt = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+      return res.json({ week_start: fmt(days[0].date), week_end: fmt(days[6].date), items: [] });
+    }
+
+    const placeholders = mdList.map(() => '?').join(',');
+    const orderField   = mdList.map(() => '?').join(',');
+    const sql = `
+      SELECT id, fecha, gao, description
+        FROM fechas
+       WHERE DATE_FORMAT(fecha, '%m-%d') IN (${placeholders})
+       ORDER BY FIELD(DATE_FORMAT(fecha, '%m-%d'), ${orderField}), id ASC
+    `;
+    const params = [...mdList, ...mdList];
+    const [rows] = await pool.query(sql, params);
+
+    const fmt = (dt) => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+    res.json({ week_start: fmt(days[0].date), week_end: fmt(days[6].date), items: rows });
+  } catch (e) {
+    console.error('GET /fechas/semana (aniversarios) error', e);
+    res.status(500).json({ error: 'FechasWeekAnnivError' });
+  }
+};
+
+// Mantén tu ruta original…
+app.get('/fechas/semana', auth, fechasSemanaHandler);
+// …y añade este alias para que funcione con tu patrón /api/...
+app.get('/api/fechas/semana', auth, fechasSemanaHandler);
+
 
 // Inicia el servidor
 
