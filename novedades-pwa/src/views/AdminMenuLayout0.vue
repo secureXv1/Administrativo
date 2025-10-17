@@ -47,7 +47,7 @@
                 <transition name="fade">
                 <div v-if="openSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
                     <SidebarItem to="/admin" icon="dashboard" :collapsed="collapsed" label="Reporte" dark />
-                    <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed" @navigate="onNavigate" />
+                    <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed" />
                   </div>
                 </transition>
             </div>
@@ -209,7 +209,7 @@
                 <transition name="fade">
                     <div v-if="openMobileSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
                     <SidebarItem to="/admin" icon="dashboard" :collapsed="collapsed" label="Reporte" :exact="true" />
-                    <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed" @navigate="onNavigate" />
+                    <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed"/>
 
                   </div>
                 </transition>

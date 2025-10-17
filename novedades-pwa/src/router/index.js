@@ -9,6 +9,7 @@ import Perfil from '../views/Perfil.vue'
 import AdminUnits from '../views/AdminUnits.vue'
 import AdminAgents from '../views/AdminAgents.vue'
 import MainDashboard from '../views/MainDashboard.vue'
+import VehiclesView from '../views/VehiclesView.vue'
 
 // ⬇️ Usa el layout con sidebar:
 import AdminMenuLayout0 from '../views/AdminMenuLayout0.vue'
@@ -56,7 +57,15 @@ const routes = [
     { path: 'audit', name: 'AuditLog', component: () => import('@/views/AdminAuditLog.vue'), meta: { roles: ['superadmin'] } },
     {  path: '/admin/dashboard',  name: 'MainDashboard',  component: MainDashboard,  meta: { roles: ['superadmin', 'supervision', 'leader_group'] }},
   ]
-},
+  },
+  {
+    path: '/admin',
+    component: AdminMenuLayout0,
+    children: [
+      // ...
+      { path: 'vehicles', component: VehiclesView }, // 👈
+    ]
+  },
 
   // Fallback
   { path: '/:pathMatch(.*)*', redirect: '/admin' }

@@ -10,11 +10,13 @@
   },
   "dependencies": {
     "axios": "latest",
+    "bcryptjs": "^3.0.2",
     "chart.js": "^4.5.0",
     "leaflet": "^1.9.4",
     "leaflet.fullscreen": "^4.0.0",
     "localforage": "latest",
     "lucide-vue-next": "^0.545.0",
+    "mysql2": "^3.15.2",
     "pinia": "latest",
     "vue": "^3.4.0",
     "vue-chartjs": "^5.3.2",
@@ -26,7 +28,7 @@
     "@vitejs/plugin-vue": "latest",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.12",
+    "tailwindcss": "^4.1.14",
     "vite": "latest",
     "vite-plugin-pwa": "latest"
   }
