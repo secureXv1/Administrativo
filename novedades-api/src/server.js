@@ -133,22 +133,30 @@ async function main() {
 // ---------- AUTH ----------
 app.post('/auth/login', async (req, res) => {
   try {
-    const username = String(req.body.username || '').trim();
+    // normaliza entrada
+    const raw = String(req.body.username || '');
+    const username = raw.trim();
     const password = String(req.body.password || '');
 
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+
+    // BÚSQUEDA CASE-INSENSITIVE Y IGNORANDO ESPACIOS
     const [rows] = await pool.query(
-      `SELECT id, username, passwordHash, role, groupId, unitId,
-              failed_login_count, lock_until, lock_strikes, hard_locked
-         FROM \`user\`
-        WHERE username=? LIMIT 1`,
+      `
+      SELECT u.id, u.username, u.passwordHash, u.role, u.groupId, u.unitId,
+            u.failed_login_count, u.lock_until, u.lock_strikes, u.hard_locked
+        FROM \`user\` u
+        LEFT JOIN agent a ON a.code = u.username
+      WHERE UPPER(TRIM(u.username)) = UPPER(TRIM(?))
+      LIMIT 1
+      `,
       [username]
     );
     const user = rows[0];
 
-   
-
     if (!user) {
-      // No revelamos existencia del usuario
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -174,14 +182,12 @@ app.post('/auth/login', async (req, res) => {
     if (!ok) {
       let newFailed = Number(user.failed_login_count || 0) + 1;
 
-      // ¿alcanza 5 fallos? → BLOQUEO TEMPORAL (esto sí se registra)
       if (newFailed >= 5) {
         const until = new Date(Date.now() + 60 * 1000);
         await pool.query(
           'UPDATE `user` SET failed_login_count=0, lock_until=?, lock_strikes=lock_strikes+1 WHERE id=? LIMIT 1',
           [until, user.id]
         );
-
         try {
           await logEvent({
             req, userId: user.id,
@@ -189,20 +195,17 @@ app.post('/auth/login', async (req, res) => {
             details: { username, reason: '5_failed_attempts', lock_until: until.toISOString() }
           });
         } catch {}
-
         return res.status(429).json({
           error: 'TemporarilyLocked',
           detail: 'Cuenta bloqueada por 1 minuto por múltiples intentos fallidos.'
         });
       }
 
-      // Si ya tuvo un lock (strike>=1) y ahora falla tras el cooldown → HARD LOCK
       if (Number(user.lock_strikes || 0) >= 1) {
         await pool.query(
           'UPDATE `user` SET failed_login_count=0, hard_locked=1, lock_until=NULL WHERE id=? LIMIT 1',
           [user.id]
         );
-
         try {
           await logEvent({
             req, userId: user.id,
@@ -210,15 +213,11 @@ app.post('/auth/login', async (req, res) => {
             details: { username, reason: 'fail_after_cooldown' }
           });
         } catch {}
-
         return res.status(423).json({ error: 'HardLocked', detail: 'Cuenta bloqueada. Contacte al administrador.' });
       }
 
-      // ❗ Fallo normal (<5): solo actualiza contador y responde con remaining (SIN log)
       await pool.query('UPDATE `user` SET failed_login_count=? WHERE id=? LIMIT 1', [newFailed, user.id]);
       const remaining = Math.max(0, 5 - newFailed);
-      // Opcional: header con el mismo dato
-      // res.set('X-Login-Attempts-Remaining', String(remaining));
       return res.status(401).json({
         error: 'Invalid credentials',
         remaining,
@@ -241,8 +240,25 @@ app.post('/auth/login', async (req, res) => {
       });
     } catch {}
 
+    // 🟢 Buscar agentId si el rol es agent
+    let agentId = null;
+    if (user.role === 'agent') {
+      const [agents] = await pool.query(
+        'SELECT id FROM agent WHERE code=? LIMIT 1',
+        [user.username]
+      );
+      agentId = agents.length ? agents[0].id : null;
+    }
+
     const token = jwt.sign(
-      { uid: user.id, username: user.username, role: user.role, groupId: user.groupId, unitId: user.unitId },
+      {
+        uid: user.id,
+        username: user.username,
+        role: user.role,
+        groupId: user.groupId,
+        unitId: user.unitId,
+        agentId: agentId // << AQUI VA EL agentId calculado
+      },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -277,15 +293,38 @@ app.post('/auth/login', async (req, res) => {
   }
 
   // ---------- ENDPOINTS USUARIO ----------
-  app.get('/me', auth, (req, res) => {
-    res.json({
+  app.get('/me', auth, async (req, res) => {
+  try {
+    // Datos base del usuario
+    const data = {
       uid: req.user.uid,
       username: req.user.username,
       role: req.user.role,
       groupId: req.user.groupId,
-      unitId: req.user.unitId
+      unitId: req.user.unitId,
+      agentId: req.user.agentId || null
+    };
+
+    // Si es agente, busca el agentId
+    let agentId = null;
+    if (String(req.user.role).toLowerCase() === 'agent') {
+      const [rows] = await pool.query(
+        'SELECT id FROM agent WHERE code=? LIMIT 1',
+        [req.user.username]
+      );
+      if (rows.length) agentId = rows[0].id;
+    }
+
+    res.json({
+      ...data,
+      agentId, // null si no aplica
     });
-  });
+  } catch (err) {
+    console.error('Error in /me:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 
   app.get('/me/profile', auth, async (req, res) => {
     const [[user]] = await pool.query(
@@ -676,18 +715,20 @@ async function vehicleHasOpenUse(vehicleId) {
 }
 
 async function validateAgentScope(req, agentId) {
-  // superadmin/supervision: siempre OK
   const role = String(req.user.role || '').toLowerCase();
   if (role === 'superadmin' || role === 'supervision') return true;
-
-  // Trae agent scope
-  const [[ag]] = await pool.query('SELECT groupId, unitId FROM agent WHERE id=? LIMIT 1', [agentId]);
-  if (!ag) return false;
-
-  if (role === 'leader_group') return Number(ag.groupId) === Number(req.user.groupId);
-  if (role === 'leader_unit')  return Number(ag.unitId)  === Number(req.user.unitId);
-
-  // otros roles no autorizados
+  if (role === 'leader_group') {
+    const [[ag]] = await pool.query('SELECT groupId FROM agent WHERE id=?', [agentId]);
+    return ag && Number(ag.groupId) === Number(req.user.groupId);
+  }
+  if (role === 'leader_unit') {
+    const [[ag]] = await pool.query('SELECT unitId FROM agent WHERE id=?', [agentId]);
+    return ag && Number(ag.unitId) === Number(req.user.unitId);
+  }
+  // AGENTE: solo puede iniciar uso para sí mismo
+  if (role === 'agent') {
+    return Number(req.user.agentId) === Number(agentId);
+  }
   return false;
 }
 
@@ -3041,7 +3082,7 @@ app.get('/api/fechas/semana', auth, fechasSemanaHandler);
 // ===== VEHICLES =====
 
 // GET /vehicles?query=&due_within=30&page=1&pageSize=100
-app.get('/vehicles', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.get('/vehicles', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   try {
     const { query, due_within, page = 1, pageSize = 100 } = req.query;
     const p = Math.max(parseInt(page,10)||1, 1);
@@ -3230,7 +3271,7 @@ app.get('/catalogs/units', auth, async (req, res) => {
 // ==================== ASSIGNMENTS =====================
 
 // GET /vehicles/:id/assignments
-app.get('/vehicles/:id/assignments', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.get('/vehicles/:id/assignments', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   const { id } = req.params;
   const [rows] = await pool.query(`
     SELECT va.id, va.agent_id AS agentId, a.code AS agentCode,
@@ -3310,7 +3351,7 @@ app.get('/vehicles/:vehicleId/assignments/:assignmentId/notes', auth, async (req
 })
 
 // GET /vehicles/:id/last-assignment-odometer
-app.get('/vehicles/:id/last-assignment-odometer', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.get('/vehicles/:id/last-assignment-odometer', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   const { id } = req.params;
   const [[row]] = await pool.query(
     `SELECT odometer_end AS last
@@ -3326,7 +3367,7 @@ app.get('/vehicles/:id/last-assignment-odometer', auth, requireRole('superadmin'
 // ====================== USES ==========================
 
 // GET /vehicles/uses?vehicle_id=&agent_id=&open=1
-app.get('/vehicles/uses', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.get('/vehicles/uses', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   const { vehicle_id, agent_id, open } = req.query;
   const where = [], args = [];
   if (vehicle_id) { where.push('vu.vehicle_id=?'); args.push(vehicle_id); }
@@ -3351,7 +3392,7 @@ app.get('/vehicles/uses', auth, requireRole('superadmin','supervision','leader_g
 
 // POST /vehicles/uses/start
 // body: { vehicle_id, agent_id, odometer_start?, notes? }
-app.post('/vehicles/uses/start', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.post('/vehicles/uses/start', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   const { vehicle_id, agent_id, odometer_start, notes } = req.body;
   if (!vehicle_id || !agent_id) return res.status(422).json({ error:'vehicle_id y agent_id requeridos' });
 
@@ -3383,7 +3424,7 @@ app.post('/vehicles/uses/start', auth, requireRole('superadmin','supervision','l
 
 // PATCH /vehicles/uses/:id/end
 // body: { odometer_end?, notes? }
-app.patch('/vehicles/uses/:id/end', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.patch('/vehicles/uses/:id/end', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   const { id } = req.params;
   const { ended_at, odometer_end, notes } = req.body;
 
@@ -3408,7 +3449,7 @@ app.patch('/vehicles/uses/:id/end', auth, requireRole('superadmin','supervision'
 });
 
 // GET /vehicles/:id/last-use-odometer
-app.get('/vehicles/:id/last-use-odometer', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.get('/vehicles/:id/last-use-odometer', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   const { id } = req.params;
   // primero intento con odometer_end del último uso cerrado; si no existe, tomo el último odometer_start
   const [[row]] = await pool.query(
@@ -3438,7 +3479,7 @@ app.get('/vehicles/:id/last-use-odometer', auth, requireRole('superadmin','super
 app.get(
   '/vehicles/:tipo/:id/novelties',
   auth,
-  requireRole('superadmin','supervision','leader_group','leader_unit'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
     const { tipo, id } = req.params;
     const limit = Math.min(Math.max(parseInt(req.query.limit,10) || 10, 1), 100);
@@ -3470,7 +3511,7 @@ app.get(
 app.post(
   '/vehicles/:tipo/:id/novelties',
   auth,
-  requireRole('superadmin','supervision','leader_group','leader_unit'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   upload.single('photo'),
   async (req, res) => {
     const { tipo, id } = req.params;
@@ -3524,7 +3565,7 @@ app.post(
 // GET /vehicles/:id/novelties/recent
 // Regla: si hay staging (vehicle_id=?, use_id IS NULL) => devolver esas;
 // si no hay, “seed” copiando del último uso a staging y devolver staging.
-app.get('/vehicles/:id/novelties/recent', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.get('/vehicles/:id/novelties/recent', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   const { id } = req.params;
   const limit = Math.min(Math.max(parseInt(req.query.limit,10) || 10, 1), 100);
 
@@ -3588,7 +3629,7 @@ app.delete('/vehicles/novelties/:id', auth, requireRole('superadmin','supervisio
 });
 
 // GET /vehicles/due?within=30
-app.get('/vehicles/due', auth, requireRole('superadmin','supervision','leader_group','leader_unit'), async (req, res) => {
+app.get('/vehicles/due', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
   try {
     const within = Math.max(parseInt(req.query.within,10) || 30, 0);
     const [rows] = await pool.query(`

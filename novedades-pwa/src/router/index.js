@@ -10,6 +10,7 @@ import AdminUnits from '../views/AdminUnits.vue'
 import AdminAgents from '../views/AdminAgents.vue'
 import MainDashboard from '../views/MainDashboard.vue'
 import VehiclesView from '../views/VehiclesView.vue'
+import AgentDashboard from '../views/AgentDashboard.vue'
 
 // ⬇️ Usa el layout con sidebar:
 import AdminMenuLayout0 from '../views/AdminMenuLayout0.vue'
@@ -20,6 +21,7 @@ import { http } from '../lib/http'
 function homeByRole(role) {
   const r = String(role || '').toLowerCase()
   if (r === 'leader_unit') return '/report'
+  if (r === 'agent') return '/agent'  
   // superadmin / supervision / leader_group
   return '/admin'
 }
@@ -29,6 +31,7 @@ function homeByRole(role) {
 const routes = [
   { path: '/', redirect: '/login' },
   { path: '/login', component: LoginView },
+  { path: '/agent', component: AgentDashboard, meta: { requiresAuth: true, roles: ['agent'] } }, 
 
   // Vista simple para líder de unidad
   { path: '/report', component: ReportView, meta: { requiresAuth: true, roles: ['leader_unit'] } },
@@ -117,6 +120,7 @@ router.beforeEach(async (to, from, next) => {
     if (to.path.startsWith('/admin')) {
       if (['superadmin', 'supervision', 'leader_group'].includes(role)) return next()
       if (role === 'leader_unit') return next('/report')
+      if (role === 'agent') return next('/agent')
       return next('/login')
     }
 
