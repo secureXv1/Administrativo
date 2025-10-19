@@ -125,6 +125,8 @@ async function login () {
       router.push('/admin/')
     } else if (me?.role === 'leader_unit') {
       router.push('/report')
+    } else if (me?.role === 'agent') {
+      router.push('/agent')
     } else {
       msg.value = 'Rol de usuario no reconocido.'
     }
@@ -141,6 +143,7 @@ async function login () {
     loading.value = false
   }
 }
+
 
 </script>
 

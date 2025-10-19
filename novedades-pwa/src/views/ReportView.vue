@@ -1,50 +1,97 @@
 <template>
   <div class="min-h-screen bg-slate-50">
-    <header class="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-slate-200">
-      <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-        <h1 class="text-slate-900 font-semibold">Reporte del día</h1>
-        <div class="flex gap-3 items-center">
-          <router-link to="/perfil" class="btn-ghost">Perfil</router-link>
-          <button @click="logout" class="btn-ghost">Cerrar sesión</button>
+    <!-- HERO -->
+    <div class="bg-gradient-to-r from-slate-800 to-slate-700">
+      <div class="max-w-6xl mx-auto px-4 py-8">
+        <div class="flex items-center justify-between">
+          <div>
+            <h1 class="text-white text-2xl font-semibold">Reporte del día</h1>
+            <p class="text-slate-300 text-sm mt-1">Consolida y envía las novedades diarias</p>
+          </div>
         </div>
       </div>
-    </header>
-    <FechasBanner
-      top-offset="top-14"
-      color="amber"
-    />
+    </div>
 
-    <main class="max-w-5xl mx-auto px-4 py-6 space-y-6">
-      <div v-if="me" class="mb-4 text-sm text-slate-700">
-        Unidad: <b>{{ me.unitName || '—' }}</b>
-        &nbsp; | &nbsp;
-        Grupo: <b>{{ me.groupCode || '—' }}</b>
-      </div>
-
-      <div class="card">
-        <div class="card-body space-y-6">
-        <!-- Fecha -->
-        <div>
-          <label class="label">Fecha</label>
-          <input
-            type="date"
-            class="input"
-            v-model="reportDate"
-          />
-          <p class="text-xs text-slate-500 mt-1">
-            Selecciona una fecha para consultar/editar el reporte de ese día.
-          </p>
+    <!-- LAYOUT: Sidebar + Contenido -->
+    <div class="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6 -mt-10 sm:-mt-12 md:-mt-12 relative z-10">
+      <!-- ===== Sidebar (idéntico estilo al del agente) ===== -->
+      <aside class="order-1 md:order-1 md:col-[1] space-y-4 md:sticky md:top-6">
+        <!-- Tarjeta usuario -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow p-4">
+          <div class="flex items-center gap-3">
+            <div class="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M15.75 6.75a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z"/>
+                <path d="M4.5 19.5a7.5 7.5 0 0115 0"/>
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <div class="font-semibold text-slate-900 truncate">{{ me?.name || me?.username || '—' }}</div>
+              <div class="text-xs text-slate-500 truncate">Unidad: {{ me?.unitName || '—' }}</div>
+              <div class="text-xs text-slate-400 truncate">Grupo: {{ me?.groupCode || '—' }}</div>
+            </div>
+          </div>
+          <button
+            @click="logout"
+            class="mt-4 w-full px-3 py-2 rounded-xl text-white bg-slate-800 hover:bg-slate-900"
+          >
+            Cerrar sesión
+          </button>
         </div>
 
-          
+        <!-- Menú -->
+        <nav class="mt-4 bg-white rounded-2xl shadow p-2">
+            <button
+              v-for="item in menu"
+              :key="item.key"
+              @click="section=item.key"
+              class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm"
+              :class="section===item.key ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'">
+              <span class="truncate">{{ item.label }}</span>
+              <svg v-if="section===item.key" class="w-4 h-4 text-slate-500" viewBox="0 0 24 24" fill="none">
+                <path d="M9 18l6-6-6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </nav>
+      </aside>
+
+      <!-- ===== CONTENIDO ===== -->
+      <main class="order-2 md:order-2 md:col-[2] space-y-6">
+
+        <!-- Banner de fechas -->
+        <FechasBanner top-offset="top-14" color="amber" />
+        
+        <!-- Tarjeta principal -->
          
-                           <!-- Buscar y agregar agente -->
-            <div class="mb-4 grid grid-cols-1 sm:grid-cols-[minmax(260px,360px)_max-content] gap-3 items-start">
-              <!-- Columna: input + mensaje -->
+        <section v-show="section==='captura'" class="bg-white rounded-2xl shadow border border-slate-200 overflow-hidden">
+          <!-- Header de tarjeta -->
+          <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div>
+              <h2 class="text-slate-900 font-semibold">Captura de novedades</h2>
+              <p class="text-xs text-slate-500 -mt-0.5">Selecciona la fecha, agrega agentes y define su estado</p>
+            </div>
+            
+          </div>
+
+          <!-- Body (tu contenido original) -->
+          <div class="p-4 space-y-6">
+            <!-- Fecha -->
+            <div>
+              <label class="text-xs font-medium text-slate-600 mb-1 block">Fecha</label>
+              <input
+                type="date"
+                class="w-full max-w-xs rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                v-model="reportDate"
+              />
+              <p class="text-xs text-slate-500 mt-1">Selecciona una fecha para consultar/editar el reporte de ese día.</p>
+            </div>
+
+            <!-- Buscar y agregar agente -->
+            <div class="grid grid-cols-1 sm:grid-cols-[minmax(260px,360px)_max-content] gap-3 items-start">
               <div class="flex flex-col">
-                <label class="label">Agregar agente</label>
+                <label class="text-xs font-medium text-slate-600 mb-1 block">Agregar agente</label>
                 <input
-                  class="input"
+                  class="rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
                   list="free-agents-list"
                   v-model="agentSearch"
                   @input="onAgentSearchInput"
@@ -58,24 +105,17 @@
                     :value="a.code"
                     @click="onSelectAgent(a.code)"
                   >
-                    {{ a.code }} ({{ displayCategory(a.category) }})
-                    {{ a.unitName ? ' — ' + a.unitName : '' }}
+                    {{ a.code }} ({{ displayCategory(a.category) }}){{ a.unitName ? ' — ' + a.unitName : '' }}
                   </option>
-
                 </datalist>
-
-                <!-- Mensaje: ocupa altura fija para que NUNCA mueva el botón -->
-                <p v-if="agentOwnershipMsg" class="mt-1 h-5 text-xs text-amber-700">
-                  {{ agentOwnershipMsg }}
-                </p>
+                <p v-if="agentOwnershipMsg" class="mt-1 h-5 text-xs text-amber-700">{{ agentOwnershipMsg }}</p>
                 <p v-else class="mt-1 h-5 text-xs">&nbsp;</p>
               </div>
 
-              <!-- Columna: botón (con label invisible para alinear con el input) -->
               <div class="flex flex-col items-start">
-                <label class="label invisible select-none" aria-hidden="true">.</label>
+                <label class="text-xs font-medium text-slate-600 mb-1 invisible select-none">.</label>
                 <button
-                  class="btn-primary px-4 whitespace-nowrap"
+                  class="px-4 py-2 rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 whitespace-nowrap"
                   @click="addFreeAgent"
                   :disabled="!canAddSelected"
                 >
@@ -84,28 +124,68 @@
               </div>
             </div>
 
-          <!-- Tabla para desktop -->
-              <div class="overflow-auto hidden md:block">
-                <table class="table w-full">
-                  <thead>
+            <!-- Tabla desktop -->
+            <div class="hidden md:block">
+              <div class="overflow-auto rounded-xl border border-slate-200">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-slate-800 text-white">
                     <tr>
-                      <th>Código</th>
-                      <th>Categoría</th>
-                      <th>Estado</th>
-                      <th>Ubicación</th>
-                      <th></th>
+                      <th class="text-left py-2 px-3 font-semibold">Código</th>
+                      <th class="text-left py-2 px-3 font-semibold">Cat</th>
+                      <th class="text-left py-2 px-3 font-semibold">Días Lab</th>
+                      <th class="text-left py-2 px-3 font-semibold">Historial</th>
+                      <th class="text-left py-2 px-3 font-semibold">Estado</th>
+                      <th class="text-left py-2 px-3 font-semibold">Ubicación / Detalle</th>
+                      <th class="text-left py-2 px-3 font-semibold"></th>
                     </tr>
                   </thead>
-                  <tbody>
-                    <tr v-for="(a, i) in agents" :key="a.id">
-                       <td>
-                        <div class="font-medium">{{ a.code }}</div>
+                  <tbody class="bg-white">
+                    <tr v-for="(a, i) in agents" :key="a.id" class="border-t">
+                      <td class="py-2 px-3">
+                        <div class="font-medium text-slate-900">{{ a.code }}</div>
                         <div v-if="a.nickname" class="text-xs text-slate-500 mt-0.5">({{ a.nickname }})</div>
                       </td>
-                      <td>{{ displayCategory(a.category) }}</td>
+                      <td class="py-2 px-3">{{ displayCategory(a.category) }}</td>
+
+                      <td>                        
+                        <span
+                          :class="[
+                            'inline-block min-w-[2.5em] text-center rounded px-1',
+                            a.diasLaborados >= 45
+                              ? 'bg-red-100 text-red-600 font-bold border border-red-200'
+                              : a.diasLaborados >= 30
+                                ? 'bg-orange-100 text-orange-700 font-semibold border border-orange-200'
+                                : a.diasLaborados > 0
+                                  ? 'bg-green-50 text-green-700 font-semibold border border-green-200'
+                                  : 'text-slate-400 border border-slate-200 bg-white'
+                          ]"
+                          :title="a.diasLaborados >= 45
+                            ? '¡Alerta! tiempo prolongado sin descanso'
+                            : a.diasLaborados >= 30
+                              ? 'Atención: Más de un mes sin descansar'
+                              : a.diasLaborados > 0
+                                ? 'Días consecutivos laborados'
+                                : 'Sin días laborados'"
+                        >
+                          {{ a.diasLaborados ?? 0 }}
+                        </span>
+                      </td>
+
                       <td>
-                        <select class="input" v-model="a.status" @change="onStateChange(a)">
-                          <!-- ...options como tienes... -->
+                      <button class="btn-ghost p-1" title="Historial" @click="openHistory(a)">
+                        <!-- icono reloj -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                          <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"></circle>
+                        </svg>
+                      </button>
+                    </td>
+                      <td class="py-2 px-3 ">
+                        <select
+                          class="w-56 rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                          v-model="a.status"
+                          @change="onStateChange(a)"
+                        >
                           <option value="SIN NOVEDAD">SIN NOVEDAD</option>
                           <option value="COMISIÓN DEL SERVICIO">COMISIÓN DEL SERVICIO</option>
                           <option value="FRANCO FRANCO">FRANCO FRANCO</option>
@@ -124,98 +204,180 @@
                           <option value="HOSPITALIZADO">HOSPITALIZADO</option>
                         </select>
                       </td>
-                      <td>
-                        <!-- Usa tu mismo template de inputs, igual que antes -->
-                        <!-- ... igual que tu código actual ... -->
+                      <td class="py-2 px-3">
+                        <!-- SIN NOVEDAD -->
                         <template v-if="a.status === 'SIN NOVEDAD'">
-                          <input class="input bg-slate-100 cursor-not-allowed" :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'" readonly tabindex="-1" />
+                          <input
+                            class="w-full rounded-lg border border-slate-300 bg-slate-100 text-slate-900 px-3 py-2 shadow-sm"
+                            :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'"
+                            readonly
+                            tabindex="-1"
+                          />
                         </template>
+
+                        <!-- SERVICIO -->
                         <template v-else-if="a.status === 'SERVICIO'">
-                          <input class="input mb-1 bg-slate-100 cursor-not-allowed" :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'" readonly tabindex="-1" />
-                          <div class="flex gap-1 mb-1">
-                            <input class="input" type="date"
-                                  v-model="a.novelty_start"
-                                  :class="{'!border-red-500': agentHasRangeError(a)}"
-                                  placeholder="Fecha inicio" />
-                            <input class="input" type="date"
-                                  v-model="a.novelty_end"
-                                  :class="{'!border-red-500': agentHasRangeError(a)}"
-                                  placeholder="Fecha fin" />
+                          <input
+                            class="w-full rounded-lg border border-slate-300 bg-slate-100 text-slate-900 px-3 py-2 shadow-sm mb-2"
+                            :value="a.municipalityName || 'CUNDINAMARCA - Bogotá'"
+                            readonly
+                            tabindex="-1"
+                          />
+                          <div class="flex gap-2 mb-2">
+                            <input
+                              class="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                              type="date"
+                              v-model="a.novelty_start"
+                              :class="{'!border-red-500': agentHasRangeError(a)}"
+                              placeholder="Fecha inicio"
+                            />
+                            <input
+                              class="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                              type="date"
+                              v-model="a.novelty_end"
+                              :class="{'!border-red-500': agentHasRangeError(a)}"
+                              placeholder="Fecha fin"
+                            />
                           </div>
-                          <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-1">
+                          <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-2">
                             La fecha fin no puede ser menor a la fecha inicio.
                           </p>
-                          <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                          <textarea
+                            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                            v-model="a.novelty_description"
+                            placeholder="Descripción..."
+                            rows="1"
+                          />
                         </template>
+
+                        <!-- COMISIÓN DEL SERVICIO -->
                         <template v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
-                          <input class="input" :class="{'border-green-500': a.municipalityId, 'border-red-500': a.municipalityName && !a.municipalityId}" list="municipios-list" v-model="a.municipalityName" @input="onMuniInput(a)" @blur="onMuniInput(a)" placeholder="Buscar municipio..." autocomplete="off" />
+                          <input
+                            class="w-full rounded-lg border px-3 py-2 shadow-sm focus:ring-2"
+                            :class="{
+                              'border-green-500 focus:ring-green-200 bg-white': a.municipalityId,
+                              'border-red-500 focus:ring-red-200 bg-white': a.municipalityName && !a.municipalityId,
+                              'border-slate-300 focus:ring-indigo-200 bg-white': !a.municipalityName
+                            }"
+                            list="municipios-list"
+                            v-model="a.municipalityName"
+                            @input="onMuniInput(a)"
+                            @blur="onMuniInput(a)"
+                            placeholder="Buscar municipio..."
+                            autocomplete="off"
+                          />
                           <datalist id="municipios-list">
                             <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
                           </datalist>
                           <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
                             Debe seleccionar un municipio válido
                           </span>
-                          <textarea class="input mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                          <textarea
+                            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200 mt-2"
+                            v-model="a.novelty_description"
+                            placeholder="Descripción..."
+                            rows="1"
+                          />
                         </template>
+
+                        <!-- FRANCO FRANCO -->
                         <template v-else-if="a.status === 'FRANCO FRANCO'">
                           <span class="text-xs text-slate-400">Sin datos adicionales</span>
                         </template>
 
-                      <!-- SUSPENDIDO: inicio, fin, descripción -->
-                      <template v-else-if="a.status === 'SUSPENDIDO'">
-                        <div class="flex gap-1 mb-1">
-                          <input class="input" type="date"
-                                v-model="a.novelty_start"
-                                :class="{'!border-red-500': agentHasRangeError(a)}"
-                                placeholder="Fecha inicio" />
-                          <input class="input" type="date"
-                                v-model="a.novelty_end"
-                                :class="{'!border-red-500': agentHasRangeError(a)}"
-                                placeholder="Fecha fin" />
-                        </div>
-                        <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-1">
-                          La fecha fin no puede ser menor a la fecha inicio.
-                        </p>
-                        <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
-                      </template>
-
-                      <!-- HOSPITALIZADO: inicio y descripción (sin fin) -->
-                      <template v-else-if="a.status === 'HOSPITALIZADO'">
-                        <div class="flex gap-1 mb-1">
-                          <input class="input" type="date" v-model="a.novelty_start" placeholder="Fecha inicio" />
-                        </div>
-                        <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
-                      </template>
-
-
-
-                        <template v-else>
-                          <div class="flex gap-1 mb-1">
-                            <input class="input" type="date"
-                                  v-model="a.novelty_start"
-                                  :class="{'!border-red-500': agentHasRangeError(a)}"
-                                  placeholder="Fecha inicio" />
-                            <input class="input" type="date"
-                                  v-model="a.novelty_end"
-                                  :class="{'!border-red-500': agentHasRangeError(a)}"
-                                  placeholder="Fecha fin" />
+                        <!-- SUSPENDIDO -->
+                        <template v-else-if="a.status === 'SUSPENDIDO'">
+                          <div class="flex gap-2 mb-2">
+                            <input
+                              class="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                              type="date"
+                              v-model="a.novelty_start"
+                              :class="{'!border-red-500': agentHasRangeError(a)}"
+                              placeholder="Fecha inicio"
+                            />
+                            <input
+                              class="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                              type="date"
+                              v-model="a.novelty_end"
+                              :class="{'!border-red-500': agentHasRangeError(a)}"
+                              placeholder="Fecha fin"
+                            />
                           </div>
-                          <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-1">
+                          <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-2">
                             La fecha fin no puede ser menor a la fecha inicio.
                           </p>
-                          <textarea class="input" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
+                          <textarea
+                            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                            v-model="a.novelty_description"
+                            placeholder="Descripción..."
+                            rows="1"
+                          />
+                        </template>
+
+                        <!-- HOSPITALIZADO -->
+                        <template v-else-if="a.status === 'HOSPITALIZADO'">
+                          <div class="flex gap-2 mb-2">
+                            <input
+                              class="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                              type="date"
+                              v-model="a.novelty_start"
+                              placeholder="Fecha inicio"
+                            />
+                          </div>
+                          <textarea
+                            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                            v-model="a.novelty_description"
+                            placeholder="Descripción..."
+                            rows="1"
+                          />
+                        </template>
+
+                        <!-- Genérico (otros estados con rango) -->
+                        <template v-else>
+                          <div class="flex gap-2 mb-2">
+                            <input
+                              class="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                              type="date"
+                              v-model="a.novelty_start"
+                              :class="{'!border-red-500': agentHasRangeError(a)}"
+                              placeholder="Fecha inicio"
+                            />
+                            <input
+                              class="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                              type="date"
+                              v-model="a.novelty_end"
+                              :class="{'!border-red-500': agentHasRangeError(a)}"
+                              placeholder="Fecha fin"
+                            />
+                          </div>
+                          <p v-if="agentHasRangeError(a)" class="text-xs text-red-600 -mt-1 mb-2">
+                            La fecha fin no puede ser menor a la fecha inicio.
+                          </p>
+                          <textarea
+                            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200"
+                            v-model="a.novelty_description"
+                            placeholder="Descripción..."
+                            rows="1"
+                          />
                         </template>
                       </td>
-                      <td>
-                        <button class="btn-ghost" @click="removeAgent(a.id)">Quitar</button>
+                      <td class="py-2 px-3 ">
+                        <button
+                          class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm"
+                          @click="removeAgent(a.id)"
+                        >
+                          Quitar
+                        </button>
                       </td>
                     </tr>
+
                     <tr v-if="agents.length === 0">
                       <td colspan="5" class="text-center text-slate-500 py-4">Sin agentes en tu Unidad.</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
+            </div>
 
               <!-- Tarjetas para móvil -->
               <div class="block md:hidden space-y-4">
@@ -234,11 +396,53 @@
                         <span v-if="a.nickname" class="font-normal text-xs text-slate-500">
                           — {{ a.nickname }}
                         </span>
-                      </div>
-                      <div class="text-xs text-gray-500 mt-0.5">Estado</div>
+                      </div>                      
                     </div>
                     <button class="text-red-600 text-xs underline" @click="removeAgent(a.id)">Quitar</button>
                   </div>
+
+                  <!-- Caja de "Días Laborados" + botón historial, versión móvil -->
+                  <div class="flex items-center gap-2">
+                    <!-- Badge + texto -->
+                    <div class="inline-flex items-center gap-2 px-2 py-1 rounded-lg border text-xs bg-white">
+                      <span
+                        :class="[
+                          'inline-block min-w-[2.5em] text-center rounded px-1',
+                          a.diasLaborados >= 45
+                            ? 'bg-red-100 text-red-600 font-bold border border-red-200'
+                            : a.diasLaborados >= 30
+                              ? 'bg-orange-100 text-orange-700 font-semibold border border-orange-200'
+                              : a.diasLaborados > 0
+                                ? 'bg-green-50 text-green-700 font-semibold border border-green-200'
+                                : 'text-slate-400 border border-slate-200 bg-white'
+                        ]"
+                        :title="a.diasLaborados >= 45
+                          ? '¡Alerta! tiempo prolongado sin descanso '
+                          : a.diasLaborados >= 30
+                            ? 'Atención: Más de un mes sin descansar'
+                            : a.diasLaborados > 0
+                              ? 'Días consecutivos en servicio o sin novedad'
+                              : 'Sin días laborados'"
+                      >
+                        {{ a.diasLaborados ?? 0 }}
+                      </span>
+                      <span class="text-xs text-slate-700">Días laborados</span>
+                    </div>
+                    <!-- Botón historial -->
+                    <button
+                      class="inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-xs bg-white hover:bg-slate-50"
+                      @click="openHistory(a)"
+                      title="Historial de novedades"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+                          viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"></circle>
+                      </svg>
+                      Historial
+                    </button>
+                  </div>
+
+
                   <select class="input w-full" v-model="a.status" @change="onStateChange(a)">
                     <option value="SIN NOVEDAD">SIN NOVEDAD</option>
                     <option value="COMISIÓN DEL SERVICIO">COMISIÓN DEL SERVICIO</option>
@@ -341,174 +545,302 @@
                 </div>
               </div>
 
-          <!-- Aclaración antes de KPIs -->
-          <div class="text-center py-2">
-            <h3 class="text-base font-semibold text-slate-700">
-              Novedades enviadas a nivel central
-            </h3>
-            <p class="text-xs text-slate-500">
-              Este consolidado corresponde al reporte que se transmite a nivel central.
-            </p>
-          </div>
+            <!-- Aclaración antes de KPIs -->
+            <div class="text-center py-2">
+              <h3 class="text-base font-semibold text-slate-700">Novedades enviadas a nivel central</h3>
+              <p class="text-xs text-slate-500">Este consolidado corresponde al reporte que se transmite a nivel central.</p>
+            </div>
 
-        <!-- KPIs calculados -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="kpi">
-            <div class="card-body">
-              <h4>FE total (OF/ME/PT)</h4>
-              <div class="value">
-                {{ kpiFE }}
-                <span class="text-sm text-slate-500"> ({{ feTotal }})</span>
+            <!-- KPIs -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="px-4 py-3">
+                  <h4 class="text-slate-700 text-sm font-medium">FE total (OF/ME/PT)</h4>
+                  <div class="text-2xl font-bold text-slate-900 mt-1">
+                    {{ kpiFE }} <span class="text-sm text-slate-500">({{ feTotal }})</span>
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="px-4 py-3">
+                  <h4 class="text-slate-700 text-sm font-medium">FD total (OF/ME/PT)</h4>
+                  <div class="text-2xl font-bold text-slate-900 mt-1">
+                    {{ kpiFD }} <span class="text-sm text-slate-500">({{ fdTotal }})</span>
+                  </div>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div class="px-4 py-3">
+                  <h4 class="text-slate-700 text-sm font-medium">Novedades totales (OF/ME/PT)</h4>
+                  <div class="text-2xl font-bold text-slate-900 mt-1">
+                    {{ kpiNOV }} <span class="text-sm text-slate-500">({{ novTotalKPI }})</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="kpi">
-            <div class="card-body">
-              <h4>FD total (OF/ME/PT)</h4>
-              <div class="value">
-                {{ kpiFD }}
-                <span class="text-sm text-slate-500"> ({{ fdTotal }})</span>
-              </div>
+            <!-- Acciones -->
+            <div class="flex flex-wrap items-center gap-3">
+              <button
+                @click="save"
+                class="px-4 py-2 rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              >
+                {{ existeReporte ? 'Actualizar' : 'Guardar' }}
+              </button>
+              <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
+            </div>
+
+            <!-- Panel desplegable: Novedades unidad externa -->
+            <div class="rounded-2xl border-2 border-yellow-400 bg-yellow-50 overflow-hidden">
+              <button
+                type="button"
+                class="w-full px-4 py-3 flex items-center justify-between"
+                @click="showUnitPanel = !showUnitPanel"
+                :aria-expanded="showUnitPanel ? 'true' : 'false'"
+              >
+                <div class="text-left">
+                  <div class="text-sm font-semibold text-yellow-800">Novedades en su unidad</div>
+                  <div class="text-xs text-yellow-700">Fecha: {{ reportDateShort }}</div>
+                </div>
+                <svg class="h-5 w-5 text-yellow-800 transition-transform" :class="{'rotate-180': showUnitPanel}" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd" />
+                </svg>
+              </button>
+
+              <transition
+                enter-active-class="transition duration-200 ease-out"
+                enter-from-class="opacity-0 -translate-y-1"
+                enter-to-class="opacity-100 translate-y-0"
+                leave-active-class="transition duration-150 ease-in"
+                leave-from-class="opacity-100 translate-y-0"
+                leave-to-class="opacity-0 -translate-y-1"
+              >
+                <div v-show="showUnitPanel" class="px-4 pb-4 space-y-3">
+                  <!-- KPIs compactos -->
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+                      <div class="text-xs text-yellow-700">F/E (OF/ME/PT)</div>
+                      <div class="text-base font-bold text-yellow-900">
+                        {{ feOF }}/{{ feSO }}/{{ fePT }}
+                        <span class="text-xs text-yellow-800"> ({{ feOF + feSO + fePT }})</span>
+                      </div>
+                    </div>
+
+                    <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+                      <div class="text-xs text-yellow-700">F/D (Comisión del servicio)</div>
+                      <div class="text-base font-bold text-yellow-900">
+                        {{ comiOF }}/{{ comiSO }}/{{ comiPT }}
+                        <span class="text-xs text-yellow-800"> ({{ comiTotal }})</span>
+                      </div>
+                    </div>
+
+                    <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
+                      <div class="text-xs text-yellow-700">Novedades</div>
+                      <div class="text-base font-bold text-yellow-900">
+                        {{ novOF }}/{{ novSO }}/{{ novPT }}
+                        <span class="text-xs text-yellow-800"> ({{ novTotal }})</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Detalle discriminado -->
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div
+                      v-for="row in summaryByStatus"
+                      :key="row.status"
+                      class="flex items-center justify-between rounded-xl bg-yellow-100/70 px-3 py-2 border border-yellow-200"
+                    >
+                      <div class="text-sm font-medium text-yellow-900">{{ row.label }}</div>
+                      <div class="text-sm font-semibold text-yellow-900">
+                        {{ row.of }}/{{ row.me }}/{{ row.pt }}
+                        <span class="ml-1 text-xs text-yellow-800">(Total: {{ row.total }})</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </transition>
             </div>
           </div>
+        </section>
+        <!-- ====== PERFIL (embebido) ====== -->
+          <section v-show="section==='perfil'" class="bg-white rounded-2xl shadow p-6 max-w-2xl">
+            <h3 class="text-lg font-semibold text-slate-900 mb-4">Perfil de Usuario</h3>
 
-          <div class="kpi">
-            <div class="card-body">
-              <h4>Novedades totales (OF/ME/PT)</h4>
-              <div class="value">
-                {{ kpiNOV }}
-                <span class="text-sm text-slate-500"> ({{ novTotalKPI }})</span>
+            <div v-if="profileLoading" class="py-8 text-center text-slate-600">Cargando…</div>
+            <div v-else class="space-y-4">
+              <div>
+                <label class="font-medium text-slate-700">Usuario</label>
+                <div class="bg-slate-100 rounded-lg px-3 py-2 mt-1">{{ profile.email }}</div>
               </div>
+              <div>
+                <label class="font-medium text-slate-700">Rol</label>
+                <div class="bg-slate-100 rounded-lg px-3 py-2 mt-1 capitalize">{{ profile.role }}</div>
+              </div>
+              <div>
+                <label class="font-medium text-slate-700">Grupo</label>
+                <div class="bg-slate-100 rounded-lg px-3 py-2 mt-1">{{ profile.groupCode || 'Sin grupo' }}</div>
+              </div>
+              <div>
+                <label class="font-medium text-slate-700">Fecha de creación</label>
+                <div class="bg-slate-100 rounded-lg px-3 py-2 mt-1">{{ formatDate(profile.createdAt) }}</div>
+              </div>
+
+              <hr class="my-6">
+
+              <h4 class="font-semibold text-slate-900 mb-3">Cambiar contraseña</h4>
+              <form @submit.prevent="cambiarPassword" class="space-y-4">
+                <div>
+                  <label class="text-xs font-medium text-slate-600 mb-1 block">Contraseña actual</label>
+                  <input v-model="oldPassword" type="password"
+                         class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                         required autocomplete="current-password">
+                </div>
+                <div>
+                  <label class="text-xs font-medium text-slate-600 mb-1 block">Nueva contraseña</label>
+                  <input v-model="newPassword" type="password"
+                         class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                         required autocomplete="new-password">
+                </div>
+                <div>
+                  <label class="text-xs font-medium text-slate-600 mb-1 block">Repetir nueva contraseña</label>
+                  <input v-model="repeatPassword" type="password"
+                         class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                         required autocomplete="new-password">
+                </div>
+                <button class="px-4 py-2 rounded-lg text-white bg-indigo-600 hover:bg-indigo-700">
+                  Cambiar contraseña
+                </button>
+                <div v-if="msg" :class="msgClass" class="mt-2 text-sm">{{ msg }}</div>
+              </form>
+            </div>
+          </section>
+        <!-- Toast -->
+        <transition
+          enter-active-class="transition duration-200 ease-out"
+          enter-from-class="opacity-0 translate-y-2"
+          enter-to-class="opacity-100 translate-y-0"
+          leave-active-class="transition duration-150 ease-in"
+          leave-from-class="opacity-100 translate-y-0"
+          leave-to-class="opacity-0 translate-y-2"
+        >
+          <div
+            v-if="toast.visible"
+            class="fixed bottom-4 right-4 z-[1000] rounded-xl px-4 py-3 shadow-lg border"
+            :class="toast.kind === 'success'
+              ? 'bg-white border-green-200 text-green-800'
+              : 'bg-white border-amber-200 text-amber-800'"
+          >
+            <div class="text-sm font-medium">{{ toast.text }}</div>
+          </div>
+        </transition>
+      </main>
+
+      <!-- Modal Historial (Calendario + Línea de tiempo) -->
+    <div v-if="historyModal.open" class="fixed inset-0 z-[9998] grid place-items-center p-4">
+    <div class="absolute inset-0 bg-black/40" @click="historyModal.open=false"></div>
+
+    <div class="relative z-10 w-full max-w-5xl rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-200">
+      <!-- Header -->
+      <div class="px-5 py-4 rounded-t-2xl text-white flex items-center justify-between
+                  bg-gradient-to-r from-slate-900 via-indigo-700 to-blue-600
+                  dark:from-slate-950 dark:via-indigo-900 dark:to-blue-800">
+        <div class="flex items-center gap-3">
+          <div class="text-xl font-semibold tracking-tight">
+            Historial — {{ historyModal.agent?.code }}
+            <span v-if="historyModal.agent?.nickname" class="opacity-80 text-sm">({{ historyModal.agent.nickname }})</span>
+          </div>
+          <span class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs bg-white/15 text-white">
+            {{ monthLabel }}
+          </span>
+        </div>
+        <button class="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white hover:bg-white/10"
+                @click="historyModal.open=false">✕</button>
+      </div>
+
+      <!-- Controles -->
+      <div class="px-5 py-3 flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2">
+          <button class="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm bg-white border border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700"
+                  @click="prevMonth">◀</button>
+          <button class="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm bg-white border border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700"
+                  @click="todayMonth">Hoy</button>
+          <button class="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm bg-white border border-slate-300 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700"
+                  @click="nextMonth">▶</button>
+
+          <span class="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700">
+            {{ monthFrom }} → {{ monthTo }}
+          </span>
+        </div>
+
+        <!-- Tabs -->
+        <div class="ml-auto inline-flex rounded-full p-1 bg-slate-200/70 dark:bg-slate-700/60">
+          <button :class="['px-3 py-1.5 text-sm rounded-full', viewTab==='calendar' ? 'bg-white shadow-sm text-slate-900 dark:bg-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-200']"
+                  @click="viewTab='calendar'">Calendario</button>
+          <button :class="['px-3 py-1.5 text-sm rounded-full', viewTab==='timeline' ? 'bg-white shadow-sm text-slate-900 dark:bg-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-200']"
+                  @click="viewTab='timeline'">Línea de tiempo</button>
+        </div>
+      </div>
+
+      <!-- Body -->
+      <div class="px-5 pb-5 max-h-[70vh] overflow-auto">
+        <!-- Calendario -->
+        <div v-if="viewTab==='calendar'">
+          <div class="grid grid-cols-7 gap-2 text-xs font-medium text-slate-600 mb-1">
+            <div class="text-center">L</div><div class="text-center">M</div><div class="text-center">X</div>
+            <div class="text-center">J</div><div class="text-center">V</div><div class="text-center">S</div>
+            <div class="text-center">D</div>
+          </div>
+
+          <div class="grid grid-cols-7 gap-2">
+            <div v-for="cell in calendarCells" :key="cell.key" :title="cell.title"
+                class="h-20 rounded-xl p-2 flex flex-col transition-all border border-slate-200 dark:border-slate-700 hover:shadow-md hover:-translate-y-[1px]"
+                :class="[
+                  cell.state ? (colorClass(cell.state)?.bg || 'bg-slate-100') : 'bg-white dark:bg-slate-400/60',
+                  cell.isToday && 'ring-2 ring-blue-500/70'
+                ]">
+              <div class="text-[11px] font-medium opacity-60">{{ cell.day || '' }}</div>
+              <div class="mt-auto text-center text-lg leading-none" v-if="cell.state">{{ iconFor(cell.state) }}</div>
+              <div v-if="cell.state" class="text-[11px] text-center truncate mt-1 opacity-85">{{ shortState(cell.state) }}</div>
             </div>
           </div>
         </div>
 
-<!-- Acciones -->
-<div class="flex flex-wrap items-center gap-3">
-  <button @click="save" class="btn-primary">
-    {{ existeReporte ? 'Actualizar' : 'Guardar' }}
-  </button>
-  
-  <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
-</div>
+        <!-- Línea de tiempo (todo; si es comisión, muestra municipio) -->
+        <div v-else class="space-y-4 relative">
+          <div class="absolute left-3 top-0 bottom-0 w-px bg-gradient-to-b from-slate-300 via-slate-200 to-slate-300 dark:from-slate-700 dark:via-slate-800 dark:to-slate-700" />
+          <div v-for="(s, i) in segments" :key="i" class="flex items-center gap-3 pl-4">
+            <div class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200 dark:border-slate-900"
+                :class="colorClass(s.state)?.dot || 'bg-slate-400'"></div>
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs shadow-sm"
+                :class="colorClass(s.state)?.pill || 'bg-slate-100 text-slate-700'">
+              {{ iconFor(s.state) }}
+              <span>
+                {{ s.state }}
+                <template v-if="s.municipalityName"> — 📍 {{ s.municipalityName }}</template>
+              </span>
+              <span class="opacity-70">({{ s.from }} → {{ s.to }})</span>
+              <span class="opacity-70">• {{ s.count }} día(s)</span>
+            </div>
+          </div>
+        </div>
 
-<!-- Aclaración antes del resumen discriminado -->
-<div class="text-center py-2">
-  <h3 class="text-base font-semibold text-slate-700">
-    Novedades para unidad externa
-  </h3>
-  <p class="text-xs text-slate-500">
-    Este detalle refleja las novedades discriminadas de los agentes en su unidad.
-  </p>
-</div>
+        <!-- Leyenda (solo visible en modo calendario) -->
+        <div v-if="viewTab === 'calendar'" class="mt-5 flex flex-wrap gap-2 text-xs">
+          <div v-for="st in legendStates" :key="st"
+              class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs shadow-sm"
+              :class="colorClass(st)?.pill || 'bg-slate-100 text-slate-700'">
+            {{ iconFor(st) }} {{ shortState(st) }}
+          </div>
+        </div>
 
-  <!-- Novedades en su unidad (desplegable) -->
-<div class="rounded-2xl border-2 border-yellow-400 bg-yellow-50">
-  <!-- Encabezado / Toggle (lo único visible cuando está colapsado) -->
-  <button
-    type="button"
-    class="w-full px-4 py-3 flex items-center justify-between"
-    @click="showUnitPanel = !showUnitPanel"
-    :aria-expanded="showUnitPanel ? 'true' : 'false'">
-    <div class="text-left">
-      <div class="text-sm font-semibold text-yellow-800">Novedades en su unidad</div>
-      <div class="text-xs text-yellow-700">Fecha: {{ reportDateShort }}</div>
+      </div>
     </div>
-    <svg class="h-5 w-5 text-yellow-800 transition-transform"
-         :class="{'rotate-180': showUnitPanel}" viewBox="0 0 20 20" fill="currentColor">
-      <path fill-rule="evenodd"
-            d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
-            clip-rule="evenodd" />
-    </svg>
-  </button>
+  </div>
 
-  <!-- Contenido desplegable: KPI + detalle -->
-  <transition
-    enter-active-class="transition duration-200 ease-out"
-    enter-from-class="opacity-0 -translate-y-1"
-    enter-to-class="opacity-100 translate-y-0"
-    leave-active-class="transition duration-150 ease-in"
-    leave-from-class="opacity-100 translate-y-0"
-    leave-to-class="opacity-0 -translate-y-1">
-    <div v-show="showUnitPanel" class="px-4 pb-4 space-y-3">
-      <!-- KPIs (antes eran “siempre visibles”; ahora SOLO al expandir) -->
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        <!-- FE -->
-        <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
-          <div class="text-xs text-yellow-700">F/E (OF/ME/PT)</div>
-          <div class="text-base font-bold text-yellow-900">
-            {{ feOF }}/{{ feSO }}/{{ fePT }}
-            <span class="text-xs text-yellow-800"> ({{ feOF + feSO + fePT }})</span>
-          </div>
-        </div>
-
-        <!-- F/D (Comisión del servicio) -->
-        <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
-          <div class="text-xs text-yellow-700">F/D (Comisión del servicio)</div>
-          <div class="text-base font-bold text-yellow-900">
-            {{ comiOF }}/{{ comiSO }}/{{ comiPT }}
-            <span class="text-xs text-yellow-800"> ({{ comiTotal }})</span>
-          </div>
-        </div>
-
-        <!-- Novedades (sin Comisión) -->
-        <div class="rounded-xl bg-white/60 border border-yellow-200 px-3 py-2">
-          <div class="text-xs text-yellow-700">Novedades</div>
-          <div class="text-base font-bold text-yellow-900">
-            {{ novOF }}/{{ novSO }}/{{ novPT }}
-            <span class="text-xs text-yellow-800"> ({{ novTotal }})</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Detalle discriminado por estado -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <div
-          v-for="row in summaryByStatus"
-          :key="row.status"
-          class="flex items-center justify-between rounded-xl bg-yellow-100/70 px-3 py-2 border border-yellow-200">
-          <div class="text-sm font-medium text-yellow-900">
-            {{ row.label }}
-          </div>
-          <div class="text-sm font-semibold text-yellow-900">
-            {{ row.of }}/{{ row.me }}/{{ row.pt }}
-            <span class="ml-1 text-xs text-yellow-800">(Total: {{ row.total }})</span>
-          </div>
-        </div>
-      </div>
     </div>
-  </transition>
-</div>
-
-
-
-
-
-
-        </div>
-      </div>
-
-
-                  <!-- Toast -->
-            <transition
-              enter-active-class="transition duration-200 ease-out"
-              enter-from-class="opacity-0 translate-y-2"
-              enter-to-class="opacity-100 translate-y-0"
-              leave-active-class="transition duration-150 ease-in"
-              leave-from-class="opacity-100 translate-y-0"
-              leave-to-class="opacity-0 translate-y-2"
-            >
-              <div v-if="toast.visible"
-                  class="fixed bottom-4 right-4 z-[1000] rounded-xl px-4 py-3 shadow-lg border"
-                  :class="toast.kind === 'success' ? 'bg-white border-green-200 text-green-800' : 'bg-white border-amber-200 text-amber-800'">
-                <div class="text-sm font-medium">{{ toast.text }}</div>
-              </div>
-            </transition>
-
-    </main>
   </div>
 </template>
+
 
 <script setup>
 
@@ -559,25 +891,23 @@ async function loadAgents() {
   try {
     const { data } = await axios.get('/my/agents', {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
-      params: { date: reportDate.value } // 👈 IMPORTANTE
-    });
-
-    agents.value = data
+      params: { date: reportDate.value }
+    })
+    agents.value = (Array.isArray(data) ? data : [])
       .map(a => ({
         ...a,
         municipalityName: a.municipalityName || '',
-        novelty_start: a.novelty_start ? a.novelty_start.slice(0, 10) : '',
-        novelty_end:   a.novelty_end   ? a.novelty_end.slice(0, 10)   : '',
-        novelty_description: a.novelty_description || '',
+        novelty_start: a.novelty_start ? String(a.novelty_start).slice(0, 10) : '',
+        novelty_end:   a.novelty_end   ? String(a.novelty_end).slice(0, 10)   : '',
+        novelty_description: a.novelty_description || ''
       }))
-      .sort((x, y) => (CATEG_ORDER[x.category] || 99) - (CATEG_ORDER[y.category] || 99));
+      .sort((x, y) => (CATEG_ORDER[x.category] || 99) - (CATEG_ORDER[y.category] || 99))
+    await setDiasLaboradosTodos();
   } catch (e) {
-    msg.value = e.response?.data?.error || 'Error al cargar agentes';
-    agents.value = [];
+    msg.value = e?.response?.data?.error || 'Error al cargar agentes'
+    agents.value = []
   }
 }
-
-
 
 async function getMunicipalityIdFromLabel(label) {
   if (!label || label === 'N/A') return null
@@ -1092,6 +1422,237 @@ onMounted(async () => {
   await checkIfReportExists();
 });
 
+// === Sidebar/menú como AgentDashboard ===
+const section = ref('captura')  // 'captura' | 'perfil'
+const menu = [
+  { key: 'captura', label: 'Captura de novedades' },
+  { key: 'perfil',  label: 'Perfil' },
+]
+const titleBySection = computed(() => ({
+  captura: 'Captura de novedades',
+  perfil: 'Perfil de usuario',
+}[section.value]))
+
+// === Perfil (embebido)
+const profileLoading = ref(true)
+const profile = ref({})
+const oldPassword = ref('')
+const newPassword = ref('')
+const repeatPassword = ref('')
+
+function formatDate(dateStr){
+  if(!dateStr) return ''
+  const d = new Date(dateStr); if(isNaN(d)) return ''
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+}
+async function loadProfile(){
+  profileLoading.value = true
+  try{
+    const { data } = await axios.get('/me/profile', {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+    profile.value = data
+  } finally { profileLoading.value = false }
+}
+async function cambiarPassword(){
+  msg.value = ''
+  if (newPassword.value !== repeatPassword.value){ msg.value='Las nuevas contraseñas no coinciden'; return }
+  try{
+    await axios.post('/me/change-password',
+      { oldPassword: oldPassword.value, newPassword: newPassword.value },
+      { headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') } }
+    )
+    msg.value = 'Contraseña cambiada ✅'
+    oldPassword.value = newPassword.value = repeatPassword.value = ''
+  } catch(e){
+    msg.value = e?.response?.data?.error || 'Error al cambiar contraseña'
+  }
+}
+
+// ---------- Historial (calendario + timeline) ----------
+const historyModal = ref({ open: false, agent: null })
+const viewTab = ref('calendar')
+const monthCursor = ref(new Date())
+const historyItems = ref([])
+
+// Helpers de fechas
+function ymd(d){ return d.toISOString().slice(0,10) }
+function startOfMonth(d){ const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x }
+function endOfMonth(d){ const x=new Date(d); x.setMonth(x.getMonth()+1,0); x.setHours(0,0,0,0); return x }
+function addMonths(d,n){ const x=new Date(d); x.setMonth(x.getMonth()+n); return x }
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x }
+function dowMonday0(d){ return (d.getDay()+6)%7 }
+
+const monthLabel = computed(() =>
+  new Intl.DateTimeFormat('es-CO',{month:'long',year:'numeric'}).format(monthCursor.value)
+)
+const monthFrom = computed(() => ymd(startOfMonth(monthCursor.value)))
+const monthTo   = computed(() => ymd(endOfMonth(monthCursor.value)))   // <-- ESTA ES LA QUE FALTABA
+
+// Colores/Iconos
+function iconFor(state){
+  const s = String(state || '').toUpperCase()
+  const map = {
+    'SIN NOVEDAD':'✅','SERVICIO':'🧭','COMISIÓN DEL SERVICIO':'📌','FRANCO FRANCO':'🛌',
+    'VACACIONES':'🏖️','LICENCIA DE MATERNIDAD':'👶','LICENCIA DE LUTO':'🕊️',
+    'LICENCIA REMUNERADA':'📝','LICENCIA NO REMUNERADA':'📝','EXCUSA DEL SERVICIO':'📝',
+    'LICENCIA PATERNIDAD':'🍼','PERMISO':'⏳','COMISIÓN EN EL EXTERIOR':'✈️','COMISIÓN DE ESTUDIO':'🎓',
+    'SUSPENDIDO':'⛔','HOSPITALIZADO':'🏥'
+  }
+  return map[s] || '•'
+}
+function colorClass(state){
+  const s = String(state || '').toUpperCase()
+  const c = {
+    'SIN NOVEDAD':{ bg:'bg-emerald-100', pill:'bg-emerald-100 text-emerald-800', dot:'bg-emerald-500' },
+    'SERVICIO':{ bg:'bg-sky-100', pill:'bg-sky-100 text-sky-800', dot:'bg-sky-500' },
+    'COMISIÓN DEL SERVICIO':{ bg:'bg-indigo-100', pill:'bg-indigo-100 text-indigo-800', dot:'bg-indigo-500' },
+    'FRANCO FRANCO':{ bg:'bg-gray-100', pill:'bg-gray-100 text-gray-800', dot:'bg-gray-500' },
+    'VACACIONES':{ bg:'bg-amber-100', pill:'bg-amber-100 text-amber-800', dot:'bg-amber-500' },
+    'SUSPENDIDO':{ bg:'bg-rose-100', pill:'bg-rose-100 text-rose-800', dot:'bg-rose-500' },
+    'HOSPITALIZADO':{ bg:'bg-rose-100', pill:'bg-rose-100 text-rose-800', dot:'bg-rose-500' }
+  }
+  return c[s] || { bg:'bg-slate-100', pill:'bg-slate-100 text-slate-700', dot:'bg-slate-400' }
+}
+function shortState(s){ const t=String(s||''); return t.length<=16?t:(t.slice(0,16)+'…') }
+const legendStates = [
+  'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','VACACIONES','FRANCO FRANCO','SUSPENDIDO','HOSPITALIZADO'
+]
+
+function diasLaboradosColor(n) {
+  if (n == null) return 'text-slate-400'
+  if (n >= 15) return 'text-green-600 font-bold'
+  if (n >= 8) return 'text-yellow-600 font-bold'
+  return 'text-red-600 font-bold'
+}
+
+function contarDiasLaborados(historial, fechaReferencia) {
+  // Historial debe estar ordenado ASCENDENTE (viejo -> reciente)
+  // Vamos a asegurarnos:
+  const sorted = [...historial]
+    .filter(d => d.date && d.state)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date))); // ascendente
+
+  let streak = 0;
+  // Recorremos de la fechaReferencia hacia atrás (del día más reciente al más antiguo)
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const day = sorted[i];
+    if (day.date > fechaReferencia) continue; // saltar futuras
+    const estado = String(day.state).toUpperCase();
+    if (["SIN NOVEDAD", "SERVICIO", "COMISIÓN DEL SERVICIO"].includes(estado)) {
+      streak++;
+    } else {
+      break; // ¡En cuanto encuentra otra novedad, termina el conteo!
+    }
+  }
+  return streak;
+}
+
+async function setDiasLaboradosTodos() {
+  const fechaReferencia = reportDate.value; // o la fecha actual
+  for (const agente of agents.value) {
+    const url = `/admin/agents/${agente.id}/history`;
+    // Saca TODO el historial (puedes limitar from si tu base es muy grande)
+    const params = { from: '2000-01-01', to: fechaReferencia };
+    try {
+      const { data } = await axios.get(url, {
+        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
+        params
+      });
+      const historial = Array.isArray(data?.items) ? data.items : [];
+      agente.diasLaborados = contarDiasLaborados(historial, fechaReferencia);
+    } catch {
+      agente.diasLaborados = 0;
+    }
+  }
+}
+
+// --- Modal Historial ---
+async function openHistory(a){
+  viewTab.value = 'calendar'
+  historyModal.value = { open:true, agent:a }
+  monthCursor.value = new Date(`${reportDate.value}T00:00:00`)
+  await loadHistory()
+}
+function closeHistory(){
+  historyModal.value = { open:false, agent:null }
+  historyItems.value = []
+}
+
+async function loadHistory() {
+  if (!historyModal.value.agent) return;
+  const url = `/admin/agents/${historyModal.value.agent.id}/history`; // <-- SIEMPRE este endpoint
+  const params = { from: monthFrom.value, to: monthTo.value };
+  try {
+    const { data } = await axios.get(url, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
+      params
+    });
+    historyItems.value = Array.isArray(data?.items) ? data.items : [];
+  } catch (e) {
+    console.warn('Error historial:', e?.response?.data || e);
+    historyItems.value = [];
+  }
+}
+
+// Navegación meses
+async function prevMonth(){ monthCursor.value = addMonths(monthCursor.value,-1); await loadHistory() }
+async function nextMonth(){ monthCursor.value = addMonths(monthCursor.value, 1); await loadHistory() }
+async function todayMonth(){ monthCursor.value = new Date(); await loadHistory() }
+
+// Calendario
+const calendarCells = computed(() => {
+  const start = startOfMonth(monthCursor.value)
+  const end   = endOfMonth(monthCursor.value)
+  const pad   = dowMonday0(start)
+  const days  = end.getDate()
+  const map   = new Map(historyItems.value.map(h => [String(h.date), h]))
+  const cells = []
+  for (let i=0;i<pad;i++) cells.push({ key:'pad-'+i, day:'', state:null, title:'' })
+  for (let d=1; d<=days; d++){
+    const dt = new Date(start); dt.setDate(d)
+    const key = ymd(dt)
+    const rec = map.get(key)
+    const state = rec?.state || null
+    const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — '+rec.municipalityName : ''}` : key
+    const isToday = key === ymd(new Date())
+    cells.push({ key, day:d, state, title, isToday })
+  }
+  while (cells.length % 7) cells.push({ key:'tail-'+cells.length, day:'', state:null, title:'' })
+  return cells
+})
+
+// Timeline
+const segments = computed(() => {
+  const days = [...historyItems.value].sort((a,b)=> String(a.date).localeCompare(String(b.date)))
+  const out = []
+  for (const d of days){
+    const state = d.state || 'SIN NOVEDAD'
+    const isCommission = String(state).toUpperCase() === 'COMISIÓN DEL SERVICIO'
+    const muni = isCommission ? (d.municipalityName || '—') : null
+    const key = isCommission ? `${state}::${muni}` : state
+    const last = out[out.length-1]
+    if (last && last.key === key){ last.to = d.date; last.count++ }
+    else out.push({ key, state, municipalityName: muni, from: d.date, to: d.date, count: 1 })
+  }
+  return out
+})
+
+watch(reportDate, async () => {
+  msg.value = ''
+  await loadAgents()
+  await checkIfReportExists()
+})
+
+onMounted(async () => {
+  await loadMe()
+  await loadMunicipalities()
+  await loadAgents()
+  await checkIfReportExists()
+})
+// carga perfil sólo cuando entras a la pestaña
+watch(section, (s) => { if (s==='perfil' && !profile.email) loadProfile() })
+onMounted(() => { /* si quieres precargar: loadProfile() */ })
 
 </script>
 
