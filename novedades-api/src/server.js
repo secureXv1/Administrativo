@@ -2979,7 +2979,7 @@ app.get('/dashboard/novelties-by-unit-breakdown',
 // GET /admin/agents/:id/history?from=YYYY-MM-01&to=YYYY-MM-31
 app.get('/admin/agents/:id/history',
   auth,
-  requireRole('superadmin','supervision','leader_group'),
+  requireRole('superadmin','supervision','leader_group', 'leader_unit', 'agent'),
   async (req, res) => {
     const { id } = req.params;
     const { from, to } = req.query;

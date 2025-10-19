@@ -81,7 +81,6 @@
             <div class="bg-white rounded-2xl shadow">
               <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 rounded-t-2xl">
                 <h3 class="font-semibold text-slate-900">Historial de mis estados</h3>
-                <p class="text-xs text-slate-500">SIN NOVEDAD · SERVICIO · COMISIÓN DEL SERVICIO</p>
               </div>
 
               <div class="p-4">
