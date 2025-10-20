@@ -104,13 +104,14 @@
                 <tr>
                   <th>Código</th>
                   <th>Agente</th>
-                  <th>Categoría</th>
+                  <th>Cat</th>
                   <th v-if="isGroupMode">Grupo</th>
                   <th v-if="isGroupMode">Unidad</th>
-                  <th>Estado</th>
+                  <th>Novedad</th>
                   <th>Ubicación</th>
                   <th>Descripción</th>
-                  <th>Novedad (inicio - fin)</th>
+                  <th>Inicio - Fin</th>
+                  <th>Días Lab</th>
                   <th>Historial</th>
                   <th v-if="canEdit" class="text-center">Acciones</th>
                 </tr>
@@ -140,6 +141,29 @@
                     <template v-else>
                       <span class="text-slate-300">—</span>
                     </template>
+                  </td>
+                  <td>
+                    <span
+                      :class="[
+                        'inline-block min-w-[2.5em] text-center rounded px-1',
+                        a.diasLaborados >= 45
+                          ? 'bg-red-100 text-red-600 font-bold border border-red-200'
+                          : a.diasLaborados >= 30
+                            ? 'bg-orange-100 text-orange-700 font-semibold border border-orange-200'
+                            : a.diasLaborados > 0
+                              ? 'bg-green-50 text-green-700 font-semibold border border-green-200'
+                              : 'text-slate-400 border border-slate-200 bg-white'
+                      ]"
+                      :title="a.diasLaborados >= 45
+                        ? '¡Alerta! tiempo prolongado sin descanso '
+                        : a.diasLaborados >= 30
+                          ? 'Atención: Más de un mes sin descansar'
+                          : a.diasLaborados > 0
+                            ? 'Días consecutivos en servicio o sin novedad'
+                            : 'Sin días laborados'"
+                    >
+                      {{ a.diasLaborados ?? 0 }}
+                    </span>
                   </td>
                   <td v-if="canEdit" class="text-right">
                     <button class="btn-ghost p-1" title="Historial" @click="openHistory(a)">
@@ -362,8 +386,6 @@
   </div>
 
 </template>
-
-
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
@@ -699,6 +721,8 @@ async function loadSingleReport(id){
   const shownDate = filterDate.value || dateParam.value
   head.value = { groupCode: first?.groupCode || '', unitName: first?.unitName || '', date: shownDate }
   headerOk.value = true
+
+  await setDiasLaboradosTodos() 
 }
 
 async function loadGroupReports(date, groupId){
@@ -733,7 +757,36 @@ async function loadGroupReports(date, groupId){
   }
   agentes.value = all
   headerOk.value = true
+  await setDiasLaboradosTodos()
 }
+
+// --- Función para contar días laborados ---
+function contarDiasLaborados(historial) {
+  const estadosValidos = ['SIN NOVEDAD', 'SERVICIO', 'COMISIÓN DEL SERVICIO']
+  let count = 0
+  for (let i = historial.length - 1; i >= 0; i--) {
+    const st = String(historial[i]?.state || '').toUpperCase()
+    if (estadosValidos.includes(st)) count++
+    else break
+  }
+  return count
+}
+
+async function setDiasLaboradosTodos() {
+  for (const agente of agentes.value) {
+    try {
+      const { data } = await axios.get(`/admin/agents/${agente.agentId || agente.id}/history`, {
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
+        params: { from: '2020-01-01', to: todayStr() }  // amplio rango
+      })
+      const historial = Array.isArray(data?.items) ? data.items : []
+      agente.diasLaborados = contarDiasLaborados(historial)
+    } catch {
+      agente.diasLaborados = 0
+    }
+  }
+}
+
 
 // ===== Filtrado
 const agentesFiltrados = computed(() => {
