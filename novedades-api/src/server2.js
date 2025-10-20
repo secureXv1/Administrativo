@@ -11,6 +11,31 @@ import { computeNovelties } from './utils.js';
 import { logEvent, Actions } from './audit.js';
 import { requireSuperadmin } from './middlewares.js';
 
+// ⬇️ NUEVO (vehículos / fotos)
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Resolver __dirname en ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
+
+// Carpeta para fotos de novedades de vehículos
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// Multer básico
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    cb(null, `veh_${Date.now()}_${Math.random().toString(16).slice(2)}${ext}`);
+  }
+});
+const upload = multer({ storage });
+
+
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
 
@@ -225,12 +250,6 @@ app.post('/auth/login', async (req, res) => {
     return res.status(500).json({ error: 'Server error' });
   }
 });
-
-
-
-
-
-
 
   function auth(req, res, next) {
     const h = req.headers.authorization || '';
@@ -3005,6 +3024,607 @@ const fechasSemanaHandler = async (req, res) => {
 app.get('/fechas/semana', auth, fechasSemanaHandler);
 // …y añade este alias para que funcione con tu patrón /api/...
 app.get('/api/fechas/semana', auth, fechasSemanaHandler);
+
+// ===== VEHICLES =====
+
+// ⬇️ NUEVO: helper de alcance para agentes
+async function validateAgentScope(req, agentId) {
+  // superadmin / supervision: todo vale
+  const role = String(req.user?.role || '').toLowerCase();
+  if (role === 'superadmin' || role === 'supervision') return true;
+
+  // leader_group: sólo agentes de su grupo
+  if (role === 'leader_group') {
+    const [[row]] = await pool.query('SELECT groupId FROM agent WHERE id=? LIMIT 1', [agentId]);
+    return row && Number(row.groupId) === Number(req.user.groupId);
+  }
+
+  // leader_unit / agent: mismo unitId del usuario
+  if (role === 'leader_unit' || role === 'agent') {
+    const [[row]] = await pool.query('SELECT unitId FROM agent WHERE id=? LIMIT 1', [agentId]);
+    return row && Number(row.unitId) === Number(req.user.unitId);
+  }
+
+  return false;
+}
+
+// ⬇️ NUEVO: saber si un vehículo tiene uso abierto
+async function vehicleHasOpenUse(vehicleId) {
+  const [[row]] = await pool.query(
+    'SELECT id FROM vehicle_uses WHERE vehicle_id=? AND ended_at IS NULL LIMIT 1',
+    [vehicleId]
+  );
+  return row?.id || null;
+}
+
+// GET /vehicles?query=&due_within=30&page=1&pageSize=100
+app.get('/vehicles', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  try {
+    const { query, due_within, page = 1, pageSize = 100 } = req.query;
+    const p = Math.max(parseInt(page,10)||1, 1);
+    const ps = Math.min(Math.max(parseInt(pageSize,10)||100,1), 1000);
+    const off = (p-1)*ps;
+
+    const where = [];
+    const args  = [];
+
+    if (query && String(query).trim()) {
+      where.push('(v.code LIKE ? OR v.sigla LIKE ?)');
+      const q = `%${String(query).trim()}%`;
+      args.push(q, q);
+    }
+    if (!isNaN(parseInt(due_within,10))) {
+      const n = Math.max(parseInt(due_within,10), 0);
+      where.push('(v.soat_date  <= DATE_ADD(CURDATE(), INTERVAL ? DAY) OR v.tecno_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY))');
+      args.push(n, n);
+    }
+
+    const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+
+    const [rows] = await pool.query(
+      `SELECT
+          v.id,
+          v.code,
+          v.sigla,
+          v.soat_date AS soatDate,
+          v.tecno_date AS tecnoDate,
+          v.category,
+          g.id AS groupId,
+          g.code AS groupName,
+          u.id AS unitId,
+          u.name AS unitName,
+          a.code AS agentCode,
+          a.nickname AS agentNickname,
+          EXISTS(
+            SELECT 1 FROM vehicle_uses vu WHERE vu.vehicle_id = v.id AND vu.ended_at IS NULL LIMIT 1
+          ) AS hasOpenUse
+        FROM vehicles v
+        LEFT JOIN \`group\` g ON g.id = v.group_id
+        LEFT JOIN unit u ON u.id = v.unit_id
+        LEFT JOIN vehicle_assignments va ON va.vehicle_id = v.id AND (va.end_date IS NULL OR va.end_date > CURDATE())
+        LEFT JOIN agent a ON a.id = va.agent_id
+        ${whereSql}
+        ORDER BY v.code
+        LIMIT ? OFFSET ?`,
+      [...args, ps, off]
+    );
+
+    // DESCIFRA NICKNAME EN CADA FILA
+    for (const row of rows) {
+      row.agentNickname = decNullable(row.agentNickname);
+      row.hasOpenUse = !!row.hasOpenUse;
+    }
+
+    // No olvides el contador para paginación:
+    const [[{ total }]] = await pool.query(`SELECT COUNT(*) AS total FROM vehicles v ${whereSql}`, args);
+
+    res.json({ page:p, pageSize:ps, total: Number(total)||0, items: rows });
+  } catch (e) {
+    res.status(500).json({ error:'VehiclesListError', detail: e.message });
+  }
+});
+
+// POST /vehicles  (crear)
+app.post('/vehicles', auth, requireRole('superadmin','supervision'), async (req, res) => {
+  try {
+    const { code, sigla, soatDate, tecnoDate, category, groupId, unitId } = req.body;
+    if (!code || !sigla || !soatDate || !tecnoDate || !category || !groupId || !unitId)
+      return res.status(422).json({ error:'Campos requeridos' });
+
+    await pool.query(
+      'INSERT INTO vehicles (code, sigla, soat_date, tecno_date, category, group_id, unit_id) VALUES (?,?,?,?,?,?,?)',
+      [
+        String(code).trim().toUpperCase(),
+        String(sigla).trim().toUpperCase(),
+        soatDate,
+        tecnoDate,
+        category,
+        groupId,
+        unitId
+      ]
+    );
+    await logEvent({ req, userId:req.user.uid, action: Actions.VEHICLE_CREATE, details:{ code, sigla } });
+    res.json({ ok:true });
+  } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error:'Código duplicado' });
+    res.status(500).json({ error:'VehicleCreateError', detail: e.message });
+  }
+});
+
+// PUT /vehicles/:id  (editar)
+app.put('/vehicles/:id', auth, requireRole('superadmin','supervision'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { code, sigla, soatDate, tecnoDate, category, groupId, unitId } = req.body;
+    const sets = [], args = [];
+    if (code     !== undefined) { sets.push('code=?');      args.push(String(code).trim().toUpperCase()); }
+    if (sigla    !== undefined) { sets.push('sigla=?');     args.push(String(sigla).trim().toUpperCase()); }
+    if (soatDate !== undefined) { sets.push('soat_date=?'); args.push(soatDate); }
+    if (tecnoDate!== undefined) { sets.push('tecno_date=?');args.push(tecnoDate); }
+    if (category !== undefined) { sets.push('category=?');  args.push(category); }
+    if (groupId  !== undefined) { sets.push('group_id=?');  args.push(groupId); }
+    if (unitId   !== undefined) { sets.push('unit_id=?');   args.push(unitId); }
+    if (!sets.length) return res.status(400).json({ error:'Nada para actualizar' });
+
+    args.push(id);
+    const [r] = await pool.query(`UPDATE vehicles SET ${sets.join(', ')} WHERE id=?`, args);
+    if (!r.affectedRows) return res.status(404).json({ error:'Vehículo no encontrado' });
+    await logEvent({ req, userId:req.user.uid, action: Actions.VEHICLE_UPDATE, details:{ vehicleId:Number(id), changes:Object.keys(req.body||{}) } });
+    res.json({ ok:true });
+  } catch (e) {
+    res.status(500).json({ error:'VehicleUpdateError', detail: e.message });
+  }
+});
+
+// DELETE /vehicles/:id
+app.delete('/vehicles/:id', auth, requireRole('superadmin'), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. ¿Existe el vehículo?
+    const [[veh]] = await pool.query('SELECT id FROM vehicles WHERE id=? LIMIT 1', [id]);
+    if (!veh) return res.status(404).json({ error: 'Vehículo no encontrado' });
+
+    // 2. ¿Hay asignaciones activas?
+    const [[assign]] = await pool.query(
+      'SELECT id FROM vehicle_assignments WHERE vehicle_id=? AND (end_date IS NULL OR end_date > CURDATE()) LIMIT 1',
+      [id]
+    );
+    if (assign) return res.status(409).json({ error: 'El vehículo tiene asignaciones activas. Libere antes de eliminar.' });
+
+    // 3. ¿Hay usos abiertos?
+    const [[openUse]] = await pool.query(
+      'SELECT id FROM vehicle_uses WHERE vehicle_id=? AND ended_at IS NULL LIMIT 1',
+      [id]
+    );
+    if (openUse) return res.status(409).json({ error: 'El vehículo tiene usos abiertos. Cierre antes de eliminar.' });
+
+    // --- BLOQUE NUEVO: BORRAR HIJOS (novedades -> usos -> asignaciones) ---
+    // Primero borra novedades asociadas a los usos de este vehículo
+    await pool.query(
+       'DELETE FROM vehicle_novelties WHERE assignment_id IN (SELECT id FROM vehicle_assignments WHERE vehicle_id=?)',
+      [id]
+    );
+    // Luego borra los usos históricos del vehículo
+    await pool.query('DELETE FROM vehicle_uses WHERE vehicle_id=?', [id]);
+    // Luego borra todas las asignaciones (históricas) del vehículo
+    await pool.query('DELETE FROM vehicle_assignments WHERE vehicle_id=?', [id]);
+    // ----------------------------------------------------------
+
+    // 4. Ahora sí, elimina el vehículo
+    const [r] = await pool.query('DELETE FROM vehicles WHERE id=?', [id]);
+    if (!r.affectedRows) return res.status(404).json({ error: 'Vehículo no encontrado' });
+
+    await logEvent({
+      req,
+      userId: req.user.uid,
+      action: Actions.VEHICLE_DELETE,
+      details: { vehicleId: Number(id) }
+    });
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'VehicleDeleteError', detail: e.message });
+  }
+});
+
+// GET /catalogs/groups
+app.get('/catalogs/groups', auth, async (req, res) => {
+  const [rows] = await pool.query('SELECT id, name, code FROM `group` ORDER BY name')
+  res.json({ items: rows })
+})
+
+// GET /catalogs/units
+app.get('/catalogs/units', auth, async (req, res) => {
+  const [rows] = await pool.query('SELECT id, name, groupId FROM unit ORDER BY name');
+  res.json({ items: rows });
+});
+
+// ==================== ASSIGNMENTS =====================
+
+// GET /vehicles/:id/assignments
+app.get('/vehicles/:id/assignments', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  const { id } = req.params;
+  const [rows] = await pool.query(`
+    SELECT va.id, va.agent_id AS agentId, a.code AS agentCode,
+           DATE_FORMAT(va.start_date,'%Y-%m-%d') AS start_date,
+           DATE_FORMAT(va.end_date  ,'%Y-%m-%d') AS end_date,
+           va.odometer_start, va.odometer_end,
+           va.notes
+    FROM vehicle_assignments va
+    JOIN agent a ON a.id = va.agent_id
+    WHERE va.vehicle_id=?
+    ORDER BY (va.end_date IS NULL) DESC, va.start_date DESC, va.id DESC
+  `,[id]);
+  res.json(rows);
+});
+
+// POST /vehicles/:id/assignments { agent_id, odometer_start?, notes? }
+app.post('/vehicles/:id/assignments', auth, requireRole('superadmin','supervision'), async (req, res) => {
+  const { id } = req.params;
+  const { agent_id, odometer_start, notes } = req.body;
+
+  if (!agent_id) return res.status(422).json({ error:'agent_id requerido' });
+
+  // Bloquear si ya hay asignación vigente para este vehículo
+  const [[open]] = await pool.query(
+    `SELECT id FROM vehicle_assignments
+     WHERE vehicle_id=? AND end_date IS NULL
+     LIMIT 1`,
+    [id]
+  );
+  if (open) return res.status(409).json({ error:'Ya existe una asignación vigente' });
+
+  // Insertar con fecha de inicio automática (hoy)
+  await pool.query(
+    `INSERT INTO vehicle_assignments (vehicle_id, agent_id, start_date, end_date, odometer_start, odometer_end, notes)
+     VALUES (?, ?, CURDATE(), NULL, ?, NULL, ?)`,
+    [id, agent_id, odometer_start ?? null, (notes || '').trim() || null]
+  );
+
+  await logEvent({
+    req, userId:req.user.uid,
+    action: Actions.VEHICLE_ASSIGN_CREATE,
+    details:{ vehicleId:Number(id), agentId:Number(agent_id) }
+  });
+
+  res.json({ ok:true });
+});
+
+// PATCH /vehicles/:vehicleId/assignments/:assignmentId
+app.patch('/vehicles/:vehicleId/assignments/:assignmentId', auth, requireRole('superadmin','supervision'), async (req, res) => {
+  const { vehicleId, assignmentId } = req.params;
+  const { end_date, odometer_end, notes } = req.body;
+  let sets = [];
+  let args = [];
+  if (end_date !== undefined)     { sets.push('end_date=?');      args.push(end_date); }
+  else                            { sets.push('end_date=CURDATE()'); } // ← usa hoy si no envían fecha
+  if (odometer_end !== undefined) { sets.push('odometer_end=?');  args.push(odometer_end); }
+  if (notes !== undefined)        { sets.push('notes=?');         args.push(notes); }
+  if (!sets.length) return res.status(400).json({ error:'Nada para actualizar' });
+  args.push(assignmentId, vehicleId);
+  const [r] = await pool.query(
+    `UPDATE vehicle_assignments SET ${sets.join(', ')} WHERE id=? AND vehicle_id=?`,
+    args
+  );
+  if (!r.affectedRows) return res.status(404).json({ error:'Asignación no encontrada' });
+  await logEvent({ req, userId:req.user.uid, action: Actions.VEHICLE_ASSIGN_CLOSE, details:{ vehicleId:Number(vehicleId), assignmentId:Number(assignmentId), end_date, odometer_end }});
+  res.json({ ok:true });
+});
+
+// GET /vehicles/:vehicleId/assignments/:assignmentId/notes
+app.get('/vehicles/:vehicleId/assignments/:assignmentId/notes', auth, async (req, res) => {
+  const { vehicleId, assignmentId } = req.params
+  const [[row]] = await pool.query(
+    'SELECT notes FROM vehicle_assignments WHERE id=? AND vehicle_id=? LIMIT 1',
+    [assignmentId, vehicleId]
+  )
+  res.json({ notes: row?.notes || '' })
+})
+
+// GET /vehicles/:id/last-assignment-odometer
+app.get('/vehicles/:id/last-assignment-odometer', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  const { id } = req.params;
+  const [[row]] = await pool.query(
+    `SELECT odometer_end AS last
+     FROM vehicle_assignments
+     WHERE vehicle_id=? AND odometer_end IS NOT NULL
+     ORDER BY end_date DESC, id DESC
+     LIMIT 1`,
+    [id]
+  );
+  res.json({ lastOdometer: row?.last ?? null });
+});
+
+// ====================== USES ==========================
+
+// GET /vehicles/uses?vehicle_id=&agent_id=&open=1
+app.get('/vehicles/uses', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  const { vehicle_id, agent_id, open } = req.query;
+  const where = [], args = [];
+  if (vehicle_id) { where.push('vu.vehicle_id=?'); args.push(vehicle_id); }
+  if (agent_id)   { where.push('vu.agent_id=?');   args.push(agent_id);   }
+  if (String(open||'0') === '1') where.push('vu.ended_at IS NULL');
+  const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
+  const [rows] = await pool.query(`
+    SELECT vu.id, vu.vehicle_id AS vehicleId, v.code AS vehicleCode, v.sigla,
+           vu.agent_id AS agentId, a.code AS agentCode,
+           DATE_FORMAT(vu.started_at,'%Y-%m-%d %H:%i:%s') AS started_at,
+           DATE_FORMAT(vu.ended_at  ,'%Y-%m-%d %H:%i:%s') AS ended_at,
+           vu.odometer_start, vu.odometer_end, vu.notes,
+           vu.created_by
+    FROM vehicle_uses vu
+    JOIN vehicles v ON v.id = vu.vehicle_id
+    JOIN agent a    ON a.id = vu.agent_id
+    ${whereSql}
+    ORDER BY vu.id DESC
+  `, args);
+  res.json({ items: rows });
+});
+
+// POST /vehicles/uses/start
+// body: { vehicle_id, agent_id, odometer_start?, notes? }
+app.post('/vehicles/uses/start', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  const { vehicle_id, agent_id, odometer_start, notes } = req.body;
+  if (!vehicle_id || !agent_id) return res.status(422).json({ error:'vehicle_id y agent_id requeridos' });
+
+  // scope del agente
+  const okScope = await validateAgentScope(req, Number(agent_id));
+  if (!okScope) return res.status(403).json({ error:'No autorizado para iniciar uso con ese agente' });
+
+  // no dos usos abiertos
+  const openUseId = await vehicleHasOpenUse(vehicle_id);
+  if (openUseId) return res.status(409).json({ error:'Uso abierto existente', useId: openUseId });
+
+  const [r] = await pool.query(`
+    INSERT INTO vehicle_uses
+      (vehicle_id, agent_id, started_at, odometer_start, notes, created_by)
+    VALUES (?, ?, COALESCE(?, NOW()), ?, ?, ?)`,
+    [vehicle_id, agent_id, req.body.started_at || null, odometer_start ?? null, notes || null, req.user.uid]
+  );
+  const useId = r.insertId;
+
+ // ⛳️ MOVER NOVEDADES EN STAGING (vehicle_id, use_id IS NULL) AL NUEVO USO
+  await pool.query(
+    'UPDATE vehicle_novelties SET use_id=? WHERE vehicle_id=? AND use_id IS NULL',
+    [useId, vehicle_id]
+  );
+
+  await logEvent({ req, userId:req.user.uid, action: Actions.VEHICLE_USE_START, details:{ vehicleId:Number(vehicle_id), agentId:Number(agent_id), useId } });
+  res.json({ id: useId });
+});
+
+// PATCH /vehicles/uses/:id/end
+// body: { odometer_end?, notes? }
+app.patch('/vehicles/uses/:id/end', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  const { id } = req.params;
+  const { ended_at, odometer_end, notes } = req.body;
+
+  // verificar dueño del uso/alcance del agente
+  const [[useRow]] = await pool.query('SELECT vehicle_id, agent_id, ended_at FROM vehicle_uses WHERE id=? LIMIT 1',[id]);
+  if (!useRow) return res.status(404).json({ error:'Uso no encontrado' });
+  if (useRow.ended_at) return res.status(409).json({ error:'El uso ya está cerrado' });
+
+  const okScope = await validateAgentScope(req, Number(useRow.agent_id));
+  if (!okScope) return res.status(403).json({ error:'No autorizado para cerrar este uso' });
+
+  const sets = [];
+  const args = [];
+  if (ended_at !== undefined) { sets.push('ended_at=?'); args.push(ended_at); }
+  else                        { sets.push('ended_at=NOW()'); }
+  sets.push('odometer_end=?'); args.push(odometer_end ?? null);
+  sets.push('notes=COALESCE(?, notes)'); args.push(notes ?? null);
+  args.push(id);
+  await pool.query(`UPDATE vehicle_uses SET ${sets.join(', ')} WHERE id=?`, args);
+  await logEvent({ req, userId:req.user.uid, action: Actions.VEHICLE_USE_END, details:{ useId:Number(id), vehicleId:Number(useRow.vehicle_id), agentId:Number(useRow.agent_id) } });
+  res.json({ ok:true });
+});
+
+// GET /vehicles/:id/last-use-odometer
+app.get('/vehicles/:id/last-use-odometer', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  const { id } = req.params;
+  // primero intento con odometer_end del último uso cerrado; si no existe, tomo el último odometer_start
+  const [[row]] = await pool.query(
+    `
+    SELECT COALESCE(
+      (SELECT odometer_end
+         FROM vehicle_uses
+        WHERE vehicle_id=? AND odometer_end IS NOT NULL
+        ORDER BY ended_at DESC, id DESC
+        LIMIT 1),
+      (SELECT odometer_start
+         FROM vehicle_uses
+        WHERE vehicle_id=? AND odometer_start IS NOT NULL
+        ORDER BY started_at DESC, id DESC
+        LIMIT 1)
+    ) AS last
+    `,
+    [id, id]
+  );
+  res.json({ lastOdometer: row?.last ?? null });
+});
+
+
+// =================== NOVELTIES UNIFICADAS ===================
+
+// GET novedades de un uso o asignación
+app.get(
+  '/vehicles/:tipo/:id/novelties',
+  auth,
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  async (req, res) => {
+    const { tipo, id } = req.params;
+    const limit = Math.min(Math.max(parseInt(req.query.limit,10) || 10, 1), 100);
+    
+    let refField = null;
+    if (tipo === 'uses') refField = 'use_id';
+    else if (tipo === 'vehicle') refField = 'vehicle_id';
+    else if (tipo === 'assignments') {
+      // Ya no soportamos novedades en asignaciones
+      return res.status(410).json({ error:'NoveltiesDisabledForAssignments' });
+    } else {
+      return res.status(400).json({ error: 'Tipo inválido' });
+    }
+    const [rows] = await pool.query(`
+      SELECT vn.id, vn.${refField} AS refId, vn.description, vn.photo_url AS photoUrl,
+             vn.created_by AS createdBy,
+             DATE_FORMAT(vn.created_at,'%Y-%m-%d %H:%i:%s') AS created_at
+      FROM vehicle_novelties vn
+      WHERE vn.${refField}=?
+      ORDER BY vn.id DESC
+      LIMIT ?
+    `, [id, limit]);
+
+    res.json({ items: rows });
+  }
+);
+
+// POST crear novedad en uso o asignación
+app.post(
+  '/vehicles/:tipo/:id/novelties',
+  auth,
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  upload.single('photo'),
+  async (req, res) => {
+    const { tipo, id } = req.params;
+    let refField = null;
+    if (tipo === 'uses') {
+     // ❌ No se permite agregar novedades en usos (abiertos ni cerrados)
+     return res.status(403).json({ error:'NoveltiesEditNotAllowedOnUses' });
+    }
+    else if (tipo === 'assignments') return res.status(410).json({ error:'NoveltiesDisabledForAssignments' });
+    else if (tipo === 'vehicle') refField = 'vehicle_id'; 
+    else return res.status(400).json({ error: 'Tipo inválido' });
+
+    const description = String(req.body.description || '').trim();
+    if (!description && !req.file) return res.status(422).json({ error: 'Debe enviar descripción o foto' });
+
+    // Validación de existencia básica
+    if (tipo === 'uses') {
+      const [[exists]] = await pool.query('SELECT 1 FROM vehicle_uses WHERE id=?', [id]);
+      if (!exists) return res.status(404).json({ error: 'Uso no encontrado' });
+    } else if (tipo === 'assignments') {
+      const [[exists]] = await pool.query('SELECT 1 FROM vehicle_assignments WHERE id=?', [id]);
+      if (!exists) return res.status(404).json({ error: 'Asignación no encontrada' });
+    } else if (tipo === 'vehicle') {
+      const [[exists]] = await pool.query('SELECT 1 FROM vehicles WHERE id=?', [id]);
+      if (!exists) return res.status(404).json({ error: 'Vehículo no encontrado' });
+      // 🚫 Si hay uso abierto en el vehículo, no permitir staging
+      const openUseId = await vehicleHasOpenUse(id);
+      if (openUseId) return res.status(409).json({ error:'OpenUseExists', useId: openUseId });
+    }
+
+    const photoUrl = req.file
+      ? path.relative(path.join(__dirname, '..'), req.file.path).replace(/\\/g, '/')
+      : null;
+
+    const [r] = await pool.query(
+      `INSERT INTO vehicle_novelties (${refField}, description, photo_url, created_by)
+       VALUES (?,?,?,?)`,
+      [id, description || '(sin descripción)', photoUrl, req.user.uid]
+    );
+
+    await logEvent({
+      req,
+      userId: req.user.uid,
+      action: Actions.VEHICLE_NOVELTY_CREATE,
+      details: { [`${refField}`]: Number(id), noveltyId: r.insertId, hasPhoto: !!photoUrl },
+    });
+
+    res.json({ ok: true, id: r.insertId, photoUrl });
+  }
+);
+// GET /vehicles/:id/novelties/recent
+// Regla: si hay staging (vehicle_id=?, use_id IS NULL) => devolver esas;
+// si no hay, “seed” copiando del último uso a staging y devolver staging.
+app.get('/vehicles/:id/novelties/recent', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  const { id } = req.params;
+  const limit = Math.min(Math.max(parseInt(req.query.limit,10) || 10, 1), 100);
+
+  // 1) staging existentes
+  const [staged] = await pool.query(`
+    SELECT id, vehicle_id AS vehicleId, use_id AS useId, description, photo_url AS photoUrl,
+           created_by AS createdBy, DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s') AS created_at
+    FROM vehicle_novelties
+    WHERE vehicle_id=? AND use_id IS NULL
+    ORDER BY id DESC
+    LIMIT ?`,
+    [id, limit]
+  );
+  if (staged.length) return res.json({ items: staged, source: 'staging' });
+
+  // 2) último uso del vehículo
+  const [[lastUse]] = await pool.query(`
+    SELECT id FROM vehicle_uses
+    WHERE vehicle_id=?
+    ORDER BY started_at DESC, id DESC
+    LIMIT 1`,
+    [id]
+  );
+  if (!lastUse) return res.json({ items: [], source: 'none' });
+
+  // 3) copiar novedades del último uso a staging
+  await pool.query(`
+    INSERT INTO vehicle_novelties (vehicle_id, use_id, description, photo_url, created_by)
+    SELECT ?, NULL, vn.description, vn.photo_url, ?
+    FROM vehicle_novelties vn
+    WHERE vn.use_id = ?
+    ORDER BY vn.id DESC
+    LIMIT ?`,
+    [id, req.user.uid, lastUse.id, limit]
+  );
+
+  // 4) devolver staging recién creado
+  const [seeded] = await pool.query(`
+    SELECT id, vehicle_id AS vehicleId, use_id AS useId, description, photo_url AS photoUrl,
+           created_by AS createdBy, DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s') AS created_at
+    FROM vehicle_novelties
+    WHERE vehicle_id=? AND use_id IS NULL
+    ORDER BY id DESC
+    LIMIT ?`,
+    [id, limit]
+  );
+  res.json({ items: seeded, source: 'seeded_from_last_use', lastUseId: lastUse.id });
+});
+
+// DELETE una novedad
+app.delete('/vehicles/novelties/:id', auth, requireRole('superadmin','supervision'), async (req, res) => {
+  const { id } = req.params;
+  // Solo permitir borrar si es staging (ligada al vehículo, no a un uso)
+  const [[row]] = await pool.query('SELECT id, use_id FROM vehicle_novelties WHERE id=?', [id]);
+  if (!row) return res.json({ ok:false });
+  if (row.use_id) {
+    return res.status(403).json({ error:'DeleteNotAllowedOnUseNovelties' });
+  }
+  const [r] = await pool.query('DELETE FROM vehicle_novelties WHERE id=?', [id]);
+  res.json({ ok: !!r.affectedRows });
+});
+
+// GET /vehicles/due?within=30
+app.get('/vehicles/due', auth, requireRole('superadmin','supervision','leader_group','leader_unit','agent'), async (req, res) => {
+  try {
+    const within = Math.max(parseInt(req.query.within,10) || 30, 0);
+    const [rows] = await pool.query(`
+      SELECT id, code, sigla,
+             soat_date  AS soatDate,
+             tecno_date AS tecnoDate,
+             DATEDIFF(soat_date , CURDATE()) AS soat_in_days,
+             DATEDIFF(tecno_date, CURDATE()) AS tecno_in_days
+      FROM vehicles
+      WHERE 
+        (soat_date IS NOT NULL AND soat_date  <= DATE_ADD(CURDATE(), INTERVAL ? DAY))
+        OR (tecno_date IS NOT NULL AND tecno_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY))
+      ORDER BY LEAST(
+        COALESCE(DATEDIFF(soat_date, CURDATE()), 99999),
+        COALESCE(DATEDIFF(tecno_date, CURDATE()), 99999)
+      )
+    `, [within, within]);
+    res.json({ items: rows });
+  } catch(e) {
+    console.error('[vehicles/due ERROR]', e);
+    res.status(500).json({ error:'VehicleDueError', detail: e.message });
+  }
+});
 
 // Inicia el servidor
 
