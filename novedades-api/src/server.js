@@ -10,35 +10,31 @@ import { initDb, pool } from './db.js'; // Si tu db.js NO tiene initDb, ignora y
 import { computeNovelties } from './utils.js';
 import { logEvent, Actions } from './audit.js';
 import { requireSuperadmin } from './middlewares.js';
+
+// ⬇️ NUEVO (vehículos / fotos)
+import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
-import multer from 'multer';
 import { fileURLToPath } from 'url';
 
+// Resolver __dirname en ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-// Carpeta base para fotos de novedades de vehículos
-const VEH_UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'vehicles');
-fs.mkdirSync(VEH_UPLOAD_DIR, { recursive: true });
+// Carpeta para fotos de novedades de vehículos
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
-function ensureDir(p) { if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true }); }
-
+// Multer básico
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // useId llegará en la ruta /vehicles/uses/:id/novelties
-    const useId = req.params.id || req.params.useId;
-    const dest = path.join(VEH_UPLOAD_DIR, String(useId || 'tmp'));
-    ensureDir(dest);
-    cb(null, dest);
-  },
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => {
-    const ts = Date.now();
-    const safe = (file.originalname || 'photo').replace(/[^\w\.\-]+/g, '_');
-    cb(null, `${ts}__${safe}`);
+    const ext = path.extname(file.originalname || '').toLowerCase() || '.jpg';
+    cb(null, `veh_${Date.now()}_${Math.random().toString(16).slice(2)}${ext}`);
   }
 });
 const upload = multer({ storage });
+
 
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
@@ -120,6 +116,7 @@ async function main() {
     await initDb();
   }
 
+
   const app = express();
   app.use(cors());
   app.use(helmet());
@@ -133,30 +130,22 @@ async function main() {
 // ---------- AUTH ----------
 app.post('/auth/login', async (req, res) => {
   try {
-    // normaliza entrada
-    const raw = String(req.body.username || '');
-    const username = raw.trim();
+    const username = String(req.body.username || '').trim();
     const password = String(req.body.password || '');
 
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password required' });
-    }
-
-    // BÚSQUEDA CASE-INSENSITIVE Y IGNORANDO ESPACIOS
     const [rows] = await pool.query(
-      `
-      SELECT u.id, u.username, u.passwordHash, u.role, u.groupId, u.unitId,
-            u.failed_login_count, u.lock_until, u.lock_strikes, u.hard_locked
-        FROM \`user\` u
-        LEFT JOIN agent a ON a.code = u.username
-      WHERE UPPER(TRIM(u.username)) = UPPER(TRIM(?))
-      LIMIT 1
-      `,
+      `SELECT id, username, passwordHash, role, groupId, unitId,
+              failed_login_count, lock_until, lock_strikes, hard_locked
+         FROM \`user\`
+        WHERE username=? LIMIT 1`,
       [username]
     );
     const user = rows[0];
 
+   
+
     if (!user) {
+      // No revelamos existencia del usuario
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -182,12 +171,14 @@ app.post('/auth/login', async (req, res) => {
     if (!ok) {
       let newFailed = Number(user.failed_login_count || 0) + 1;
 
+      // ¿alcanza 5 fallos? → BLOQUEO TEMPORAL (esto sí se registra)
       if (newFailed >= 5) {
         const until = new Date(Date.now() + 60 * 1000);
         await pool.query(
           'UPDATE `user` SET failed_login_count=0, lock_until=?, lock_strikes=lock_strikes+1 WHERE id=? LIMIT 1',
           [until, user.id]
         );
+
         try {
           await logEvent({
             req, userId: user.id,
@@ -195,17 +186,20 @@ app.post('/auth/login', async (req, res) => {
             details: { username, reason: '5_failed_attempts', lock_until: until.toISOString() }
           });
         } catch {}
+
         return res.status(429).json({
           error: 'TemporarilyLocked',
           detail: 'Cuenta bloqueada por 1 minuto por múltiples intentos fallidos.'
         });
       }
 
+      // Si ya tuvo un lock (strike>=1) y ahora falla tras el cooldown → HARD LOCK
       if (Number(user.lock_strikes || 0) >= 1) {
         await pool.query(
           'UPDATE `user` SET failed_login_count=0, hard_locked=1, lock_until=NULL WHERE id=? LIMIT 1',
           [user.id]
         );
+
         try {
           await logEvent({
             req, userId: user.id,
@@ -213,11 +207,15 @@ app.post('/auth/login', async (req, res) => {
             details: { username, reason: 'fail_after_cooldown' }
           });
         } catch {}
+
         return res.status(423).json({ error: 'HardLocked', detail: 'Cuenta bloqueada. Contacte al administrador.' });
       }
 
+      // ❗ Fallo normal (<5): solo actualiza contador y responde con remaining (SIN log)
       await pool.query('UPDATE `user` SET failed_login_count=? WHERE id=? LIMIT 1', [newFailed, user.id]);
       const remaining = Math.max(0, 5 - newFailed);
+      // Opcional: header con el mismo dato
+      // res.set('X-Login-Attempts-Remaining', String(remaining));
       return res.status(401).json({
         error: 'Invalid credentials',
         remaining,
@@ -240,25 +238,8 @@ app.post('/auth/login', async (req, res) => {
       });
     } catch {}
 
-    // 🟢 Buscar agentId si el rol es agent
-    let agentId = null;
-    if (user.role === 'agent') {
-      const [agents] = await pool.query(
-        'SELECT id FROM agent WHERE code=? LIMIT 1',
-        [user.username]
-      );
-      agentId = agents.length ? agents[0].id : null;
-    }
-
     const token = jwt.sign(
-      {
-        uid: user.id,
-        username: user.username,
-        role: user.role,
-        groupId: user.groupId,
-        unitId: user.unitId,
-        agentId: agentId // << AQUI VA EL agentId calculado
-      },
+      { uid: user.id, username: user.username, role: user.role, groupId: user.groupId, unitId: user.unitId },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -269,7 +250,6 @@ app.post('/auth/login', async (req, res) => {
     return res.status(500).json({ error: 'Server error' });
   }
 });
-
 
   function auth(req, res, next) {
     const h = req.headers.authorization || '';
@@ -293,38 +273,15 @@ app.post('/auth/login', async (req, res) => {
   }
 
   // ---------- ENDPOINTS USUARIO ----------
-  app.get('/me', auth, async (req, res) => {
-  try {
-    // Datos base del usuario
-    const data = {
+  app.get('/me', auth, (req, res) => {
+    res.json({
       uid: req.user.uid,
       username: req.user.username,
       role: req.user.role,
       groupId: req.user.groupId,
-      unitId: req.user.unitId,
-      agentId: req.user.agentId || null
-    };
-
-    // Si es agente, busca el agentId
-    let agentId = null;
-    if (String(req.user.role).toLowerCase() === 'agent') {
-      const [rows] = await pool.query(
-        'SELECT id FROM agent WHERE code=? LIMIT 1',
-        [req.user.username]
-      );
-      if (rows.length) agentId = rows[0].id;
-    }
-
-    res.json({
-      ...data,
-      agentId, // null si no aplica
+      unitId: req.user.unitId
     });
-  } catch (err) {
-    console.error('Error in /me:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
+  });
 
   app.get('/me/profile', auth, async (req, res) => {
     const [[user]] = await pool.query(
@@ -372,10 +329,11 @@ app.post('/auth/login', async (req, res) => {
   res.json({ ok: true });
 });
 
+
 app.get('/catalogs/agents', auth, async (req, res) => {
   try {
-    const { q, code, category, groupId, unitId, limit = 2000 } = req.query;
-    const take = Math.min(Number(limit) || 100, 200);
+    const { q, code, category, groupId, unitId, limit = 50 } = req.query;
+    const take = Math.min(Number(limit) || 50, 200);
     const params = [];
     let where = '1=1';
 
@@ -425,6 +383,9 @@ app.get('/catalogs/agents', auth, async (req, res) => {
     res.status(500).json({ error: 'CatalogError', detail: e.message });
   }
 });
+
+
+
 
 // ===== Mis agentes (del líder de unidad) =====
 app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (req, res) => {
@@ -644,6 +605,10 @@ app.put('/my/agents/:id/unit',
   }
 );
 
+
+
+
+
 // Helper: asegúrate de tener el reporte del día (o créalo vacío)
 async function ensureDailyReport(conn, date, groupId, unitId, leaderUserId) {
   const [[ex]] = await conn.query(
@@ -667,6 +632,7 @@ async function ensureDailyReport(conn, date, groupId, unitId, leaderUserId) {
   );
   return row.id;
 }
+
 
 // --- Helper: recalcular KPIs (effective/available/nov) del dailyreport ---
 async function recalcDailyReport(reportId, connArg = null) {
@@ -705,31 +671,6 @@ async function recalcDailyReport(reportId, connArg = null) {
            updatedAt=CURRENT_TIMESTAMP(3)
      WHERE id=?
   `, [feOF, feSO, fePT, fdOF, fdSO, fdPT, OF_nov, SO_nov, PT_nov, reportId]);
-}
-async function vehicleHasOpenUse(vehicleId) {
-  const [[r]] = await pool.query(
-    'SELECT id FROM vehicle_uses WHERE vehicle_id=? AND ended_at IS NULL LIMIT 1',
-    [vehicleId]
-  );
-  return r?.id || null;
-}
-
-async function validateAgentScope(req, agentId) {
-  const role = String(req.user.role || '').toLowerCase();
-  if (role === 'superadmin' || role === 'supervision') return true;
-  if (role === 'leader_group') {
-    const [[ag]] = await pool.query('SELECT groupId FROM agent WHERE id=?', [agentId]);
-    return ag && Number(ag.groupId) === Number(req.user.groupId);
-  }
-  if (role === 'leader_unit') {
-    const [[ag]] = await pool.query('SELECT unitId FROM agent WHERE id=?', [agentId]);
-    return ag && Number(ag.unitId) === Number(req.user.unitId);
-  }
-  // AGENTE: solo puede iniciar uso para sí mismo
-  if (role === 'agent') {
-    return Number(req.user.agentId) === Number(agentId);
-  }
-  return false;
 }
 
 // PUT: guardar/actualizar novedad de un agente en una fecha específica
@@ -2807,6 +2748,10 @@ app.get('/dashboard/novelties-by-type', auth, async (req, res) => {
   }
 });
 
+
+
+
+
 // GET /dashboard/novelties-by-group
 app.get(
   '/dashboard/novelties-by-group',
@@ -2847,6 +2792,7 @@ app.get(
     }
   }
 );
+
 
 // GET /dashboard/novelties-by-unit
 app.get('/dashboard/novelties-by-unit', auth, requireRole('leader_group','superadmin','supervision'), async (req, res) => {
@@ -2979,7 +2925,7 @@ app.get('/dashboard/novelties-by-unit-breakdown',
 // GET /admin/agents/:id/history?from=YYYY-MM-01&to=YYYY-MM-31
 app.get('/admin/agents/:id/history',
   auth,
-  requireRole('superadmin','supervision','leader_group', 'leader_unit', 'agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit'),
   async (req, res) => {
     const { id } = req.params;
     const { from, to } = req.query;
@@ -3078,7 +3024,6 @@ const fechasSemanaHandler = async (req, res) => {
 app.get('/fechas/semana', auth, fechasSemanaHandler);
 // …y añade este alias para que funcione con tu patrón /api/...
 app.get('/api/fechas/semana', auth, fechasSemanaHandler);
-
 // ===== VEHICLES =====
 
 // GET /vehicles?query=&due_within=30&page=1&pageSize=100
@@ -3653,8 +3598,6 @@ app.get('/vehicles/due', auth, requireRole('superadmin','supervision','leader_gr
     res.status(500).json({ error:'VehicleDueError', detail: e.message });
   }
 });
-
-
 
 // Inicia el servidor
 
