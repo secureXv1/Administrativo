@@ -48,6 +48,101 @@
 </div>
 
 </div>
+
+<!-- Modal de novedades -->
+<div v-if="novModalOpen" class="fixed inset-0 z-[9998] grid place-items-center bg-black/40 p-4">
+  <div class="bg-white rounded-xl shadow-xl max-w-3xl w-full relative border border-slate-200">
+    <button class="absolute top-3 right-4 text-2xl text-slate-600" @click="novModalOpen=false">×</button>
+    <div class="p-5">
+      <h2 class="text-xl font-bold mb-4">Detalle de novedades</h2>
+      <div class="mb-3 flex gap-2">
+        <button class="btn-ghost px-3 py-1 rounded-lg border" :class="novTab==='tipos' && 'bg-slate-200 font-semibold'" @click="novTab='tipos'">Por tipo</button>
+        <button class="btn-ghost px-3 py-1 rounded-lg border" :class="novTab==='ambito' && 'bg-slate-200 font-semibold'" @click="novTab='ambito'">Por {{ isAdminView ? 'grupo' : 'unidad' }}</button>
+      </div>
+
+      <div v-if="novTab === 'tipos'" class="overflow-x-auto">
+        <table class="table w-full text-sm">
+          <thead>
+            <tr>
+              <th>Tipo de novedad</th>
+              <th>OF</th>
+              <th>ME</th>
+              <th>PT</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in novTiposRows" :key="row.novedad">
+              <td>{{ row.novedad }}</td>
+              <td>{{ row.OF }}</td>
+              <td>{{ row.ME }}</td>
+              <td>{{ row.PT }}</td>
+              <td class="font-semibold">{{ row.total }}</td>
+            </tr>
+            <tr v-if="novTiposRows.length === 0">
+              <td colspan="5" class="text-center text-slate-400 py-4">Sin novedades</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div v-else class="overflow-x-auto">
+        <table class="table w-full text-sm">
+          <thead>
+            <tr>
+              <th>{{ isAdminView ? 'Grupo' : 'Unidad' }}</th>
+              <th>OF</th>
+              <th>ME</th>
+              <th>PT</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="row in novAmbitoRows" :key="row.label">
+              <td>{{ row.label }}</td>
+              <td>{{ row.OF }}</td>
+              <td>{{ row.ME }}</td>
+              <td>{{ row.PT }}</td>
+              <td class="font-semibold">{{ row.total }}</td>
+            </tr>
+            <tr v-if="novAmbitoRows.length === 0">
+              <td colspan="5" class="text-center text-slate-400 py-4">Sin novedades</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Cards de desglose por novedad (si quieres un nivel más de detalle) -->
+        <div class="mt-4 grid gap-4 sm:grid-cols-2" v-if="novAmbitoCards.length">
+          <div v-for="card in novAmbitoCards" :key="card.label" class="bg-slate-50 border rounded-lg p-3 shadow-sm">
+            <div class="font-semibold text-slate-700 mb-2">{{ card.label }}</div>
+            <table class="table w-full text-xs">
+              <thead>
+                <tr>
+                  <th>Novedad</th>
+                  <th>OF</th>
+                  <th>ME</th>
+                  <th>PT</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in card.items" :key="row.novedad">
+                  <td>{{ row.novedad }}</td>
+                  <td>{{ row.OF }}</td>
+                  <td>{{ row.ME }}</td>
+                  <td>{{ row.PT }}</td>
+                  <td>{{ row.total }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 </template>
 
 <script setup>
@@ -116,10 +211,113 @@ async function loadKpiData() {
   }
 }
 
-// === Modal (dummy, reemplaza por modal real si lo tienes) ===
-function openNovModal() {
-  alert('Aquí iría el detalle de novedades');
+// ===== Modal Novedades
+// Modal y pestañas
+const novModalOpen = ref(false)
+const novTab = ref('tipos') // 'tipos' | 'ambito'
+const novTiposRows = ref([])   // [{ novedad, OF, ME, PT, total }]
+const novAmbitoRows = ref([])  // [{ label,  OF, ME, PT, total }]
+const novAmbitoDetRows = ref([]) // [{ label, novedad, OF, ME, PT, total }]
+
+function sum(list, key) {
+  return list.reduce((a, b) => a + (Number(b[key])||0), 0)
 }
+
+// Determina si es vista admin o solo de unidad
+const isAdminView = computed(() => {
+  // Lógica para saber si el usuario ve varios grupos/unidades. 
+  // Puedes adaptar este return según tus props, user, o route.
+  return true // Cambia esto según tu contexto (en AdminDashboard es true, en MainDashboard usualmente false)
+})
+
+// Filtros genéricos para el modal (ajusta las keys si usas otros nombres en MainDashboard)
+function buildCommonParams() {
+  // Adapta estos params para tu contexto; date, grupo, unidad...
+  const params = { date: date.value }
+  if (selectedGroupId?.value && selectedGroupId.value !== 'all')
+    params.groupId = selectedGroupId.value
+  if (selectedUnitId?.value && selectedUnitId.value !== 'all')
+    params.unitId = selectedUnitId.value
+  return params
+}
+
+// Cards agrupadas por ámbito
+const novAmbitoCards = computed(() => {
+  const map = new Map()
+  for (const r of novAmbitoDetRows.value) {
+    const label = r.label || r.groupCode || r.unitName || '—'
+    if (!map.has(label)) map.set(label, [])
+    map.get(label).push({
+      novedad: r.novedad,
+      OF: Number(r.OF || r.OF_count || 0),
+      ME: Number(r.ME || r.SO || r.SO_count || 0),
+      PT: Number(r.PT || r.PT_count || 0),
+      total: (Number(r.OF || r.OF_count || 0)
+            + Number(r.ME || r.SO || r.SO_count || 0)
+            + Number(r.PT || r.PT_count || 0))
+    })
+  }
+  const out = []
+  for (const [label, items] of map.entries()) {
+    const clean = items.filter(i => String(i.novedad).toUpperCase() !== 'SIN NOVEDAD')
+                       .sort((a,b)=> b.total - a.total)
+    out.push({ label, items: clean })
+  }
+  return out.sort((a,b)=> String(a.label).localeCompare(String(b.label)))
+})
+
+function openNovModal() {
+  novModalOpen.value = true
+  novTab.value = 'tipos'
+  loadNovDetails()
+}
+
+async function loadNovDetails() {
+  const params = buildCommonParams()
+
+  // 1) Por tipo (global)
+  const { data: tipos } = await axios.get('/dashboard/novelties-by-type', {
+    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  novTiposRows.value = (tipos?.items || [])
+    .filter(r => String(r.novedad || '').trim().toUpperCase() !== 'SIN NOVEDAD')
+    .map(r => ({
+      novedad: r.novedad,
+      OF: Number(r.OF || r.OF_count || 0),
+      ME: Number(r.ME || r.SO || r.SO_count || 0),
+      PT: Number(r.PT || r.PT_count || 0),
+      total: (Number(r.OF || r.OF_count || 0)
+            + Number(r.ME || r.SO || r.SO_count || 0)
+            + Number(r.PT || r.PT_count || 0))
+    }))
+
+  // 2) Por ámbito (grupo/unidad)
+  const scopeUrl = isAdminView.value ? '/dashboard/novelties-by-group' : '/dashboard/novelties-by-unit'
+  const { data: amb } = await axios.get(scopeUrl, {
+    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  novAmbitoRows.value = (amb?.items || []).map(r => ({
+    label: r.label || r.groupCode || r.unitName,
+    OF: Number(r.OF || r.OF_count || 0),
+    ME: Number(r.ME || r.SO || r.SO_count || 0),
+    PT: Number(r.PT || r.PT_count || 0),
+    total: (Number(r.OF || r.OF_count || 0)
+          + Number(r.ME || r.SO || r.SO_count || 0)
+          + Number(r.PT || r.PT_count || 0))
+  }))
+
+  // 3) Por ámbito con detalle por novedad
+  const bdUrl = isAdminView.value
+    ? '/dashboard/novelties-by-group-breakdown'
+    : '/dashboard/novelties-by-unit-breakdown'
+  const { data: det } = await axios.get(bdUrl, {
+    params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  novAmbitoDetRows.value = (det?.items || []).filter(
+    r => String(r.novedad || '').trim().toUpperCase() !== 'SIN NOVEDAD'
+  )
+}
+
 
 onMounted(() => {
   loadKpiData()
