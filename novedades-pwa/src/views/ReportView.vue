@@ -663,57 +663,86 @@
           </div>
         </section>
         <!-- ====== PERFIL (embebido) ====== -->
-          <section v-show="section==='perfil'" class="bg-white rounded-2xl shadow p-6 max-w-2xl">
-            <h3 class="text-lg font-semibold text-slate-900 mb-4">Perfil de Usuario</h3>
-
-            <div v-if="profileLoading" class="py-8 text-center text-slate-600">Cargando…</div>
-            <div v-else class="space-y-4">
-              <div>
-                <label class="font-medium text-slate-700">Usuario</label>
-                <div class="bg-slate-100 rounded-lg px-3 py-2 mt-1">{{ profile.email }}</div>
-              </div>
-              <div>
-                <label class="font-medium text-slate-700">Rol</label>
-                <div class="bg-slate-100 rounded-lg px-3 py-2 mt-1 capitalize">{{ profile.role }}</div>
-              </div>
-              <div>
-                <label class="font-medium text-slate-700">Grupo</label>
-                <div class="bg-slate-100 rounded-lg px-3 py-2 mt-1">{{ profile.groupCode || 'Sin grupo' }}</div>
-              </div>
-              <div>
-                <label class="font-medium text-slate-700">Fecha de creación</label>
-                <div class="bg-slate-100 rounded-lg px-3 py-2 mt-1">{{ formatDate(profile.createdAt) }}</div>
+          <div v-show="section==='perfil'" class="space-y-6">
+            <div class="bg-white rounded-2xl shadow p-4">
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold text-slate-900">Perfil</h3>
+                <span class="text-xs text-slate-500">Usuario: {{ me?.username || me?.email || '-' }}</span>
               </div>
 
-              <hr class="my-6">
+              <!-- Cambio de contraseña -->
+              <form @submit.prevent="onSubmitPassword" class="max-w-md space-y-3">
+                <div>
+                  <label class="label">Contraseña actual</label>
+                  <div class="relative">
+                    <input
+                      :type="showOld ? 'text' : 'password'"
+                      v-model.trim="formPwd.old"
+                      class="input pr-10"
+                      autocomplete="current-password"
+                      required
+                    />
+                    <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+                            @click="showOld=!showOld">{{ showOld ? '🙈' : '👁️' }}</button>
+                  </div>
+                </div>
 
-              <h4 class="font-semibold text-slate-900 mb-3">Cambiar contraseña</h4>
-              <form @submit.prevent="cambiarPassword" class="space-y-4">
                 <div>
-                  <label class="text-xs font-medium text-slate-600 mb-1 block">Contraseña actual</label>
-                  <input v-model="oldPassword" type="password"
-                         class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                         required autocomplete="current-password">
+                  <label class="label">Nueva contraseña</label>
+                  <div class="relative">
+                    <input
+                      :type="showNew ? 'text' : 'password'"
+                      v-model.trim="formPwd.new1"
+                      class="input pr-10"
+                      autocomplete="new-password"
+                      required
+                      @input="checkStrength"
+                    />
+                    <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+                            @click="showNew=!showNew">{{ showNew ? '🙈' : '👁️' }}</button>
+                  </div>
+                  <p class="text-xs mt-1" :class="pwdStrengthClass">{{ pwdStrengthLabel }}</p>
+                  <ul class="text-xs text-slate-500 mt-1 list-disc pl-5">
+                    <li>Mínimo 8 caracteres</li>
+                    <li>Debe incluir mayúscula, minúscula, número y símbolo</li>
+                  </ul>
                 </div>
+
                 <div>
-                  <label class="text-xs font-medium text-slate-600 mb-1 block">Nueva contraseña</label>
-                  <input v-model="newPassword" type="password"
-                         class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                         required autocomplete="new-password">
+                  <label class="label">Confirmar nueva contraseña</label>
+                  <div class="relative">
+                    <input
+                      :type="showNew2 ? 'text' : 'password'"
+                      v-model.trim="formPwd.new2"
+                      class="input pr-10"
+                      autocomplete="new-password"
+                      required
+                    />
+                    <button type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500"
+                            @click="showNew2=!showNew2">{{ showNew2 ? '🙈' : '👁️' }}</button>
+                  </div>
+                  <p v-if="formPwd.new2 && formPwd.new1!==formPwd.new2" class="text-xs text-rose-600 mt-1">
+                    Las contraseñas no coinciden.
+                  </p>
                 </div>
-                <div>
-                  <label class="text-xs font-medium text-slate-600 mb-1 block">Repetir nueva contraseña</label>
-                  <input v-model="repeatPassword" type="password"
-                         class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                         required autocomplete="new-password">
+
+                <div class="pt-2 flex items-center gap-2">
+                  <button
+                    class="px-4 py-2 rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    type="submit"
+                    :disabled="submittingPwd || !canSubmitPwd"
+                  >
+                    {{ submittingPwd ? 'Guardando…' : 'Cambiar contraseña' }}
+                  </button>
+                  <button type="button" class="btn-ghost" @click="resetPwdForm" :disabled="submittingPwd">Cancelar</button>
                 </div>
-                <button class="px-4 py-2 rounded-lg text-white bg-indigo-600 hover:bg-indigo-700">
-                  Cambiar contraseña
-                </button>
-                <div v-if="msg" :class="msgClass" class="mt-2 text-sm">{{ msg }}</div>
+
+                <p v-if="pwdMsg" aria-live="polite" class="text-sm mt-2" :class="pwdMsgOk ? 'text-emerald-700' : 'text-rose-700'">
+                  {{ pwdMsg }}
+                </p>
               </form>
             </div>
-          </section>
+          </div>
         <!-- Toast -->
         <transition
           enter-active-class="transition duration-200 ease-out"
@@ -845,6 +874,7 @@
 <script setup>
 
 import axios from 'axios'
+import { http } from '@/lib/http'
 import { ref, computed, onMounted, watch } from 'vue'
 import FechasBanner from '@/components/FechasBanner.vue'
 
@@ -1433,41 +1463,89 @@ const titleBySection = computed(() => ({
   perfil: 'Perfil de usuario',
 }[section.value]))
 
-// === Perfil (embebido)
-const profileLoading = ref(true)
-const profile = ref({})
-const oldPassword = ref('')
-const newPassword = ref('')
-const repeatPassword = ref('')
+// --- estado perfil/cambio contraseña ---
+const formPwd = ref({ old: '', new1: '', new2: '' })
+const showOld = ref(false)
+const showNew = ref(false)
+const showNew2 = ref(false)
+const submittingPwd = ref(false)
+const pwdMsg = ref('')
+const pwdMsgOk = ref(false)
 
-function formatDate(dateStr){
-  if(!dateStr) return ''
-  const d = new Date(dateStr); if(isNaN(d)) return ''
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
+const strengthScore = ref(0)
+const pwdStrengthLabel = computed(() => {
+  if (!formPwd.value.new1) return 'Escribe una contraseña segura'
+  if (strengthScore.value >= 4) return 'Fortaleza: alta'
+  if (strengthScore.value === 3) return 'Fortaleza: media'
+  return 'Fortaleza: baja'
+})
+const pwdStrengthClass = computed(() => {
+  if (!formPwd.value.new1) return 'text-slate-500'
+  if (strengthScore.value >= 4) return 'text-emerald-700'
+  if (strengthScore.value === 3) return 'text-amber-700'
+  return 'text-rose-700'
+})
+
+function checkStrength () {
+  const s = formPwd.value.new1 || ''
+  let score = 0
+  if (s.length >= 8) score++
+  if (/[A-Z]/.test(s)) score++
+  if (/[a-z]/.test(s)) score++
+  if (/\d/.test(s)) score++
+  if (/[^A-Za-z0-9]/.test(s)) score++
+  strengthScore.value = score
 }
-async function loadProfile(){
-  profileLoading.value = true
-  try{
-    const { data } = await axios.get('/me/profile', {
+
+const canSubmitPwd = computed(() =>
+  !!formPwd.value.old &&
+  !!formPwd.value.new1 &&
+  formPwd.value.new1 === formPwd.value.new2 &&
+  strengthScore.value >= 4
+)
+
+function resetPwdForm () {
+  formPwd.value = { old: '', new1: '', new2: '' }
+  strengthScore.value = 0
+  pwdMsg.value = ''
+  pwdMsgOk.value = false
+  showOld.value = showNew.value = showNew2.value = false
+}
+
+async function onSubmitPassword () {
+  pwdMsg.value = ''
+  pwdMsgOk.value = false
+  if (!canSubmitPwd.value) {
+    pwdMsg.value = 'Revisa los requisitos de la nueva contraseña.'
+    return
+  }
+  submittingPwd.value = true
+  try {
+    await axios.post('/me/change-password', {
+      oldPassword: formPwd.value.old,
+      newPassword: formPwd.value.new1
+    }, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     })
-    profile.value = data
-  } finally { profileLoading.value = false }
-}
-async function cambiarPassword(){
-  msg.value = ''
-  if (newPassword.value !== repeatPassword.value){ msg.value='Las nuevas contraseñas no coinciden'; return }
-  try{
-    await axios.post('/me/change-password',
-      { oldPassword: oldPassword.value, newPassword: newPassword.value },
-      { headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') } }
-    )
-    msg.value = 'Contraseña cambiada ✅'
-    oldPassword.value = newPassword.value = repeatPassword.value = ''
-  } catch(e){
-    msg.value = e?.response?.data?.error || 'Error al cambiar contraseña'
+    pwdMsg.value = 'Contraseña actualizada correctamente.'
+    pwdMsgOk.value = true
+    // Limpia el form **después de un pequeño delay**, así el usuario ve el mensaje
+    setTimeout(() => resetPwdForm(), 1500)
+  } catch (err) {
+    // Toma el mensaje correcto del backend
+    const apiMsg =
+      err?.response?.data?.error ||
+      err?.response?.data?.detail ||
+      err?.response?.data?.message ||
+      err?.message ||
+      'Error al cambiar la contraseña.'
+    pwdMsg.value = apiMsg
+    pwdMsgOk.value = false
+  } finally {
+    submittingPwd.value = false
   }
 }
+
 
 // ---------- Historial (calendario + timeline) ----------
 const historyModal = ref({ open: false, agent: null })
@@ -1650,9 +1728,7 @@ onMounted(async () => {
   await loadAgents()
   await checkIfReportExists()
 })
-// carga perfil sólo cuando entras a la pestaña
-watch(section, (s) => { if (s==='perfil' && !profile.email) loadProfile() })
-onMounted(() => { /* si quieres precargar: loadProfile() */ })
+
 
 </script>
 
