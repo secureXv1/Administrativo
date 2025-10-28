@@ -223,29 +223,106 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="r in tableRows" :key="r._key" class="hover:bg-slate-50">
-              <td>
-                <button
-                  class="inline-flex items-center gap-2 text-brand-700 hover:underline"
-                  @click="goToGroupReport(r)"
-                  title="Ver detalle del grupo"
-                  style="background:none;border:none;padding:0;margin:0;cursor:pointer;"
-                >
-                  <span class="h-2 w-2 rounded-full" :class="r.isComplete ? 'bg-green-600' : 'bg-amber-600'"></span>
-                  {{ r.unitName || r.groupCode }}
-                </button>
-              </td>
-              <td>{{ fmtFechaColombia(r.submittedAt || r.time) }}</td>
-              <td>{{ fmtHoraColombia(r.time || r.submittedAt) }}</td>
+            <!-- === Vista ADMIN/SUPERVISOR: grupos con despliegue de unidades === -->
+            <template v-if="isAdminView">
+              <template v-for="g in rowsDisplayAdminNested" :key="'G'+g._key">
+                <!-- Fila de grupo -->
+                <tr class="hover:bg-slate-50">
+                  <td>
+                    <button
+                      class="inline-flex items-center gap-2 text-brand-700 hover:underline"
+                      @click="toggleGroup(g.groupId)"
+                      title="Desplegar/contraer unidades"
+                      style="background:none;border:none;padding:0;margin:0;cursor:pointer;"
+                    >
+                      <!-- caret -->
+                      <svg :style="{ transform: isExpanded(g.groupId) ? 'rotate(90deg)' : 'rotate(0deg)' }"
+                          width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M9 18l6-6-6-6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
 
-              <td class="font-medium text-slate-900">{{ r.FE }}</td>
-              <td class="font-medium text-slate-900">{{ r.FD }}</td>
-              <td class="font-medium text-slate-900">{{ r.NOV }}</td>
-            </tr>
-            <tr v-if="tableRows.length === 0">
-              <td colspan="6" class="text-center text-slate-500 py-6">Sin datos</td>
-            </tr>
+                      <span class="h-2 w-2 rounded-full" :class="g.isComplete ? 'bg-green-600' : 'bg-amber-600'"></span>
+                      {{ g.groupCode }}
+                      <span class="text-xs text-slate-400">({{ g.units.length }} unidades)</span>
+
+                      <!-- 🔔 Campana si hubo reporte tarde en el grupo -->
+                      <svg v-if="g.groupLate" class="inline-block ml-1 text-amber-600" width="16" height="16" viewBox="0 0 24 24"
+                          fill="none" stroke="currentColor">
+                        <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"
+                              stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M13.73 21a2 2 0 01-3.46 0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  
+                  </td>
+                  <td>{{ fmtFechaColombia(g.submittedAt || g.date) }}</td>
+                  <td>{{ fmtHoraColombia(g.time || g.submittedAt) }}</td>
+                  <td class="font-medium text-slate-900">{{ g.FE }}</td>
+                  <td class="font-medium text-slate-900">{{ g.FD }}</td>
+                  <td class="font-medium text-slate-900">{{ g.NOV }}</td>
+                </tr>
+
+                <!-- Filas hijas: unidades del grupo -->
+                <tr v-for="u in g.units" :key="'U'+g._key+'-'+u.unitId"
+                    v-show="isExpanded(g.groupId)"
+                    class="bg-slate-50/40 hover:bg-slate-50">
+                  <td>
+                    <button
+                      class="inline-flex items-center gap-2 pl-6 text-slate-700 hover:underline"                     
+                      title="Ver detalle de unidad"
+                      style="background:none;border:none;padding:0;margin:0;cursor:pointer;"
+                    >
+                      <span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
+                      {{ u.unitName }}
+
+                      <!-- 🔔 Campana si la unidad reportó tarde -->
+                      <svg v-if="u.late" class="inline-block ml-1 text-amber-600" width="14" height="14" viewBox="0 0 24 24"
+                          fill="none" stroke="currentColor">
+                        <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"
+                              stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M13.73 21a2 2 0 01-3.46 0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      </svg>
+                    </button>
+                  </td>
+                  <td>{{ fmtFechaColombia(u.submittedAt || u.date) }}</td>
+                  <td>{{ fmtHoraColombia(u.time || u.submittedAt) }}</td>
+                  <td class="font-medium text-slate-900">{{ u.FE }}</td>
+                  <td class="font-medium text-slate-900">{{ u.FD }}</td>
+                  <td class="font-medium text-slate-900">{{ u.NOV }}</td>
+                </tr>
+              </template>
+
+              <tr v-if="!rowsDisplayAdminNested.length">
+                <td colspan="6" class="text-center text-slate-500 py-6">Sin datos</td>
+              </tr>
+            </template>
+
+            <!-- === Vista LÍDER DE GRUPO: como la tienes (unidad a unidad) === -->
+            <template v-else>
+              <tr v-for="r in rowsDisplayLeader" :key="r._key" class="hover:bg-slate-50">
+                <td>
+                  <button
+                    class="inline-flex items-center gap-2 text-brand-700 hover:underline"
+                    @click="goToGroupReport(r)"
+                    title="Ver detalle"
+                    style="background:none;border:none;padding:0;margin:0;cursor:pointer;"
+                  >
+                    <span class="h-2 w-2 rounded-full bg-green-600"></span>
+                    {{ r.unitName }}
+                  </button>
+                </td>
+                <td>{{ fmtFechaColombia(r.submittedAt || r.time) }}</td>
+                <td>{{ fmtHoraColombia(r.time || r.submittedAt) }}</td>
+                <td class="font-medium text-slate-900">{{ r.FE }}</td>
+                <td class="font-medium text-slate-900">{{ r.FD }}</td>
+                <td class="font-medium text-slate-900">{{ r.NOV }}</td>
+              </tr>
+              <tr v-if="!rowsDisplayLeader.length">
+                <td colspan="6" class="text-center text-slate-500 py-6">Sin datos</td>
+              </tr>
+            </template>
           </tbody>
+
         </table>
       </div>
     </div>
@@ -491,6 +568,19 @@ const roleLc = computed(() => String(me.value?.role || '').trim().toLowerCase())
 const isAdminView   = computed(() => ['superadmin','supervision','supervisor'].includes(roleLc.value))
 const isLeaderGroup = computed(() => roleLc.value === 'leader_group')
 
+// === Expandir/colapsar grupos en vista admin
+const expandedGroups = ref(new Set())
+
+function isExpanded (gid) {
+  return expandedGroups.value.has(String(gid))
+}
+function toggleGroup (gid) {
+  const s = new Set(expandedGroups.value)
+  const k = String(gid)
+  if (s.has(k)) s.delete(k); else s.add(k)
+  expandedGroups.value = s
+}
+
 // ===== Filtros
 function tomorrowStr () {
   const d = new Date()
@@ -602,6 +692,22 @@ function formatTime (ts) {
   if (!ts) return '—'
   const d = new Date(ts)
   return Number.isNaN(d.getTime()) ? '—' : d.toISOString().substring(11,16)
+}
+
+// === ¿Se reportó después de las 6:00 pm en America/Bogota?
+function isLateBogota (v) {
+  const d = toDateSafe(v)
+  if (!d) return false
+  const parts = new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(d)
+  const hh = Number(parts.find(p => p.type === 'hour')?.value || '0')
+  const mm = Number(parts.find(p => p.type === 'minute')?.value || '0')
+  // "después de las 6 pm" => estrictamente > 18:00 (18:01+)
+  return (hh > 18) || (hh === 18 && mm > 0)
 }
 
 function goToGroupReport(r) {
@@ -1012,7 +1118,88 @@ const rowsDisplayAdmin = computed(() => {
   return out.sort((a,b)=> String(a.groupCode).localeCompare(String(b.groupCode)));
 });
 
+// Vista anidada para Admin/Supervisor: grupos con sus unidades e "hora de actualización"
+const rowsDisplayAdminNested = computed(() => {
+  // Mapa de códigos de grupo
+  const codeById = new Map(grupos.value.map(g => [String(g.id), g.code]))
+  // Ids de grupos completos (todas sus unidades reportadas)
+  const completeIds = new Set(compAdmin.value.complete.map(x => String(x.groupId)))
 
+  // groupId -> objeto agrupado con totales + unidades
+  const byGroup = new Map()
+
+  for (const r of rows.value) {
+    const gid = String(r.groupId ?? r.group_id ?? '')
+    if (!gid) continue
+
+    // Crear contenedor de grupo si no existe
+    if (!byGroup.has(gid)) {
+      byGroup.set(gid, {
+        _key: gid,
+        groupId: gid,
+        groupCode: r.groupCode || codeById.get(gid) || `Grupo ${gid}`,
+        // Totales del grupo (sumas de sus unidades)
+        OF_effective: 0, SO_effective: 0, PT_effective: 0,
+        OF_available: 0, SO_available: 0, PT_available: 0,
+        OF_nov: 0,      SO_nov: 0,      PT_nov: 0,
+        // Máxima fecha/hora de envío (para el grupo)
+        updatedAtMax: null,
+        // Unidades del grupo
+        units: []
+      })
+    }
+    const g = byGroup.get(gid)
+
+    // Acumula totales del grupo
+    g.OF_effective += r.OF_effective || 0
+    g.SO_effective += r.SO_effective || 0
+    g.PT_effective += r.PT_effective || 0
+    g.OF_available += r.OF_available || 0
+    g.SO_available += r.SO_available || 0
+    g.PT_available += r.PT_available || 0
+    g.OF_nov      += r.OF_nov || 0
+    g.SO_nov      += r.SO_nov || 0
+    g.PT_nov      += r.PT_nov || 0
+
+    // Max de updatedAt para el grupo (hora real de envío)
+    const ts = new Date(r.updatedAt || 0).getTime()
+    const old = new Date(g.updatedAtMax || 0).getTime()
+    if (isFinite(ts) && ts > old) g.updatedAtMax = r.updatedAt || null
+
+    // Push de la unidad con su hora real de actualización
+    g.units.push({
+      unitId: r.unitId,
+      unitName: r.unitName || `Unidad ${r.unitId || '—'}`,
+      date: r.date,                // fecha programada del parte
+      submittedAt: r.updatedAt,    // hora real de envío por unidad
+      time: r.updatedAt,
+      FE:  `${r.OF_effective||0}/${r.SO_effective||0}/${r.PT_effective||0}`,
+      FD:  `${r.OF_available||0}/${r.SO_available||0}/${r.PT_available||0}`,
+      NOV: `${r.OF_nov||0}/${r.SO_nov||0}/${r.PT_nov||0}`,
+      late: isLateBogota(r.updatedAt)
+    })
+  }
+
+  // Arma salida ordenada por código de grupo y marca "isComplete"
+  const out = []
+  for (const [gid, g] of byGroup.entries()) {
+    out.push({
+      _key: gid,
+      groupId: gid,
+      groupCode: g.groupCode,
+      date: g.units[0]?.date || null,          // fecha programada del parte (referencial)
+      submittedAt: completeIds.has(gid) ? g.updatedAtMax : null,  // hora real si está completo
+      time: completeIds.has(gid) ? g.updatedAtMax : null,
+      isComplete: completeIds.has(gid),
+      FE:  `${g.OF_effective}/${g.SO_effective}/${g.PT_effective}`,
+      FD:  `${g.OF_available}/${g.SO_available}/${g.PT_available}`,
+      NOV: `${g.OF_nov}/${g.SO_nov}/${g.PT_nov}`,
+      units: g.units.sort((a,b)=> String(a.unitName).localeCompare(String(b.unitName))),
+      groupLate: g.units.some(u => u.late)
+    })
+  }
+  return out.sort((a,b)=> String(a.groupCode).localeCompare(String(b.groupCode)))
+})
 
 const tableRows = computed(() => isAdminView.value ? rowsDisplayAdmin.value : rowsDisplayLeader.value)
 

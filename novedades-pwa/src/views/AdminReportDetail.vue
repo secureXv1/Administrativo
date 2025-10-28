@@ -396,6 +396,7 @@ import { saveAs } from 'file-saver'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.css'
 
+
 // ===== Grupos (para el filtro) =====
 const grupos = ref([])
 
@@ -442,7 +443,8 @@ const canEdit = computed(() => {
 const reportId   = computed(() => route.params.id ? String(route.params.id) : null)
 const dateParam  = computed(() => route.query.date ? String(route.query.date) : new Date().toISOString().slice(0,10))
 const groupIdQ   = computed(() => route.query.groupId ? String(route.query.groupId) : null)
-const isGroupMode = computed(() => !!groupIdQ.value)
+const aggregateAll = ref(false)
+const isGroupMode = computed(() => aggregateAll.value || !!groupIdQ.value)
 const loading   = ref(true)
 
 // ===== Estado UI
@@ -598,19 +600,19 @@ async function gotoReportForUnit(date, unitId) {
   }
 }
 
-
 // === Handlers de UI ===
 async function onChangeDate() {
   const date = filterDate.value || todayStr()
   await loadUnitsIndex(date)
 
-  // Si hay unidad seleccionada → navega a su reporte en esa fecha
   if (filterUnitId.value) {
     await gotoReportForUnit(date, filterUnitId.value)
   } else {
-    // Si no hay unidad, en modo grupo recargas lista; en modo single solo sincronizas URL
     if (isGroupMode.value && groupIdQ.value) {
-      await loadGroupReports(date, groupIdQ.value) // tu función actual (agrega todas las unidades del grupo)
+      await loadGroupReports(date, groupIdQ.value)
+    } else {
+      // ✅ SIN grupo/unidad -> modo TODOS
+      await loadAllReports(date)
     }
     await router.replace({ name: route.name, params: route.params, query: { ...route.query, date, unitId: '' } })
     head.value = { ...head.value, date }
@@ -702,63 +704,85 @@ function badgeClass(state){
 
 // ===== Carga
 async function loadSingleReport(id){
-  const { data: ags } = await axios.get(`/admin/report-agents/${id}`, {
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  const map = (row) => ({
-    ...row,
-    _key: `${row.code}-${row.unitName||''}-${row.state}-${row.novelty_start||''}-${row.novelty_end||''}`,
-    municipality: row.municipalityName && row.dept ? `${row.municipalityName} (${row.dept})` : (row.municipalityName || ''),
-    municipalityName: row.municipalityName || null,
-    municipalityDept: row.dept || null,
-    municipalityId: row.municipalityId != null ? Number(row.municipalityId) : null,
-    novelty_description: row.novelty_description || row.descripcion,
-    reportId: id
-  })
-  const list = (Array.isArray(ags) ? ags : []).map(map)
-  agentes.value = list
-  const first = list[0]
-  const shownDate = filterDate.value || dateParam.value
-  head.value = { groupCode: first?.groupCode || '', unitName: first?.unitName || '', date: shownDate }
-  headerOk.value = true
+  try {
+    headerOk.value = false
+    agentes.value = []
 
-  await setDiasLaboradosTodos() 
+    const { data: ags } = await axios.get(`/admin/report-agents/${id}`, {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
+
+    const map = (row) => ({
+      ...row,
+      _key: `${row.code}-${row.unitName||''}-${row.state}-${row.novelty_start||''}-${row.novelty_end||''}`,
+      municipality: row.municipalityName && row.dept ? `${row.municipalityName} (${row.dept})` : (row.municipalityName || ''),
+      municipalityName: row.municipalityName || null,
+      municipalityDept: row.dept || null,
+      municipalityId: row.municipalityId != null ? Number(row.municipalityId) : null,
+      novelty_description: row.novelty_description || row.descripcion,
+      reportId: id
+    })
+    const list = (Array.isArray(ags) ? ags : []).map(map)
+
+    agentes.value = list
+    const first = list[0]
+    const shownDate = filterDate.value || dateParam.value
+    head.value = { groupCode: first?.groupCode || '', unitName: first?.unitName || '', date: shownDate }
+
+    headerOk.value = true                 // ✅ pinta de inmediato
+    setTimeout(() => { setDiasLaboradosTodos().catch(()=>{}) }, 0)  // ✅ diferido
+  } catch (e) {
+    console.error('loadSingleReport error:', e)
+    headerOk.value = false
+    agentes.value = []
+  }
 }
 
 async function loadGroupReports(date, groupId){
-  const { data } = await axios.get('/dashboard/reports', {
-    params: { date_from: date, date_to: date, groupId },
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-  const items = Array.isArray(data?.items) ? data.items : []
-  if (!items.length) { headerOk.value = false; return }
+  try {
+    headerOk.value = false
+    agentes.value = []
 
-  head.value = { groupCode: items[0].groupCode, unitName: '', date }
-  unitsInGroup.value = [...new Map(items.map(r => [String(r.unitName||''), { id: r.unitId, name: r.unitName }])).values()]
-                      .filter(u => !!u.id)
-                      .sort((a,b)=> (a.name||'').localeCompare(b.name||''))
-
-  const all = []
-  for (const r of items) {
-    const { data: ags } = await axios.get(`/admin/report-agents/${r.id}`, {
+    const { data } = await axios.get('/dashboard/reports', {
+      params: { date_from: date, date_to: date, groupId },
       headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
     })
-    const list = (Array.isArray(ags) ? ags : []).map(a => ({
-      ...a,
-      _key: `${a.code}-${a.unitName||''}-${a.state}-${a.novelty_start||''}-${a.novelty_end||''}`,
-      municipality: a.municipalityName && a.dept ? `${a.municipalityName} (${a.dept})` : (a.municipalityName || ''),
-      municipalityName: a.municipalityName || null,
-      municipalityDept: a.dept || null,
-      municipalityId: a.municipalityId != null ? Number(a.municipalityId) : null,
-      novelty_description: a.novelty_description || a.descripcion,
-      reportId: r.id
-    }))
-    all.push(...list)
+    const items = Array.isArray(data?.items) ? data.items : []
+    if (!items.length) { headerOk.value = false; return }
+
+    head.value = { groupCode: items[0].groupCode, unitName: '', date }
+    unitsInGroup.value = [...new Map(items.map(r => [String(r.unitName||''), { id: r.unitId, name: r.unitName }])).values()]
+                        .filter(u => !!u.id)
+                        .sort((a,b)=> (a.name||'').localeCompare((b.name||'')))
+
+    const all = []
+    for (const r of items) {
+      const { data: ags } = await axios.get(`/admin/report-agents/${r.id}`, {
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+      })
+      const list = (Array.isArray(ags) ? ags : []).map(a => ({
+        ...a,
+        _key: `${a.code}-${a.unitName||''}-${a.state}-${a.novelty_start||''}-${a.novelty_end||''}`,
+        municipality: a.municipalityName && a.dept ? `${a.municipalityName} (${a.dept})` : (a.municipalityName || ''),
+        municipalityName: a.municipalityName || null,
+        municipalityDept: a.dept || null,
+        municipalityId: a.municipalityId != null ? Number(a.municipalityId) : null,
+        novelty_description: a.novelty_description || a.descripcion,
+        reportId: r.id
+      }))
+      all.push(...list)
+    }
+
+    agentes.value = all
+    headerOk.value = true                 // ✅ pinta de inmediato
+    setTimeout(() => { setDiasLaboradosTodos().catch(()=>{}) }, 0)  // ✅ diferido
+  } catch (e) {
+    console.error('loadGroupReports error:', e)
+    headerOk.value = false
+    agentes.value = []
   }
-  agentes.value = all
-  headerOk.value = true
-  await setDiasLaboradosTodos()
 }
+
 
 // --- Función para contar días laborados ---
 function contarDiasLaborados(historial) {
@@ -784,6 +808,49 @@ async function setDiasLaboradosTodos() {
     } catch {
       agente.diasLaborados = 0
     }
+  }
+}
+
+// Cargar TODOS los reportes del día (sin groupId ni unitId) y aplanar agentes
+async function loadAllReports(date) {
+  try {
+    headerOk.value = false
+    agentes.value = []
+
+    const { data } = await axios.get('/dashboard/reports', {
+      params: { date_from: date, date_to: date },
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+    const items = Array.isArray(data?.items) ? data.items : []
+
+    const all = []
+    for (const r of items) {
+      const { data: ags } = await axios.get(`/admin/report-agents/${r.id}`, {
+        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+      })
+      const list = (Array.isArray(ags) ? ags : []).map(a => ({
+        ...a,
+        _key: `${a.code}-${a.unitName||''}-${a.state}-${a.novelty_start||''}-${a.novelty_end||''}`,
+        municipality: a.municipalityName && a.dept ? `${a.municipalityName} (${a.dept})` : (a.municipalityName || ''),
+        municipalityName: a.municipalityName || null,
+        municipalityDept: a.dept || null,
+        municipalityId: a.municipalityId != null ? Number(a.municipalityId) : null,
+        novelty_description: a.novelty_description || a.descripcion,
+        reportId: r.id
+      }))
+      all.push(...list)
+    }
+
+    agentes.value = all
+    head.value = { groupCode: 'Todos', unitName: '', date }
+    headerOk.value = true                 // ✅ pinta de inmediato
+
+    // ✅ calcula días en diferido para no bloquear la UI
+    setTimeout(() => { setDiasLaboradosTodos().catch(()=>{}) }, 0)
+  } catch (e) {
+    console.error('loadAllReports error:', e)
+    headerOk.value = false
+    agentes.value = []
   }
 }
 
@@ -1088,6 +1155,14 @@ onMounted(async () => {
     filterDate.value   = qDate || dateParam.value
     filterUnitId.value = qUnit
 
+    if (!route.query.groupId && !('unitId' in route.query)) {
+     await router.replace({
+       name: route.name,
+       params: route.params,
+      query: { ...route.query, date: filterDate.value, unitId: '' }
+     })
+   }
+
     // 3) Cargar índice de unidades respetando la selección entrante (NO pisar)
     await loadUnitsIndex(filterDate.value)
 
@@ -1102,7 +1177,7 @@ onMounted(async () => {
         await loadSingleReport(reportId.value)
         head.value = { ...head.value, date: filterDate.value }
       } else {
-        headerOk.value = false
+        await loadAllReports(filterDate.value)
       }
     }
     if (isLeaderGroup.value && grupos.value.length) {
@@ -1138,46 +1213,51 @@ watch(filterUnitId, async (newUnit, oldUnit) => {
 })
 
 watch(
-  () => route.query.unitId,
-  async (newUnit, oldUnit) => {
-    if (newUnit !== oldUnit) {
-      const date = String(route.query.date || filterDate.value)
-      filterUnitId.value = String(newUnit || '')
-      if (filterUnitId.value) {
-        await gotoReportForUnit(date, filterUnitId.value)
+  () => route.query,
+  async (q) => {
+    const newDate = String(q.date || todayStr())
+    const newUnit = String(q.unitId || '')
+    const changed = (newDate !== filterDate.value) || (newUnit !== filterUnitId.value)
+    if (changed) {
+      filterDate.value = newDate
+      filterUnitId.value = newUnit
+      await loadUnitsIndex(newDate)
+
+      if (newUnit) {
+        await gotoReportForUnit(newDate, newUnit)
       } else if (isGroupMode.value && groupIdQ.value) {
-        headerOk.value = false
-        agentes.value = []
-        await loadGroupReports(date, groupIdQ.value)
-        headerOk.value = true
+        await loadGroupReports(newDate, groupIdQ.value)
+      } else {
+        // ✅ SIN groupId y SIN unitId -> MODO TODOS
+        await loadAllReports(newDate)
       }
     }
   }
 )
+
 watch(selectedGroupId, async (newG, oldG) => {
   if (newG !== oldG) {
-    // Cambia groupId en la URL (y quita unitId, para que la unidad se refresque)
     await router.replace({
       name: route.name,
       params: route.params,
       query: {
         ...route.query,
         groupId: newG === 'all' ? undefined : newG,
-        unitId: '', // resetea la unidad al cambiar de grupo
+        unitId: '', // resetea unidad
       },
     })
-    // Carga nuevas unidades de ese grupo y resetea filtros si es necesario
     await loadUnitsIndex(filterDate.value)
-    // Si quieres recargar la tabla o dashboard
+
     if (newG !== 'all') {
+      aggregateAll.value = false
       await loadGroupReports(filterDate.value, newG)
     } else {
-      // Puedes mostrar todas las unidades o dejar vacío
-      agentes.value = []
-      headerOk.value = false
+      // ✅ volver a modo TODOS
+      await loadAllReports(filterDate.value)
     }
   }
 })
+
 
 watch(
   () => route.query.groupId,

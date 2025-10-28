@@ -119,8 +119,10 @@ async function login () {
 
     const me = await axios.get('/me', { headers: { Authorization: 'Bearer ' + data.token } }).then(r => r.data)
 
-    if (me?.role === 'superadmin' || me?.role === 'supervision') {
+    if (me?.role === 'superadmin') {
       router.push('/admin/dashboard')
+    } else if (me?.role === 'supervision') {
+      router.push('/admin/')
     } else if (me?.role === 'leader_group') {
       router.push('/admin/')
     } else if (me?.role === 'leader_unit') {

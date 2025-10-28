@@ -1980,40 +1980,118 @@ cron.schedule('45 14 * * *', () => console.log('⏳ Cierre ventana 14:45'), { ti
 
 
 // Endpoint: Detalle de agentes por reporte
-app.get('/admin/report-agents/:id', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
-  // ... seguridad leader_group ...
+app.get('/admin/report-agents/:id',
+  auth,
+  requireRole('superadmin', 'supervision', 'leader_group'),
+  async (req, res) => {
+    // Seguridad leader_group: solo reportes de su grupo
+    if (req.user.role === 'leader_group') {
+      const [[repCheck]] = await pool.query(
+        'SELECT groupId FROM dailyreport WHERE id=? LIMIT 1',
+        [req.params.id]
+      );
+      if (!repCheck || Number(repCheck.groupId) !== Number(req.user.groupId)) {
+        return res.status(403).json({ error: 'No autorizado' });
+      }
+    }
 
-  const { id } = req.params;
-  if (!id) return res.status(400).json({ error: 'Missing reportId' });
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'Missing reportId' });
 
-  const [rows] = await pool.query(`
-    SELECT 
-      a.id AS agentId,          
-      a.code, a.nickname,
-      a.category,
-      da.state,
-      da.groupId, g.code AS groupCode,
-      da.unitId, u.name AS unitName,
-+     da.municipalityId,
-      m.name AS municipalityName, m.dept,
-      DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
-      DATE_FORMAT(da.novelty_end,   '%Y-%m-%d') AS novelty_end,
-      da.novelty_description
-    FROM dailyreport_agent da
-    JOIN agent a ON a.id = da.agentId
-    LEFT JOIN \`group\` g ON g.id = da.groupId
-    LEFT JOIN unit u ON u.id = da.unitId
-    LEFT JOIN municipality m ON m.id = da.municipalityId
-    WHERE da.reportId = ?
-    ORDER BY FIELD(a.category, 'OF', 'SO', 'PT'), a.code
-  `, [id]);
+    const [rows] = await pool.query(`
+      SELECT 
+        a.id AS agentId,
+        a.code, a.nickname,
+        a.category,
+        da.state,
+        da.groupId, g.code AS groupCode,
+        da.unitId, u.name AS unitName,
+        da.municipalityId,
+        m.name AS municipalityName, m.dept,
+        DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
+        DATE_FORMAT(da.novelty_end,   '%Y-%m-%d') AS novelty_end,
+        da.novelty_description
+      FROM dailyreport_agent da
+      JOIN agent a           ON a.id = da.agentId
+      LEFT JOIN \`group\` g  ON g.id = da.groupId
+      LEFT JOIN unit u       ON u.id = da.unitId
+      LEFT JOIN municipality m ON m.id = da.municipalityId
+      WHERE da.reportId = ?
+      ORDER BY FIELD(a.category, 'OF', 'SO', 'PT'), a.code
+    `, [id]);
 
-  res.json(rows.map(r => ({
-    ...r,
-    nickname: r.nickname ? decNullable(r.nickname) : null,
-    novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null
-  })));
-});
+    res.json(rows.map(r => ({
+      ...r,
+      nickname: r.nickname ? decNullable(r.nickname) : null,
+      novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null
+    })));
+  }
+);
+
+function normQ(v) {
+  const s = String(v ?? '').trim().toLowerCase()
+  if (!s || s === 'all' || s === 'null' || s === 'undefined') return undefined
+  return v
+}
+
+app.get('/admin/report/detail',
+  auth,
+  requireRole('superadmin','supervision','leader_group'),
+  async (req, res) => {
+    try {
+      const date    = req.query.date
+      const groupId = normQ(req.query.groupId)
+      const unitId  = normQ(req.query.unitId)
+      if (!date) return res.status(400).json({ error: 'date requerido' })
+
+      const where = ['dr.reportDate = ?']     // ✅ columna correcta
+      const args  = [date]
+
+      // Líder de grupo queda restringido a su grupo
+      if (String(req.user.role).toLowerCase() === 'leader_group') {
+        where.push('dr.groupId = ?')
+        args.push(req.user.groupId)
+        if (unitId !== undefined) { where.push('dr.unitId = ?'); args.push(unitId) }
+      } else {
+        if (groupId !== undefined) { where.push('dr.groupId = ?'); args.push(groupId) }
+        if (unitId  !== undefined) { where.push('dr.unitId  = ?'); args.push(unitId)  }
+      }
+
+      const sql = `
+        SELECT
+          da.reportId,
+          dr.reportDate AS date,              -- ✅ alias como "date" para el front
+          dr.groupId, dr.unitId,
+          g.code AS groupCode, u.name AS unitName,
+          da.agentId, a.code, a.nickname, a.category,
+          da.state,
+          da.municipalityId, m.name AS municipalityName, m.dept,
+          da.novelty_description,
+          DATE_FORMAT(da.novelty_start,'%Y-%m-%d') AS novelty_start,
+          DATE_FORMAT(da.novelty_end  ,'%Y-%m-%d') AS novelty_end,
+          dr.updatedAt
+        FROM dailyreport dr
+        JOIN dailyreport_agent da ON da.reportId = dr.id
+        JOIN agent a              ON a.id = da.agentId
+        LEFT JOIN \`group\` g     ON g.id = dr.groupId
+        LEFT JOIN unit u          ON u.id = dr.unitId
+        LEFT JOIN municipality m  ON m.id = da.municipalityId
+        WHERE ${where.join(' AND ')}
+        ORDER BY g.code ASC, u.name ASC, FIELD(a.category,'OF','SO','PT'), a.code
+      `
+      const [rows] = await pool.query(sql, args)
+      const items = rows.map(r => ({
+        ...r,
+        nickname: r.nickname ? decNullable(r.nickname) : null,
+        novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null
+      }))
+      res.json({ items })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'AdminReportDetailError' })
+    }
+  }
+)
 
 // Endpoint: Editar estado/novedad de un agente en un reporte específico
 
