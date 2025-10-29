@@ -11,6 +11,7 @@ import AdminAgents from '../views/AdminAgents.vue'
 import MainDashboard from '../views/MainDashboard.vue'
 import VehiclesView from '../views/VehiclesView.vue'
 import AgentDashboard from '../views/AgentDashboard.vue'
+import Parte from '../views/Parte.vue'
 
 // ⬇️ Usa el layout con sidebar:
 import AdminMenuLayout0 from '../views/AdminMenuLayout0.vue'
@@ -25,7 +26,6 @@ function homeByRole(role) {
   // superadmin / supervision / leader_group
   return '/admin'
 }
-
 
 // Rutas
 const routes = [
@@ -58,7 +58,8 @@ const routes = [
     { path: 'report/:id', name: 'ReportUnit', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
     { path: 'report',     name: 'ReportGroup', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
     { path: 'audit', name: 'AuditLog', component: () => import('@/views/AdminAuditLog.vue'), meta: { roles: ['superadmin'] } },
-    {  path: '/admin/dashboard',  name: 'MainDashboard',  component: MainDashboard,  meta: { roles: ['superadmin', 'supervision', 'leader_group'] }},
+    { path: '/admin/dashboard',  name: 'MainDashboard',  component: MainDashboard,  meta: { roles: ['superadmin', 'supervision', 'leader_group'] }},
+    { path: '/parte', name: 'Parte', component: Parte },
   ]
   },
   {

@@ -17,7 +17,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { useRoute, RouterLink } from 'vue-router'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 
 const props = defineProps({
   to: { type: [String, Object], required: true },
@@ -29,11 +29,12 @@ const props = defineProps({
 })
 
 const route = useRoute()
+const router = useRouter()
 
 const isActive = computed(() => {
   const current = route.path
-  const base = typeof props.to === 'string' ? props.to : (props.to.path || '')
-  if (!base) return false
+  const resolved = router.resolve(props.to)
+  const base = resolved.path || (typeof props.to === 'string' ? props.to : '')
 
   // Coincidencia exacta
   if (props.exact) return current === base
@@ -58,7 +59,8 @@ const iconPaths = {
   units: 'M4 4h16v16H4V4zm4 4h8v8H8V8z',
   users: 'M12 12a4 4 0 100-8 4 4 0 000 8zm6 8a6 6 0 10-12 0h12z',
   settings: 'M12 8a4 4 0 100 8 4 4 0 000-8z M4 12h2m12 0h2M12 4v2m0 12v2',
-  dot: 'M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0'
+  dot: 'M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0',
+  parte: "M9 2a2 2 0 00-2 2H6a2 2 0 00-2 2v12a2 2 0 002 2h6.5a5.5 5.5 0 100-3H6V6h1v1a1 1 0 001 1h6a1 1 0 001-1V6h1a2 2 0 00-2-2h-1a2 2 0 00-2-2H9zm2 2h2v2h-2V4zm6.854 11.146a.5.5 0 00-.708 0l-1.646 1.646-.646-.646a.5.5 0 10-.708.708l1 1a.5.5 0 00.708 0l2.354-2.354a.5.5 0 000-.708z",
 }
 const iconPath = computed(() => iconPaths[props.icon] || iconPaths.dot)
 </script>

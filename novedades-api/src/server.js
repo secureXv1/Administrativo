@@ -840,9 +840,94 @@ async function deleteAgentRowsSameDate(conn, date, agentId, keepReportId) {
   `, [agentId, date, keepReportId]);
 }
 
+// PUT /admin/report/check  { date:'YYYY-MM-DD', agentId:number, check:0|1 }
+app.put('/admin/report/check',
+  auth,
+  requireRole('superadmin','supervision','leader_group'),
+  async (req, res) => {
+    try {
+      const isoDate = String(req.body.date || '').slice(0,10);
+      const agentId = Number(req.body.agentId);
+      const val = Number(req.body.check) ? 1 : 0;
 
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+        return res.status(422).json({ error: 'Fecha inválida (YYYY-MM-DD)' });
+      }
+      if (!agentId) return res.status(422).json({ error: 'agentId requerido' });
 
+      const [[ag]] = await pool.query(
+        'SELECT id, groupId, unitId, status, municipalityId FROM agent WHERE id=? LIMIT 1',
+        [agentId]
+      );
+      if (!ag) return res.status(404).json({ error:'Agente no encontrado' });
 
+      // Alcance leader_group
+      if (String(req.user.role).toLowerCase()==='leader_group' &&
+          Number(ag.groupId)!==Number(req.user.groupId)) {
+        return res.status(403).json({ error:'No autorizado' });
+      }
+
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+
+        // Asegura encabezado del reporte del día
+        const [[drEx]] = await conn.query(
+          'SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1',
+          [isoDate, ag.groupId, ag.unitId]
+        );
+        let reportId = drEx?.id;
+        if (!reportId) {
+          await conn.query(`
+            INSERT INTO dailyreport
+              (reportDate, groupId, unitId, leaderUserId,
+               OF_effective,SO_effective,PT_effective,
+               OF_available,SO_available,PT_available,
+               OF_nov,SO_nov,PT_nov)
+            VALUES (?, ?, ?, ?, 0,0,0, 0,0,0, 0,0,0)
+            ON DUPLICATE KEY UPDATE updatedAt=CURRENT_TIMESTAMP(3)
+          `, [isoDate, ag.groupId, ag.unitId, req.user.uid]);
+
+          const [[dr]] = await conn.query(
+            'SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1',
+            [isoDate, ag.groupId, ag.unitId]
+          );
+          reportId = dr.id;
+        }
+
+        // Upsert del detalle SOLO para el campo `check`
+        const [[row]] = await conn.query(
+          'SELECT reportId FROM dailyreport_agent WHERE reportId=? AND agentId=? LIMIT 1',
+          [reportId, agentId]
+        );
+
+        if (row) {
+          await conn.query(
+            'UPDATE dailyreport_agent SET `check`=? WHERE reportId=? AND agentId=?',
+            [val, reportId, agentId]
+          );
+        } else {
+          await conn.query(`
+            INSERT INTO dailyreport_agent
+              (reportId, agentId, groupId, unitId,
+               state, municipalityId, novelty_start, novelty_end, novelty_description, \`check\`)
+            VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)
+          `, [reportId, agentId, ag.groupId, ag.unitId, ag.status || 'SIN NOVEDAD', ag.municipalityId || null, val]);
+        }
+
+        await conn.commit();
+        res.json({ ok:true, reportId, agentId, check: !!val });
+      } catch (e) {
+        await conn.rollback();
+        res.status(500).json({ error:'ToggleCheckError', detail:e.message });
+      } finally {
+        conn.release();
+      }
+    } catch (e) {
+      res.status(500).json({ error:'ServerError', detail:e.message });
+    }
+  }
+);
 
 // Leer la ÚLTIMA novedad registrada del agente (opcionalmente hasta una fecha)
 app.get('/admin/agents/:id/novelty',
@@ -2044,10 +2129,10 @@ app.get('/admin/report/detail',
       const unitId  = normQ(req.query.unitId)
       if (!date) return res.status(400).json({ error: 'date requerido' })
 
-      const where = ['dr.reportDate = ?']     // ✅ columna correcta
+      const where = ['dr.reportDate = ?']
       const args  = [date]
 
-      // Líder de grupo queda restringido a su grupo
+      // Alcance: leader_group restringido a su groupId
       if (String(req.user.role).toLowerCase() === 'leader_group') {
         where.push('dr.groupId = ?')
         args.push(req.user.groupId)
@@ -2057,19 +2142,34 @@ app.get('/admin/report/detail',
         if (unitId  !== undefined) { where.push('dr.unitId  = ?'); args.push(unitId)  }
       }
 
+      // rank de categoría: OF -> 0, ME o SO (suboficial) -> 1, PT -> 2
+      const catRank = `
+        CASE
+          WHEN UPPER(a.category) LIKE 'OF%' THEN 0
+          WHEN UPPER(a.category) IN ('ME','SO') OR UPPER(a.category) LIKE 'SUB%' THEN 1
+          ELSE 2
+        END
+      `
+
+      // número del code: O12 -> 12, S7 -> 7, P103 -> 103 (si no hay número, 0)
+      const codeNum = `CAST(COALESCE(NULLIF(REGEXP_SUBSTR(a.code, '[0-9]+'), ''), '0') AS UNSIGNED)`
+
       const sql = `
         SELECT
           da.reportId,
-          dr.reportDate AS date,              -- ✅ alias como "date" para el front
+          dr.reportDate AS date,
           dr.groupId, dr.unitId,
           g.code AS groupCode, u.name AS unitName,
+
           da.agentId, a.code, a.nickname, a.category,
           da.state,
           da.municipalityId, m.name AS municipalityName, m.dept,
           da.novelty_description,
           DATE_FORMAT(da.novelty_start,'%Y-%m-%d') AS novelty_start,
           DATE_FORMAT(da.novelty_end  ,'%Y-%m-%d') AS novelty_end,
+          da.\`check\` AS checked,            -- ✅ NUEVO: expone booleano de check
           dr.updatedAt
+
         FROM dailyreport dr
         JOIN dailyreport_agent da ON da.reportId = dr.id
         JOIN agent a              ON a.id = da.agentId
@@ -2077,18 +2177,70 @@ app.get('/admin/report/detail',
         LEFT JOIN unit u          ON u.id = dr.unitId
         LEFT JOIN municipality m  ON m.id = da.municipalityId
         WHERE ${where.join(' AND ')}
-        ORDER BY g.code ASC, u.name ASC, FIELD(a.category,'OF','SO','PT'), a.code
+
+        ORDER BY
+          g.code ASC,
+          u.name ASC,
+          ${catRank} ASC,    -- ✅ OF → ME/SO → PT
+          ${codeNum} ASC,    -- ✅ por número de Oxx/Sxx/Pxxx
+          a.code ASC         -- desempate estable
       `
+
       const [rows] = await pool.query(sql, args)
       const items = rows.map(r => ({
         ...r,
         nickname: r.nickname ? decNullable(r.nickname) : null,
-        novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null
+        novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null,
+        checked: Number(r.checked) === 1   // ✅ boolean consistente al front
       }))
       res.json({ items })
     } catch (err) {
       console.error(err)
       res.status(500).json({ error: 'AdminReportDetailError' })
+    }
+  }
+)
+
+// ✅ ¿Existe el dailyreport para esa fecha (y filtros)?
+app.get('/admin/report/exists',
+  auth,
+  requireRole('superadmin','supervision','leader_group'),
+  async (req, res) => {
+    try {
+      const date    = String(req.query.date || '').slice(0,10)
+      const groupId = req.query.groupId !== undefined ? Number(req.query.groupId) : undefined
+      const unitId  = req.query.unitId  !== undefined ? Number(req.query.unitId)  : undefined
+
+      // valida fecha YYYY-MM-DD
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return res.status(422).json({ error: 'Fecha inválida (YYYY-MM-DD)' })
+      }
+
+      const where = ['dr.reportDate = ?']
+      const args  = [date]
+
+      // leader_group restringido a su grupo
+      if (String(req.user.role).toLowerCase() === 'leader_group') {
+        where.push('dr.groupId = ?'); args.push(req.user.groupId)
+        if (unitId !== undefined) { where.push('dr.unitId = ?'); args.push(unitId) }
+      } else {
+        if (groupId !== undefined) { where.push('dr.groupId = ?'); args.push(groupId) }
+        if (unitId  !== undefined) { where.push('dr.unitId  = ?'); args.push(unitId)  }
+      }
+
+      const sql = `
+        SELECT dr.id AS reportId
+        FROM dailyreport dr
+        WHERE ${where.join(' AND ')}
+        LIMIT 1
+      `
+      const [rows] = await pool.query(sql, args)
+      if (!rows.length) return res.json({ exists: false })
+
+      return res.json({ exists: true, reportId: rows[0].reportId })
+    } catch (err) {
+      console.error(err)
+      res.status(500).json({ error: 'ReportExistsError' })
     }
   }
 )

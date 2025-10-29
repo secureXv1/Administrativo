@@ -930,7 +930,7 @@ function tomorrowStr() {
   return d.toISOString().slice(0, 10)
 }
 
-const reportDate = ref(businessDateBogota(5)) // flip a las 05:00 Bogotá
+const reportDate = ref(businessDateBogota(6)) // flip a las 05:00 Bogotá
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
 
