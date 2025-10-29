@@ -110,6 +110,7 @@
                   <th>Novedad</th>
                   <th>Ubicación</th>
                   <th>Descripción</th>
+                  <th>Misión</th>
                   <th>Inicio - Fin</th>
                   <th>Días Lab</th>
                   <th>Historial</th>
@@ -131,6 +132,8 @@
                   </td>
                   <td>{{ a.municipality || 'N/A' }}</td>
                   <td>{{ a.novelty_description || '—' }}</td>
+                  <td>{{ a.mt || '—' }}</td>
+
                   <td>
                     <template v-if="a.novelty_start && a.novelty_end">
                       {{ formatDate(a.novelty_start) }} – {{ formatDate(a.novelty_end) }}
@@ -183,8 +186,12 @@
                   </td>
                 </tr>
                 <tr v-if="!agentesFiltrados.length">
-                  <td :colspan="canEdit ? (isGroupMode ? 8 : 7) : (isGroupMode ? 7 : 6)"
-                      class="text-center text-slate-500 py-6">Sin agentes</td>
+                  <td
+                    :colspan="isGroupMode ? (canEdit ? 14 : 13) : (canEdit ? 12 : 11)"
+                    class="text-center text-slate-500 py-6"
+                  >
+                    Sin agentes
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -258,8 +265,17 @@
                     <label class="label">Inicio</label>
                     <input v-model="form.novelty_start" type="date" class="input" />
                   </div>
-
-
+                  <!-- ⬇️ MT en modal -->
+                  <div>
+                    <label class="label">MT</label>
+                    <input
+                      v-model="form.mt"
+                      type="text"
+                      class="input"
+                      placeholder="MT"
+                    />
+                    <p class="text-[11px] text-slate-500 mt-1">Campo libre (opcional).</p>
+                  </div>
                   <div v-if="needsDescripcion" class="sm:col-span-3">
                     <label class="label">Descripción</label>
                     <textarea v-model="form.novelty_description" class="input" rows="2" placeholder="Motivo / detalle..."></textarea>
@@ -720,7 +736,9 @@ async function loadSingleReport(id){
       municipalityDept: row.dept || null,
       municipalityId: row.municipalityId != null ? Number(row.municipalityId) : null,
       novelty_description: row.novelty_description || row.descripcion,
-      reportId: id
+      reportId: id,
+      mt: row.mt ?? '',
+    
     })
     const list = (Array.isArray(ags) ? ags : []).map(map)
 
@@ -768,7 +786,9 @@ async function loadGroupReports(date, groupId){
         municipalityDept: a.dept || null,
         municipalityId: a.municipalityId != null ? Number(a.municipalityId) : null,
         novelty_description: a.novelty_description || a.descripcion,
-        reportId: r.id
+        reportId: r.id,
+        mt: a.mt ?? '',
+        
       }))
       all.push(...list)
     }
@@ -836,7 +856,9 @@ async function loadAllReports(date) {
         municipalityDept: a.dept || null,
         municipalityId: a.municipalityId != null ? Number(a.municipalityId) : null,
         novelty_description: a.novelty_description || a.descripcion,
-        reportId: r.id
+        reportId: r.id,
+        mt: a.mt ?? '',
+        
       }))
       all.push(...list)
     }
@@ -863,7 +885,8 @@ const agentesFiltrados = computed(() => {
     list = list.filter(a =>
       String(a.code||'').toUpperCase().includes(q) ||
       String(a.novelty_description||'').toUpperCase().includes(q) ||
-      String(a.unitName||'').toUpperCase().includes(q)
+      String(a.unitName||'').toUpperCase().includes(q) ||
+      String(a.mission||'').toUpperCase().includes(q)   
     )
   }
   if (filters.value.category !== 'ALL') list = list.filter(a => String(a.category) === filters.value.category)
@@ -954,7 +977,8 @@ function openEdit(a){
     municipio: selectedMuni,                 // 👈 queda seleccionado
     novelty_start: a.novelty_start || '',
     novelty_end: a.novelty_end || '',
-    novelty_description: a.novelty_description || ''
+    novelty_description: a.novelty_description || '',
+    mt: a.mt ?? ''
   }
 
   editOpen.value = true
@@ -1103,7 +1127,8 @@ async function saveEdit(){
       municipality: mLabel || (mName ? `${mName} (${mDept||''})` : 'N/A'),
       novelty_start: form.value.novelty_start || null,
       novelty_end:   isHosp ? null : (form.value.novelty_end || null), // 👈 reflejo local
-      novelty_description: form.value.novelty_description || null
+      novelty_description: form.value.novelty_description || null,
+      mt: (form.value.mt ?? '').toString().trim() || null 
     })
 
     closeEdit()
@@ -1126,6 +1151,8 @@ async function exportarExcel(){
     estado: a.state,
     ubicacion: a.municipality || '',
     descripcion: a.novelty_description || '',
+    mt: a.mt ?? '',
+  
     fecha_inicio: a.novelty_start ? String(a.novelty_start).slice(0,10) : '',
     fecha_fin: a.novelty_end ? String(a.novelty_end).slice(0,10) : ''
   }))
