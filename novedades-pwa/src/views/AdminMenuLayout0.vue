@@ -232,84 +232,89 @@
                     </div>
                 </transition>
                 </div>
-
-                <!-- VEHICULOS -->
-                <div>
-                <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                        @click="selectMobileAccordion('vehiculos')"
-                        :class="openMobileSection === 'vehiculos' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
-                    <Car class="w-5 h-5" />
-                    <span class="flex-1 text-left">Vehículos</span>
-                    <svg :class="['size-4 transition-transform', openMobileSection === 'vehiculos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                </button>
-                <transition name="fade">
-                    <div v-if="openMobileSection === 'vehiculos'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin/vehicles" icon="vehicles" :collapsed="collapsed" label="Vehículos" />
-                    </div>
-                </transition>
-                </div>
-
-                <!-- SERVICIOS -->
-                <div>
-                <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                        @click="selectMobileAccordion('servicios')"
-                        :class="openMobileSection === 'servicios' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
-                    <Wrench class="w-5 h-5" />
-                    <span class="flex-1 text-left">Servicios</span>
-                    <svg :class="['size-4 transition-transform', openMobileSection === 'servicios' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                </button>
-                <transition name="fade">
-                    <div v-if="openMobileSection === 'servicios'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin/services" icon="services" :collapsed="collapsed" label="Servicios" />
-                    </div>
-                </transition>
-                </div>
-
-                <!-- GASTOS -->
-                <div>
-                <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                        @click="selectMobileAccordion('gastos')"
-                        :class="openMobileSection === 'gastos' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
-                    <Wallet class="w-5 h-5" />
-                    <span class="flex-1 text-left">Gastos</span>
-                    <svg :class="['size-4 transition-transform', openMobileSection === 'gastos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                </button>
-                <transition name="fade">
-                    <div v-if="openMobileSection === 'gastos'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin/expenses" icon="expenses" :collapsed="collapsed" label="Gastos" />
-                    </div>
-                </transition>
-                </div>
-
-                <!-- CONFIGURACIÓN (solo superadmin) -->
+                
                 <template v-if="canSee(['superadmin'])">
-                <div>
-                    <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                            @click="selectMobileAccordion('configuracion')"
-                            :class="openMobileSection === 'configuracion' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
-                    <Settings class="w-5 h-5" />
-                    <span class="flex-1 text-left">Configuración</span>
-                    <svg :class="['size-4 transition-transform', openMobileSection === 'configuracion' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                    </button>
-                    <transition name="fade">
-                    <div v-if="openMobileSection === 'configuracion'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                        <SidebarItem to="/admin/groups" icon="groups" :collapsed="collapsed" label="Grupos" />
-                        <SidebarItem to="/admin/units" icon="units" :collapsed="collapsed" label="Unidades" />
-                        <SidebarItem to="/admin/users" icon="users" :collapsed="collapsed" label="Usuarios" />
-                        <SidebarItem to="/admin/audit" icon="settings" :collapsed="collapsed" label="Log de eventos" />
-                    </div>
-                    </transition>
-                </div>
-                </template>
 
+                  <!-- VEHICULOS -->
+                  <div>
+                  <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                          @click="selectMobileAccordion('vehiculos')"
+                          :class="openMobileSection === 'vehiculos' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
+                      <Car class="w-5 h-5" />
+                      <span class="flex-1 text-left">Vehículos</span>
+                      <svg :class="['size-4 transition-transform', openMobileSection === 'vehiculos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                      <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                  </button>
+                  <transition name="fade">
+                      <div v-if="openMobileSection === 'vehiculos'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                      <SidebarItem to="/admin/vehicles" icon="vehicles" :collapsed="collapsed" label="Vehículos" />
+                      </div>
+                  </transition>
+                  </div>
+
+                  <!-- SERVICIOS -->
+                  <div>
+                  <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                          @click="selectMobileAccordion('servicios')"
+                          :class="openMobileSection === 'servicios' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
+                      <Wrench class="w-5 h-5" />
+                      <span class="flex-1 text-left">Servicios</span>
+                      <svg :class="['size-4 transition-transform', openMobileSection === 'servicios' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                      <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                  </button>
+                  <transition name="fade">
+                      <div v-if="openMobileSection === 'servicios'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                      <SidebarItem to="/admin/services" icon="services" :collapsed="collapsed" label="Servicios" />
+                      </div>
+                  </transition>
+                  </div>
+
+                  <!-- GASTOS -->
+                  <div>
+                  <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                          @click="selectMobileAccordion('gastos')"
+                          :class="openMobileSection === 'gastos' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
+                      <Wallet class="w-5 h-5" />
+                      <span class="flex-1 text-left">Gastos</span>
+                      <svg :class="['size-4 transition-transform', openMobileSection === 'gastos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                      <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                  </button>
+                  <transition name="fade">
+                      <div v-if="openMobileSection === 'gastos'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                      <SidebarItem to="/admin/expenses" icon="expenses" :collapsed="collapsed" label="Gastos" />
+                      </div>
+                  </transition>
+                  </div>
+
+                  <!-- CONFIGURACIÓN (solo superadmin) -->
+                  <template v-if="canSee(['superadmin'])">
+                  <div>
+                      <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                              @click="selectMobileAccordion('configuracion')"
+                              :class="openMobileSection === 'configuracion' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
+                      <Settings class="w-5 h-5" />
+                      <span class="flex-1 text-left">Configuración</span>
+                      <svg :class="['size-4 transition-transform', openMobileSection === 'configuracion' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                          <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                      </svg>
+                      </button>
+                      <transition name="fade">
+                      <div v-if="openMobileSection === 'configuracion'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                          <SidebarItem to="/admin/groups" icon="groups" :collapsed="collapsed" label="Grupos" />
+                          <SidebarItem to="/admin/units" icon="units" :collapsed="collapsed" label="Unidades" />
+                          <SidebarItem to="/admin/users" icon="users" :collapsed="collapsed" label="Usuarios" />
+                          <SidebarItem to="/admin/audit" icon="settings" :collapsed="collapsed" label="Log de eventos" />
+                      </div>
+                      </transition>
+                  </div>
+                  </template>
+
+                </template>
+               
+               
             </nav>
             </aside>
         </div>

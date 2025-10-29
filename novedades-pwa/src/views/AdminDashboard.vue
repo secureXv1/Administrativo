@@ -310,6 +310,12 @@
                   >
                     <span class="h-2 w-2 rounded-full bg-green-600"></span>
                     {{ r.unitName }}
+                    <svg v-if="r.late" class="inline-block ml-1 text-amber-600" width="14" height="14" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor">
+                      <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M13.73 21a2 2 0 01-3.46 0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
                   </button>
                 </td>
                 <td>{{ fmtFechaColombia(r.submittedAt || r.time) }}</td>
@@ -1093,7 +1099,8 @@ const rowsDisplayLeader = computed(() =>
     time: r.updatedAt,          // ya usabas updatedAt para la hora
     FE:  `${r.OF_effective||0}/${r.SO_effective||0}/${r.PT_effective||0}`,
     FD:  `${r.OF_available||0}/${r.SO_available||0}/${r.PT_available||0}`,
-    NOV: `${r.OF_nov||0}/${r.SO_nov||0}/${r.PT_nov||0}`
+    NOV: `${r.OF_nov||0}/${r.SO_nov||0}/${r.PT_nov||0}`,
+    late: isLateBogota(r.updatedAt)
   }))
 );
 
