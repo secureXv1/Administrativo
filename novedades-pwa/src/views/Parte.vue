@@ -171,7 +171,7 @@ function clearUiUnchecked(gid, agentId) { getUiSet(gid).delete(agentId) }
 
 
 const isSuperLike = computed(() =>
-  ['superadmin','supervision'].includes(String(me.value?.role||'').toLowerCase())
+  ['superadmin','supervision','leader_group'].includes(String(me.value?.role||'').toLowerCase())
 )
 const myGroupCode = computed(() => groups.value.find(g=>g.id===me.value?.groupId)?.code || null)
 const visibleGroupIds = computed(() => isSuperLike.value ? [...selectedGroups] : [me.value?.groupId])
