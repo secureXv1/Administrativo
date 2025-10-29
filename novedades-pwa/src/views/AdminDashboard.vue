@@ -186,13 +186,22 @@
 
           <div class="kpi">
             <div class="card-body">
-              <h4>FD total (OF/ME/PT)</h4>
+              <div class="flex items-center justify-between gap-2">
+                <h4>FD total (OF/ME/PT)</h4>
+                <button
+                  class="btn-ghost h-8 px-2 text-xs"
+                  @click="goToParte"
+                >
+                  Parte
+                </button>
+              </div>
               <div class="value text-lg">
                 {{ kpiFD }}
                 <span class="text-sm text-slate-500"> ({{ fdTotalDash }})</span>
               </div>
             </div>
           </div>
+
 
           <div class="kpi">
             <div class="card-body">
@@ -1476,6 +1485,9 @@ function fmtTriadWithSum(val) {
   const sum = t.of + t.me + t.pt;
   // Devuelve HTML con la suma en gris y tamaño más pequeño
   return `${t.of}/${t.me}/${t.pt} <span class="text-slate-400 text-[11px]">( ${sum} )</span>`;
+}
+function goToParte() {
+  router.push('/parte')
 }
 
 // ===== Init
