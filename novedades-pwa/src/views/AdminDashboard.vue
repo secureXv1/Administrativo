@@ -1291,7 +1291,7 @@ async function descargarExcel () {
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
 
-  const normalizado = data.map(row => {
+  const normalizado = (Array.isArray(data) ? data : []).map(row => {
     const out = {}
 
     // 🔸 Copia de valores con reglas personalizadas
@@ -1323,6 +1323,9 @@ async function descargarExcel () {
       }
     }
 
+    // ✅ Agrega la columna M.T (Misión / MT)
+    out['M.T'] = row.mt ?? 'N/A'
+
     return out
   })
 
@@ -1332,6 +1335,7 @@ async function descargarExcel () {
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
   saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `novedades_${params.date}.xlsx`)
 }
+
 
 // ===== Acciones
 

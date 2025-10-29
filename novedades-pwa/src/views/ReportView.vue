@@ -13,7 +13,7 @@
     </div>
 
     <!-- LAYOUT: Sidebar + Contenido -->
-    <div class="max-w-6xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-[260px_1fr] gap-6 -mt-10 sm:-mt-12 md:-mt-12 relative z-10">
+    <div class="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 md:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] gap-7 -mt-10 sm:-mt-12 md:-mt-12 relative z-10">
       <!-- ===== Sidebar (idéntico estilo al del agente) ===== -->
       <aside class="order-1 md:order-1 md:col-[1] space-y-4 md:sticky md:top-6">
         <!-- Tarjeta usuario -->
@@ -134,6 +134,7 @@
                       <th class="text-left py-2 px-3 font-semibold">Cat</th>
                       <th class="text-left py-2 px-3 font-semibold">Días Lab</th>
                       <th class="text-left py-2 px-3 font-semibold">Historial</th>
+                      <th class="text-left py-2 px-3 font-semibold">Misión</th>
                       <th class="text-left py-2 px-3 font-semibold">Estado</th>
                       <th class="text-left py-2 px-3 font-semibold">Ubicación / Detalle</th>
                       <th class="text-left py-2 px-3 font-semibold"></th>
@@ -179,6 +180,20 @@
                           <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"></circle>
                         </svg>
                       </button>
+                    </td>
+                    <td class="py-2 px-3">
+                      <input
+                        class="w-full sm:w-40 md:w-32 lg:w-28 xl:w-28 rounded-lg border px-3 py-2 shadow-sm focus:ring-2"
+                        :class="isMtInvalid(a.mt)
+                          ? 'border-rose-500 focus:ring-rose-200 bg-white'
+                          : 'border-slate-300 focus:ring-indigo-200 bg-white'"
+                        v-model.trim="a.mt"
+                        placeholder="0000-5555-6666"
+                        maxlength="32"
+                      />
+                      <p v-if="isMtInvalid(a.mt)" class="text-[11px] text-rose-600 mt-1">
+                        Formato inválido. Usa solo números y guiones.
+                      </p>
                     </td>
                       <td class="py-2 px-3 ">
                         <select
@@ -441,8 +456,14 @@
                       Historial
                     </button>
                   </div>
-
-
+                  <input
+                        class="input w-full"
+                        :class="isMtInvalid(a.mt) ? 'border-rose-500 focus:ring-rose-200 bg-white' : 'border-slate-300 focus:ring-indigo-200 bg-white'"
+                        v-model.trim="a.mt"
+                        placeholder="0000-5555-6666"
+                        maxlength="32"
+                      />
+                      <p v-if="isMtInvalid(a.mt)" class="text-[11px] text-rose-600 mt-1">Formato inválido. Usa solo números y guiones.</p>
                   <select class="input w-full" v-model="a.status" @change="onStateChange(a)">
                     <option value="SIN NOVEDAD">SIN NOVEDAD</option>
                     <option value="COMISIÓN DEL SERVICIO">COMISIÓN DEL SERVICIO</option>
@@ -970,13 +991,59 @@ async function loadAgents() {
         municipalityName: a.municipalityName || '',
         novelty_start: a.novelty_start ? String(a.novelty_start).slice(0, 10) : '',
         novelty_end:   a.novelty_end   ? String(a.novelty_end).slice(0, 10)   : '',
-        novelty_description: a.novelty_description || ''
+        novelty_description: a.novelty_description || '',
+        mt: a.mt || '' // si algún día /my/agents devuelve mt, lo tomamos
       }))
       .sort((x, y) => (CATEG_ORDER[x.category] || 99) - (CATEG_ORDER[y.category] || 99))
-    await setDiasLaboradosTodos();
+
+    await setDiasLaboradosTodos()
+    // ✅ Rellenar MT desde /admin/report/detail (si el rol lo permite)
+    await overlayMtFromAdminDetail()
   } catch (e) {
     msg.value = e?.response?.data?.error || 'Error al cargar agentes'
     agents.value = []
+  }
+}
+
+async function overlayMtFromAdminDetail() {
+  const role = String(me.value?.role || '').toLowerCase();
+  const auth = { headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') } };
+  const paramsAdmin = {
+    date: reportDate.value,
+    groupId: me.value?.groupId,
+    unitId:  me.value?.unitId
+  };
+
+  // helper para aplicar overlay
+  const applyRows = (rows = []) => {
+    const mtByAgentId = new Map(rows.map(r => [Number(r.agentId), r.mt ?? null]));
+    for (const a of agents.value) {
+      if (mtByAgentId.has(Number(a.id))) a.mt = mtByAgentId.get(Number(a.id)) || '';
+    }
+  };
+
+  // leader_unit → ir directo a /my/report/detail
+  if (role === 'leader_unit') {
+    try {
+      const { data } = await axios.get('/my/report/detail', { params: { date: reportDate.value }, ...auth });
+      applyRows(Array.isArray(data?.items) ? data.items : []);
+    } catch (e) {
+      // sin ruido en consola
+    }
+    return;
+  }
+
+  // Otros roles: intenta admin y, si 403, cae a /my/report/detail
+  try {
+    const { data } = await axios.get('/admin/report/detail', { params: paramsAdmin, ...auth });
+    applyRows(Array.isArray(data?.items) ? data.items : []);
+  } catch (e) {
+    if (e?.response?.status === 403) {
+      try {
+        const { data } = await axios.get('/my/report/detail', { params: { date: reportDate.value }, ...auth });
+        applyRows(Array.isArray(data?.items) ? data.items : []);
+      } catch {}
+    }
   }
 }
 
@@ -1100,36 +1167,40 @@ async function save() {
           if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (${a.status})`; return }
         }
       }
-
-
+      // ✅ Bloquea guardado si algún MT es inválido
+      for (const a of agents.value) {
+        if (isMtInvalid(a.mt)) {
+          msg.value = `MT inválido para ${a.code}. Usa solo números y guiones.`
+          return
+        }
+      }
   try {
     await axios.post('/reports', {
       reportDate: reportDate.value,
-     people: agents.value.map(a => {
-            const isBase = (s) => ['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(s)
-            const isServicio = a.status === 'SERVICIO'
-            const isHosp = a.status === 'HOSPITALIZADO'
-            const isSusp = a.status === 'SUSPENDIDO'
-            const needsDatesGeneric = !(isBase(a.status) || isServicio || isHosp)
+      people: agents.value.map(a => {
+        const isBase = (s) => ['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(s)
+        const isServicio = a.status === 'SERVICIO'
+        const isHosp = a.status === 'HOSPITALIZADO'
+        const isSusp = a.status === 'SUSPENDIDO'
+        const needsDatesGeneric = !(isBase(a.status) || isServicio || isHosp)
 
-            return {
-              agentCode: a.code,
-              state: a.status,
-              municipalityId:
-                (a.status === 'SIN NOVEDAD' || a.status === 'SERVICIO') ? 11001 :
-                (a.status === 'COMISIÓN DEL SERVICIO' ? a.municipalityId : null),
+        return {
+          agentCode: a.code,
+          state: a.status,
+          municipalityId:
+            (a.status === 'SIN NOVEDAD' || a.status === 'SERVICIO') ? 11001 :
+            (a.status === 'COMISIÓN DEL SERVICIO' ? a.municipalityId : null),
 
-              // reglas:
-              novelty_start: (isServicio || isHosp || needsDatesGeneric) ? (a.novelty_start || null) : null,
-              novelty_end:   (isServicio || isSusp || needsDatesGeneric) ? (a.novelty_end   || null) : null, // HOSPITALIZADO => null
-              novelty_description:
-                (isServicio || a.status === 'COMISIÓN DEL SERVICIO' || isHosp || isSusp || needsDatesGeneric)
-                  ? (a.novelty_description || null)
-                  : null,
-            }
-          })
+          novelty_start: (isServicio || isHosp || needsDatesGeneric) ? (a.novelty_start || null) : null,
+          novelty_end:   (isServicio || isSusp || needsDatesGeneric) ? (a.novelty_end   || null) : null,
+          novelty_description:
+            (isServicio || a.status === 'COMISIÓN DEL SERVICIO' || isHosp || isSusp || needsDatesGeneric)
+              ? (a.novelty_description || null)
+              : null,
 
-
+          mt: a.mt ? a.mt.trim() : null // ✅ NUEVO
+        }
+      })
     }, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     })
@@ -1756,6 +1827,12 @@ const segments = computed(() => {
   }
   return out
 })
+
+// ✅ MT: solo dígitos y guiones, opcional, hasta 32 chars
+function isMtInvalid(val) {
+  if (!val) return false
+  return !/^[0-9-]{1,32}$/.test(String(val).trim())
+}
 
 watch(reportDate, async () => {
   msg.value = ''
