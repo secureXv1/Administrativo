@@ -257,9 +257,9 @@
                   </td>
                   <td>{{ fmtFechaColombia(g.submittedAt || g.date) }}</td>
                   <td>{{ fmtHoraColombia(g.time || g.submittedAt) }}</td>
-                  <td class="font-medium text-slate-900">{{ g.FE }}</td>
-                  <td class="font-medium text-slate-900">{{ g.FD }}</td>
-                  <td class="font-medium text-slate-900">{{ g.NOV }}</td>
+                  <td class="font-medium text-slate-900" v-html="fmtTriadWithSum(g.FE)"></td>
+                  <td class="font-medium text-slate-900" v-html="fmtTriadWithSum(g.FD)"></td>
+                  <td class="font-medium text-slate-900" v-html="fmtTriadWithSum(g.NOV)"></td>
                 </tr>
 
                 <!-- Filas hijas: unidades del grupo -->
@@ -268,7 +268,8 @@
                     class="bg-slate-50/40 hover:bg-slate-50">
                   <td>
                     <button
-                      class="inline-flex items-center gap-2 pl-6 text-slate-700 hover:underline"                     
+                      class="inline-flex items-center gap-2 pl-6 text-slate-700 hover:underline"
+                      
                       title="Ver detalle de unidad"
                       style="background:none;border:none;padding:0;margin:0;cursor:pointer;"
                     >
@@ -286,9 +287,9 @@
                   </td>
                   <td>{{ fmtFechaColombia(u.submittedAt || u.date) }}</td>
                   <td>{{ fmtHoraColombia(u.time || u.submittedAt) }}</td>
-                  <td class="font-medium text-slate-900">{{ u.FE }}</td>
-                  <td class="font-medium text-slate-900">{{ u.FD }}</td>
-                  <td class="font-medium text-slate-900">{{ u.NOV }}</td>
+                  <td class="font-medium text-slate-900" v-html="fmtTriadWithSum(u.FE)"></td>
+                  <td class="font-medium text-slate-900" v-html="fmtTriadWithSum(u.FD)"></td>
+                  <td class="font-medium text-slate-900" v-html="fmtTriadWithSum(u.NOV)"></td>
                 </tr>
               </template>
 
@@ -556,6 +557,44 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 
+// === Fechas en zona "America/Bogota" sin usar toISOString() ===
+const TZ = 'America/Bogota'
+
+function ymdInTZ(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date)
+  const y = parts.find(p => p.type === 'year')?.value
+  const m = parts.find(p => p.type === 'month')?.value
+  const d = parts.find(p => p.type === 'day')?.value
+  return `${y}-${m}-${d}` // YYYY-MM-DD
+}
+
+function hourMinuteInTZ(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ, hour12: false, hour: '2-digit', minute: '2-digit'
+  }).formatToParts(date)
+  return {
+    hour: Number(parts.find(p => p.type === 'hour')?.value || 0),
+    minute: Number(parts.find(p => p.type === 'minute')?.value || 0)
+  }
+}
+
+/**
+ * Devuelve YYYY-MM-DD "de negocio" en Bogotá, con corte a la hora indicada.
+ * - Si ahora >= cutoffHour (hora local Bogotá), devuelve "mañana".
+ * - Si ahora <  cutoffHour, devuelve "hoy".
+ */
+function businessDateBogota(cutoffHour /* 0..23 */) {
+  const now = new Date()
+  const { hour } = hourMinuteInTZ(now)
+  const base = (hour >= cutoffHour)
+    ? new Date(now.getTime() + 24 * 60 * 60 * 1000) // +1 día
+    : now
+  return ymdInTZ(base)
+}
+
+
 // ===== Auth / roles
 const me = ref(null)
 async function loadMe() {
@@ -582,13 +621,17 @@ function toggleGroup (gid) {
 }
 
 // ===== Filtros
+// === Fecha "programada" del reporte (cambia 14 h más tarde que antes)
+// Mantener el comportamiento actual (flip base ~19:00) y desplazarlo +14 h → 09:00
 function tomorrowStr () {
   const d = new Date()
-  d.setDate(d.getDate() + 1)
+  d.setDate(d.getDate() + 1)       // igual que antes
+  d.setHours(d.getHours() + 14)    // 👉 desplaza el cambio +14h (19:00 + 14 = 09:00)
   return d.toISOString().slice(0, 10)
 }
 
-const date = ref(tomorrowStr())
+
+const date = ref(businessDateBogota(9)) // flip a las 09:00 Bogotá
 
 const selectedGroupId = ref('all')
 const selectedUnitId  = ref('all')
@@ -1394,6 +1437,38 @@ async function applyFilters () {
 async function reloadCompliance () {
   if (isLeaderGroup.value) await loadComplianceLeader()
   else await loadComplianceAdmin()
+}
+
+// === Helpers para mostrar "a/b/c (suma)" en gris y pequeño ===
+function parseTriad(val) {
+  if (val == null) return null;
+
+  if (typeof val === 'string') {
+    const m = val.match(/(\d+)\s*\/\s*(\d+)\s*\/\s*(\d+)/);
+    if (m) return { of: +m[1], me: +m[2], pt: +m[3] };
+    try {
+      return parseTriad(JSON.parse(val));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  if (typeof val === 'object') {
+    const of = +(val.of ?? val.OF ?? 0);
+    const me = +(val.me ?? val.ME ?? 0);
+    const pt = +(val.pt ?? val.PT ?? 0);
+    return { of, me, pt };
+  }
+
+  return null;
+}
+
+function fmtTriadWithSum(val) {
+  const t = parseTriad(val);
+  if (!t) return val ?? '';
+  const sum = t.of + t.me + t.pt;
+  // Devuelve HTML con la suma en gris y tamaño más pequeño
+  return `${t.of}/${t.me}/${t.pt} <span class="text-slate-400 text-[11px]">( ${sum} )</span>`;
 }
 
 // ===== Init

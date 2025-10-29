@@ -884,12 +884,53 @@ function showToast(text, kind = 'success') {
   setTimeout(() => (toast.value.visible = false), 2500)
 }
 
+// === Fechas en zona "America/Bogota" sin usar toISOString() ===
+const TZ = 'America/Bogota'
+
+function ymdInTZ(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date)
+  const y = parts.find(p => p.type === 'year')?.value
+  const m = parts.find(p => p.type === 'month')?.value
+  const d = parts.find(p => p.type === 'day')?.value
+  return `${y}-${m}-${d}` // YYYY-MM-DD
+}
+
+function hourMinuteInTZ(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: TZ, hour12: false, hour: '2-digit', minute: '2-digit'
+  }).formatToParts(date)
+  return {
+    hour: Number(parts.find(p => p.type === 'hour')?.value || 0),
+    minute: Number(parts.find(p => p.type === 'minute')?.value || 0)
+  }
+}
+
+/**
+ * Devuelve YYYY-MM-DD "de negocio" en Bogotá, con corte a la hora indicada.
+ * - Si ahora >= cutoffHour (hora local Bogotá), devuelve "mañana".
+ * - Si ahora <  cutoffHour, devuelve "hoy".
+ */
+function businessDateBogota(cutoffHour /* 0..23 */) {
+  const now = new Date()
+  const { hour } = hourMinuteInTZ(now)
+  const base = (hour >= cutoffHour)
+    ? new Date(now.getTime() + 24 * 60 * 60 * 1000) // +1 día
+    : now
+  return ymdInTZ(base)
+}
+
+
+// Mantener el comportamiento actual (flip base ~19:00) y desplazarlo +10 h → 05:00
 function tomorrowStr() {
   const d = new Date()
-  d.setDate(d.getDate() + 1)
+  d.setDate(d.getDate() + 1)      // igual que antes (conserva tu lógica actual)
+  d.setHours(d.getHours() + 10)   // 👉 desplaza el cambio +10h (19:00 + 10 = 05:00)
   return d.toISOString().slice(0, 10)
 }
-const reportDate = ref(tomorrowStr())
+
+const reportDate = ref(businessDateBogota(5)) // flip a las 05:00 Bogotá
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
 
