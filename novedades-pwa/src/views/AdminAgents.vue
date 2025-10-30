@@ -491,9 +491,7 @@ const municipalities = ref([]) // catálogo
 function formatDateISO(d) {
   return d.toISOString().slice(0,10)
 }
-const tomorrow = new Date()
-tomorrow.setDate(tomorrow.getDate() + 1)
-const today = ref(formatDateISO(tomorrow))
+const today = ref(formatDateISO(new Date))
 
 /* ===== Filtros ===== */
 const filters = ref({ q:'', cat:'ALL', groupId:'ALL' })
