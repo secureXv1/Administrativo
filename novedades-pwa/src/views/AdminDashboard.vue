@@ -1279,65 +1279,57 @@ async function load () {
 }
 
 async function descargarExcel () {
-  const params = { date: date.value }
-  if (isLeaderGroup.value) params.groupId = me.value.groupId
-  else {
-    if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
-    if (selectedUnitId.value  !== 'all') params.unitId  = selectedUnitId.value
-  }
-
-  const { data } = await axios.get('/reports/export', {
-    params,
-    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
-  })
-
-  const rows = Array.isArray(data) ? data : []
-
-  const normalizado = rows.map(row => {
-    const out = {}
-
-    for (const k in row) {
-      if (k === 'mt') continue // 👈 evitamos que el bucle la pise
-      let v = row[k]
-
-      if (k === 'descripcion' && row.novedad === 'SIN NOVEDAD') {
-        out[k] = 'SIN NOVEDAD'
-      } else if (k === 'descripcion' && row.novedad === 'FRANCO FRANCO') {
-        out[k] = 'FRANCO FRANCO'
-      } else if (k === 'novedad' && typeof v === 'string') {
-        let nv = v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        if (nv.toUpperCase() === 'COMISION DEL SERVICIO') nv = 'COMISION SERVICIO'
-        else if (nv.toUpperCase() === 'COMISION DE ESTUDIO') nv = 'COMISION ESTUDIO'
-        out[k] = nv
-      } else if (v == null || (typeof v === 'string' && v.trim() === '')) {
-        out[k] = 'N/A'
-      } else {
-        out[k] = v
-      }
+  try {
+    const params = { date: date.value }
+    if (isLeaderGroup.value) params.groupId = me.value.groupId
+    else {
+      if (selectedGroupId.value !== 'all') params.groupId = selectedGroupId.value
+      if (selectedUnitId.value  !== 'all') params.unitId  = selectedUnitId.value
     }
 
-    // 👇 MT robusta: usa trim y solo pone N/A si queda vacía
-    const mtVal = typeof row.mt === 'string' ? row.mt.trim() : (row.mt ?? '')
-    out['M.T'] = mtVal !== '' ? mtVal : 'N/A'
+    const { data } = await axios.get('/reports/export', {
+      params,
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+    })
 
-    return out
-  })
+    const rows = Array.isArray(data) ? data : []
+    const normalizado = rows.map(row => {
+      const out = {}
+      for (const k in row) {
+        if (k === 'mt') continue // 👈 que no la pise el normalizador
+        let v = row[k]
+        if (k === 'descripcion' && row.novedad === 'SIN NOVEDAD') out[k] = 'SIN NOVEDAD'
+        else if (k === 'descripcion' && row.novedad === 'FRANCO FRANCO') out[k] = 'FRANCO FRANCO'
+        else if (k === 'novedad' && typeof v === 'string') {
+          let nv = v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          if (nv.toUpperCase() === 'COMISION DEL SERVICIO') nv = 'COMISION SERVICIO'
+          else if (nv.toUpperCase() === 'COMISION DE ESTUDIO') nv = 'COMISION ESTUDIO'
+          out[k] = nv
+        } else if (v == null || (typeof v === 'string' && v.trim() === '')) out[k] = 'N/A'
+        else out[k] = v
+      }
+      const mtVal = typeof row.mt === 'string' ? row.mt.trim() : (row.mt ?? '')
+      out['M.T'] = mtVal !== '' ? mtVal : 'N/A'
+      return out
+    })
 
-  // (Opcional pero recomendado) Define el orden de columnas en el Excel:
-  const header = [
-    'codigo_agente', 'grupo', 'unidad',
-    'novedad', 'descripcion', 'ubicacion',
-    'fecha_inicio', 'fecha_fin',
-    'M.T' // 👈 MT visible al final (o muévela donde prefieras)
-  ]
+    const header = [
+      'codigo_agente','grupo','unidad',
+      'novedad','descripcion','ubicacion',
+      'fecha_inicio','fecha_fin','M.T'
+    ]
 
-  const ws = XLSX.utils.json_to_sheet(normalizado, { header })
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, 'DatosNovedades')
-
-  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-  saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `novedades_${params.date}.xlsx`)
+    const ws = XLSX.utils.json_to_sheet(normalizado, { header })
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'DatosNovedades')
+    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+    saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `novedades_${params.date}.xlsx`)
+  } catch (e) {
+    console.error('descargarExcel error:', e)
+    alert(e?.response?.data?.detail || e?.response?.data?.error || 'No se pudo generar el Excel')
+  }
 }
+
 
 
 // ===== Acciones

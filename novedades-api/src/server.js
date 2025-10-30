@@ -2621,71 +2621,87 @@ app.get('/dashboard/compliance-units', auth, requireRole('leader_group'), async 
 
 
 // Descarga automatizada para alimentar el formato Excel
-app.get('/reports/export', auth, requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'), async (req, res) => {
-  const { date, groupId, unitId } = req.query;
-  if (!date) return res.status(400).json({ error: 'Falta la fecha' });
+app.get(
+  '/reports/export',
+  auth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'),
+  async (req, res) => {
+    try {
+      const { date, groupId, unitId } = req.query;
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(String(date))) {
+        return res.status(400).json({ error: 'Falta la fecha o formato inválido (YYYY-MM-DD)' });
+      }
 
-  let where = 'dr.reportDate = ?';
-  let params = [date];
+      let where = 'dr.reportDate = ?';
+      const params = [date];
 
-  // Filtro de roles
-  if (req.user.role === 'leader_group') {
-    where += ' AND dr.groupId = ?';
-    params.push(req.user.groupId);
-  } else if (groupId) {
-    where += ' AND dr.groupId = ?';
-    params.push(groupId);
-  }
-  if (req.user.role === 'leader_unit') {
-    where += ' AND dr.unitId = ?';
-    params.push(req.user.unitId);
-  } else if (unitId) {
-    where += ' AND dr.unitId = ?';
-    params.push(unitId);
-  }
+      // Filtro por rol / query
+      const role = String(req.user.role || '').toLowerCase();
+      if (role === 'leader_group') {
+        where += ' AND dr.groupId = ?';
+        params.push(req.user.groupId);
+      } else if (groupId) {
+        where += ' AND dr.groupId = ?';
+        params.push(groupId);
+      }
+      if (role === 'leader_unit') {
+        where += ' AND dr.unitId = ?';
+        params.push(req.user.unitId);
+      } else if (unitId) {
+        where += ' AND dr.unitId = ?';
+        params.push(unitId);
+      }
 
-  const [rows] = await pool.query(`
-    SELECT 
-      a.code AS codigo_agente,
-      da.state AS novedad,
-      da.novelty_description AS descripcion,
-      DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS fecha_inicio,
-      DATE_FORMAT(da.novelty_end, '%Y-%m-%d') AS fecha_fin,
-      g.code AS grupo,
-      u.name AS unidad,
-      CONCAT(m.name, ' (', m.dept, ')') AS ubicacion
-      da.mt   AS mt  
-    FROM dailyreport dr
-    JOIN dailyreport_agent da ON da.reportId = dr.id
-    JOIN agent a ON a.id = da.agentId
-    JOIN \`group\` g ON g.id = da.groupId
-    LEFT JOIN unit u ON u.id = da.unitId
-    LEFT JOIN municipality m ON m.id = da.municipalityId
-    WHERE ${where}
-    ORDER BY a.code
-  `, params);
-
-  await logEvent({
-  req, userId: req.user.uid,
-  action: Actions.EXCEL_DOWNLOAD,
-  details: {
-    date,
-    groupId: groupId || (req.user.role === 'leader_group' ? req.user.groupId : null),
-    unitId: unitId  || (req.user.role === 'leader_unit'  ? req.user.unitId  : null),
-    format: 'json-export' // o 'xlsx' si sirves archivo
-  }
-});
-
-      res.json(
-        rows.map(r => ({
-          ...r,
-          // el alias en tu SELECT es "descripcion"
-          descripcion: r.descripcion ? decNullable(r.descripcion) : null,
-          mt: r.mt ?? null  
-        }))
+      const [rows] = await pool.query(
+        `
+        SELECT 
+          a.code AS codigo_agente,
+          da.state AS novedad,
+          da.novelty_description AS descripcion,
+          da.mt AS mt,                                   -- 👈 incluye MT
+          DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS fecha_inicio,
+          DATE_FORMAT(da.novelty_end,   '%Y-%m-%d') AS fecha_fin,
+          g.code AS grupo,
+          u.name AS unidad,
+          CONCAT(m.name, ' (', m.dept, ')') AS ubicacion
+        FROM dailyreport dr
+        JOIN dailyreport_agent da ON da.reportId = dr.id
+        JOIN agent a              ON a.id = da.agentId
+        JOIN \`group\` g          ON g.id = da.groupId
+        LEFT JOIN unit u          ON u.id = da.unitId
+        LEFT JOIN municipality m  ON m.id = da.municipalityId
+        WHERE ${where}
+        ORDER BY a.code
+        `,
+        params
       );
 
+      await logEvent({
+        req,
+        userId: req.user.uid,
+        action: Actions.EXCEL_DOWNLOAD,
+        details: {
+          date,
+          groupId: groupId || (role === 'leader_group' ? req.user.groupId : null),
+          unitId:  unitId  || (role === 'leader_unit'  ? req.user.unitId  : null),
+          format: 'json-export'
+        }
       });
+
+      // 🔐 Desencripta solo si viene con contenido
+      const out = rows.map(r => ({
+        ...r,
+        descripcion: r.descripcion ? decNullable(r.descripcion) : null,
+        mt: r.mt ?? null
+      }));
+
+      return res.json(out);
+    } catch (err) {
+      console.error('[/reports/export] ERROR:', err);
+      return res.status(500).json({ error: 'Export failed', detail: err.code || err.message });
+    }
+  }
+);
 // ===================== UNITS =====================
 
 // --- Mi grupo (leader_group) -> SOLO LECTURA ---
