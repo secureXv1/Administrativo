@@ -2654,6 +2654,7 @@ app.get('/reports/export', auth, requireRole('superadmin', 'supervision', 'leade
       g.code AS grupo,
       u.name AS unidad,
       CONCAT(m.name, ' (', m.dept, ')') AS ubicacion
+      da.mt   AS mt  
     FROM dailyreport dr
     JOIN dailyreport_agent da ON da.reportId = dr.id
     JOIN agent a ON a.id = da.agentId
@@ -2679,7 +2680,8 @@ app.get('/reports/export', auth, requireRole('superadmin', 'supervision', 'leade
         rows.map(r => ({
           ...r,
           // el alias en tu SELECT es "descripcion"
-          descripcion: r.descripcion ? decNullable(r.descripcion) : null
+          descripcion: r.descripcion ? decNullable(r.descripcion) : null,
+          mt: r.mt ?? null  
         }))
       );
 
