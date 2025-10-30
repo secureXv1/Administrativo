@@ -1291,47 +1291,50 @@ async function descargarExcel () {
     headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
 
-  const normalizado = (Array.isArray(data) ? data : []).map(row => {
+  const rows = Array.isArray(data) ? data : []
+
+  const normalizado = rows.map(row => {
     const out = {}
 
-    // 🔸 Copia de valores con reglas personalizadas
     for (const k in row) {
+      if (k === 'mt') continue // 👈 evitamos que el bucle la pise
       let v = row[k]
 
-      // ✅ 1. Si el estado es "SIN NOVEDAD" → descripción igual
       if (k === 'descripcion' && row.novedad === 'SIN NOVEDAD') {
         out[k] = 'SIN NOVEDAD'
-
-      // ✅ 2. Si el estado es "FRANCO FRANCO" → descripción igual
       } else if (k === 'descripcion' && row.novedad === 'FRANCO FRANCO') {
         out[k] = 'FRANCO FRANCO'
-
-      // ✅ 3. Normaliza estados con "COMISIÓN" (quita tilde y ajusta nombres)
       } else if (k === 'novedad' && typeof v === 'string') {
-        let nv = v.normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita tildes
+        let nv = v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         if (nv.toUpperCase() === 'COMISION DEL SERVICIO') nv = 'COMISION SERVICIO'
         else if (nv.toUpperCase() === 'COMISION DE ESTUDIO') nv = 'COMISION ESTUDIO'
         out[k] = nv
-
-      // ✅ 4. Campos vacíos → N/A
       } else if (v == null || (typeof v === 'string' && v.trim() === '')) {
         out[k] = 'N/A'
-
-      // ✅ 5. Por defecto copia tal cual
       } else {
         out[k] = v
       }
     }
 
-    // ✅ Agrega la columna M.T (Misión / MT)
-    out['M.T'] = row.mt ?? 'N/A'
+    // 👇 MT robusta: usa trim y solo pone N/A si queda vacía
+    const mtVal = typeof row.mt === 'string' ? row.mt.trim() : (row.mt ?? '')
+    out['M.T'] = mtVal !== '' ? mtVal : 'N/A'
 
     return out
   })
 
-  const ws = XLSX.utils.json_to_sheet(normalizado)
+  // (Opcional pero recomendado) Define el orden de columnas en el Excel:
+  const header = [
+    'codigo_agente', 'grupo', 'unidad',
+    'novedad', 'descripcion', 'ubicacion',
+    'fecha_inicio', 'fecha_fin',
+    'M.T' // 👈 MT visible al final (o muévela donde prefieras)
+  ]
+
+  const ws = XLSX.utils.json_to_sheet(normalizado, { header })
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'DatosNovedades')
+
   const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
   saveAs(new Blob([wbout], { type: 'application/octet-stream' }), `novedades_${params.date}.xlsx`)
 }
