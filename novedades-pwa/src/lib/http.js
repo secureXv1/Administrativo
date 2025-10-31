@@ -2,18 +2,18 @@
 import axios from 'axios'
 
 export const http = axios.create({
-  baseURL: '/',          // Vite proxy → backend
+  baseURL: '/',          // 👈 Usa el proxy de Vite
   timeout: 20000,
 })
 
-// Adjunta token en TODAS las requests
+// Adjunta token
 http.interceptors.request.use((config) => {
   const t = localStorage.getItem('token')
   if (t) config.headers.Authorization = 'Bearer ' + t
   return config
 })
 
-// Log de errores y propagación del mensaje útil
+// Logs y manejo de error
 http.interceptors.response.use(
   (r) => r,
   (err) => {
@@ -22,7 +22,13 @@ http.interceptors.response.use(
       err?.response?.data?.detail ||
       err?.message ||
       'Network error'
-    console.error('[HTTP ERROR]', err?.config?.method?.toUpperCase(), err?.config?.url, msg, err?.response)
+    console.error(
+      '[HTTP ERROR]',
+      err?.config?.method?.toUpperCase(),
+      err?.config?.url,
+      msg,
+      err?.response
+    )
     return Promise.reject(err)
   }
 )

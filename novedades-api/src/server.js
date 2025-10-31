@@ -10,6 +10,7 @@ import { initDb, pool } from './db.js'; // Si tu db.js NO tiene initDb, ignora y
 import { computeNovelties } from './utils.js';
 import { logEvent, Actions } from './audit.js';
 import { requireSuperadmin } from './middlewares.js';
+import vehiclesRouter from './routes/vehiculos.js';
 
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
@@ -96,6 +97,9 @@ async function main() {
   app.use(cors());
   app.use(helmet());
   app.use(express.json());
+
+  // ...otros routers
+  app.use(vehiclesRouter);
 
   function isStrongPassword(pw) {
   // >=8, al menos 1 minúscula, 1 mayúscula, 1 dígito y 1 especial
