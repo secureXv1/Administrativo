@@ -226,10 +226,16 @@ async function createAssignment() {
     const ag = agents.value.find(a => a.code === form.value.agentCode)
     if (!ag) return alert('Agente no válido')
 
+    const odoNum = Number(form.value.odometer_start || 0)
+    const lastKm = Number(lastAssignOdoHint.value || 0)
+    if (odoNum < lastKm) {
+      alert(`⚠️ El odómetro inicial (${odoNum}) no puede ser menor al último registrado (${lastKm}).`)
+      return
+    }
+
     await http.post(`/vehicles/${props.vehicle.id}/assignments`, {
       agent_id: ag.id,
-      start_date: form.value.start_date,
-      odometer_start: form.value.odometer_start || null,
+      odometer_start: odoNum || null,
       notes: (form.value.notes || '').trim() || null
     })
 
@@ -240,6 +246,7 @@ async function createAssignment() {
     submitting.value = false
   }
 }
+
 
 async function closeAssignment(a) {
   const odo = window.prompt('Odómetro final (número entero)', a.odometer_end ?? lastAssignOdoHint.value ?? '')

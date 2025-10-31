@@ -584,34 +584,62 @@ router.post(
   requireAuth,
   requireRole('superadmin','supervision'),
   async (req, res) => {
-    const { id } = req.params
-    const { agent_id, odometer_start, notes } = req.body
+    const { id } = req.params;
+    const { agent_id, odometer_start, notes } = req.body;
 
-    if (!agent_id) return res.status(422).json({ error:'agent_id requerido' })
+    if (!agent_id)
+      return res.status(422).json({ error: 'agent_id requerido' });
 
+    // buscar último km final cerrado o del vehículo
+    const [[lastRow]] = await pool.query(`
+      SELECT COALESCE(
+        (SELECT odometer_end FROM vehicle_assignments
+          WHERE vehicle_id=? AND end_date IS NOT NULL AND odometer_end IS NOT NULL
+          ORDER BY end_date DESC, id DESC LIMIT 1),
+        (SELECT odometer_end FROM vehicle_assignments
+          WHERE vehicle_id=? AND odometer_end IS NOT NULL
+          ORDER BY id DESC LIMIT 1),
+        (SELECT odometer FROM vehicles WHERE id=? LIMIT 1)
+      ) AS lastKm
+    `, [id, id, id]);
+
+    const lastKm = Number(lastRow?.lastKm ?? 0);
+    const odoStart = Number(odometer_start ?? lastKm);
+
+    if (Number.isNaN(odoStart) || odoStart < lastKm) {
+      return res.status(422).json({
+        error: `El odómetro inicial (${odoStart}) no puede ser menor al último registrado (${lastKm}).`
+      });
+    }
+
+    // validar asignación abierta
     const [[open]] = await pool.query(
       `SELECT id FROM vehicle_assignments
        WHERE vehicle_id=? AND end_date IS NULL
        LIMIT 1`,
       [id]
-    )
-    if (open) return res.status(409).json({ error:'Ya existe una asignación vigente' })
+    );
+    if (open)
+      return res.status(409).json({ error: 'Ya existe una asignación vigente' });
 
+    // insertar
     await pool.query(
-      `INSERT INTO vehicle_assignments (vehicle_id, agent_id, start_date, end_date, odometer_start, odometer_end, notes)
-       VALUES (?, ?, CURDATE(), NULL, ?, NULL, ?)`,
-      [id, agent_id, odometer_start ?? null, (notes || '').trim() || null]
-    )
+      `INSERT INTO vehicle_assignments
+        (vehicle_id, agent_id, start_date, odometer_start, notes)
+       VALUES (?, ?, CURDATE(), ?, ?)`,
+      [id, agent_id, odoStart, (notes || '').trim() || null]
+    );
 
     await logEvent({
-      req, userId:req.user.uid,
+      req, userId: req.user.uid,
       action: Actions.VEHICLE_ASSIGN_CREATE,
-      details:{ vehicleId:Number(id), agentId:Number(agent_id) }
-    })
+      details: { vehicleId: Number(id), agentId: Number(agent_id), odometer_start: odoStart }
+    });
 
-    res.json({ ok:true })
+    res.json({ ok: true });
   }
-)
+);
+
 
 // PATCH /vehicles/:vehicleId/assignments/:assignmentId
 router.patch(
@@ -644,24 +672,51 @@ router.patch(
   }
 )
 
-// GET /vehicles/:id/last-assignment-odometer
+// GET /vehicles/:id/last-assignment-odometer — último km FINAL de una asignación CERRADA
 router.get(
   '/vehicles/:id/last-assignment-odometer',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
-    const { id } = req.params
-    const [[row]] = await pool.query(
+    const { id } = req.params;
+
+    // 1) Última asignación CERRADA con odómetro final
+    const [closed] = await pool.query(
       `SELECT odometer_end AS last
-       FROM vehicle_assignments
-       WHERE vehicle_id=? AND odometer_end IS NOT NULL
-       ORDER BY end_date DESC, id DESC
-       LIMIT 1`,
+         FROM vehicle_assignments
+        WHERE vehicle_id=? 
+          AND end_date IS NOT NULL
+          AND odometer_end IS NOT NULL
+        ORDER BY end_date DESC, id DESC
+        LIMIT 1`,
       [id]
-    )
-    res.json({ lastOdometer: row?.last ?? null })
+    );
+    if (closed.length && closed[0].last != null) {
+      return res.json({ lastOdometer: Number(closed[0].last) });
+    }
+
+    // 2) Cualquier asignación con odómetro final (por si existen registros antiguos sin end_date)
+    const [anyWithEnd] = await pool.query(
+      `SELECT odometer_end AS last
+         FROM vehicle_assignments
+        WHERE vehicle_id=? 
+          AND odometer_end IS NOT NULL
+        ORDER BY id DESC
+        LIMIT 1`,
+      [id]
+    );
+    if (anyWithEnd.length && anyWithEnd[0].last != null) {
+      return res.json({ lastOdometer: Number(anyWithEnd[0].last) });
+    }
+
+    // 3) Fallback: odómetro actual del vehículo (mejor que nada para prefilar)
+    const [[veh]] = await pool.query(
+      `SELECT odometer FROM vehicles WHERE id=? LIMIT 1`,
+      [id]
+    );
+    return res.json({ lastOdometer: veh?.odometer != null ? Number(veh.odometer) : null });
   }
-)
+);
 
 /* -------------------------------------------------------
    USES
