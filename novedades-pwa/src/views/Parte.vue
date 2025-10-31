@@ -83,18 +83,24 @@
             <div class="font-semibold text-slate-800 text-lg">
               {{ groupCode(group) }}
             </div>
+
+            <!-- Línea de contexto actual -->
             <div class="text-xs text-slate-700 font-medium">
               {{ showServicio ? 'SERVICIO' : (showOnlyNoCheck ? 'SIN NOVEDAD (faltantes)' : 'SIN NOVEDAD') }}
               {{ triadText(group) }} (OF/ME/PT)
             </div>
+
+            <!-- NUEVO: FD esperado solo para super/supervisión/leader_group -->
+            <div v-if="isSuperLike" class="text-[11px] text-slate-500 mt-0.5">
+              FD esperado: {{ fdEsperadoTriadText(group) }}
+            </div>
           </div>
 
           <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 transition-transform"
-               :class="isOpen(group) ? 'rotate-90' : ''" viewBox="0 0 20 20" fill="currentColor">
+              :class="isOpen(group) ? 'rotate-90' : ''" viewBox="0 0 20 20" fill="currentColor">
             <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
           </svg>
         </div>
-
         <div v-show="isOpen(group)" class="bg-white p-4">
           <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-2">
             <div
@@ -110,8 +116,10 @@
                   </div>
                   <div class="text-xs text-slate-500">{{ a.nickname || '—' }}</div>
                   <div class="text-xs mt-1">Estado: <b>{{ a.status }}</b></div>
+                  <div class="text-[11px] text-slate-500 truncate max-w-[220px] mt-0.5" :title="a.mt ? `Misión de trabajo: ${a.mt}` : '—'">
+                    {{ a.mt || '—' }}
+                  </div>
                 </div>
-
                 <div v-if="!showServicio && a.status === 'SIN NOVEDAD'">
                   <label class="inline-flex items-center gap-2 text-xs">
                     <input
@@ -200,6 +208,12 @@ const catRank = c => (c === 'OF' ? 0 : c === 'ME' ? 1 : 2)
 const codeNum = code => {
   const m = String(code||'').match(/\d+/)
   return m ? Number(m[0]) : 0
+}
+
+function fdEsperadoTriadText(gid) {
+  const t = triadEsperadosByGroup(gid) // [OF, ME, PT]
+  const total = (t[0] + t[1] + t[2]) || 0
+  return `${t[0]}/${t[1]}/${t[2]} (Total: ${total})`
 }
 
 function ensureGroupBox(gid) {
@@ -402,23 +416,24 @@ async function syncGroup(gid) {
   })
 
   for (const r of (det.items || [])) {
-    // Asegura/actualiza el agente
     const a = {
       id: r.agentId,
       code: r.code,
-      category: r.category,
       nickname: r.nickname || null,
-      status: (r.state || '').toUpperCase()
-    }
-    box.agentsById.set(a.id, a)
+      category: r.category,
+      status: (r.state || '').toUpperCase(),
+      mt: r.mt || r.mt_report || r.mt_agent || null // ✅ asegura MT
+    };
+    box.agentsById.set(a.id, a);
 
     if (a.status === 'SIN NOVEDAD') {
-      box.sinNovedadEsperados.add(a.id)
-      if (r.checked === 1 || r.checked === true) box.checked.add(a.id)
+      box.sinNovedadEsperados.add(a.id);
+      if (r.checked === 1 || r.checked === true) box.checked.add(a.id);
     }
-    if (a.status === 'SERVICIO') box.servicio.add(a.id)
-    if (r.reportId) box.reportIdByAgent.set(a.id, r.reportId)
+    if (a.status === 'SERVICIO') box.servicio.add(a.id);
+    if (r.reportId) box.reportIdByAgent.set(a.id, r.reportId);
   }
+
 }
 
 

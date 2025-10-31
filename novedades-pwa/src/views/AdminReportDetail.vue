@@ -132,8 +132,14 @@
                   </td>
                   <td>{{ a.municipality || 'N/A' }}</td>
                   <td>{{ a.novelty_description || '—' }}</td>
-                  <td>{{ a.mt || '—' }}</td>
-
+                  <td>
+                    <div
+                      class="line-clamp-1 max-w-[180px] text-slate-800 text-sm cursor-help"
+                      :title="a.mt || '—'"
+                    >
+                      {{ a.mt || '—' }}
+                    </div>
+                  </td>
                   <td>
                     <template v-if="a.novelty_start && a.novelty_end">
                       {{ formatDate(a.novelty_start) }} – {{ formatDate(a.novelty_end) }}

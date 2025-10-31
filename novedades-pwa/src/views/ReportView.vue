@@ -189,7 +189,7 @@
                           : 'border-slate-300 focus:ring-indigo-200 bg-white'"
                         v-model.trim="a.mt"
                         placeholder="0000-5555-6666"
-                        maxlength="32"
+                        maxlength="120"
                       />
                       <p v-if="isMtInvalid(a.mt)" class="text-[11px] text-rose-600 mt-1">
                         Formato inválido. Usa solo números y guiones.
@@ -461,7 +461,7 @@
                         :class="isMtInvalid(a.mt) ? 'border-rose-500 focus:ring-rose-200 bg-white' : 'border-slate-300 focus:ring-indigo-200 bg-white'"
                         v-model.trim="a.mt"
                         placeholder="0000-5555-6666"
-                        maxlength="32"
+                        maxlength="96"
                       />
                       <p v-if="isMtInvalid(a.mt)" class="text-[11px] text-rose-600 mt-1">Formato inválido. Usa solo números y guiones.</p>
                   <select class="input w-full" v-model="a.status" @change="onStateChange(a)">
@@ -942,15 +942,6 @@ function businessDateBogota(cutoffHour /* 0..23 */) {
   return ymdInTZ(base)
 }
 
-
-// Mantener el comportamiento actual (flip base ~19:00) y desplazarlo +10 h → 05:00
-function tomorrowStr() {
-  const d = new Date()
-  d.setDate(d.getDate() + 1)      // igual que antes (conserva tu lógica actual)
-  d.setHours(d.getHours() + 10)   // 👉 desplaza el cambio +10h (19:00 + 10 = 05:00)
-  return d.toISOString().slice(0, 10)
-}
-
 const reportDate = ref(businessDateBogota(6)) // flip a las 05:00 Bogotá
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
@@ -985,65 +976,21 @@ async function loadAgents() {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
       params: { date: reportDate.value }
     })
-    agents.value = (Array.isArray(data) ? data : [])
-      .map(a => ({
-        ...a,
-        municipalityName: a.municipalityName || '',
-        novelty_start: a.novelty_start ? String(a.novelty_start).slice(0, 10) : '',
-        novelty_end:   a.novelty_end   ? String(a.novelty_end).slice(0, 10)   : '',
-        novelty_description: a.novelty_description || '',
-        mt: a.mt || '' // si algún día /my/agents devuelve mt, lo tomamos
-      }))
+    agents.value = (Array.isArray(data) ? data : []).map(a => ({
+      ...a,
+      municipalityName: a.municipalityName || '',
+      novelty_start: a.novelty_start ? String(a.novelty_start).slice(0, 10) : '',
+      novelty_end:   a.novelty_end   ? String(a.novelty_end).slice(0, 10)   : '',
+      novelty_description: a.novelty_description || '',
+      // ✅ MT viene de agent.mt desde el backend
+      mt: a.mt || ''
+    }))
       .sort((x, y) => (CATEG_ORDER[x.category] || 99) - (CATEG_ORDER[y.category] || 99))
 
-    await setDiasLaboradosTodos()
-    // ✅ Rellenar MT desde /admin/report/detail (si el rol lo permite)
-    await overlayMtFromAdminDetail()
+    await setDiasLaboradosTodos()  
   } catch (e) {
     msg.value = e?.response?.data?.error || 'Error al cargar agentes'
     agents.value = []
-  }
-}
-
-async function overlayMtFromAdminDetail() {
-  const role = String(me.value?.role || '').toLowerCase();
-  const auth = { headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') } };
-  const paramsAdmin = {
-    date: reportDate.value,
-    groupId: me.value?.groupId,
-    unitId:  me.value?.unitId
-  };
-
-  // helper para aplicar overlay
-  const applyRows = (rows = []) => {
-    const mtByAgentId = new Map(rows.map(r => [Number(r.agentId), r.mt ?? null]));
-    for (const a of agents.value) {
-      if (mtByAgentId.has(Number(a.id))) a.mt = mtByAgentId.get(Number(a.id)) || '';
-    }
-  };
-
-  // leader_unit → ir directo a /my/report/detail
-  if (role === 'leader_unit') {
-    try {
-      const { data } = await axios.get('/my/report/detail', { params: { date: reportDate.value }, ...auth });
-      applyRows(Array.isArray(data?.items) ? data.items : []);
-    } catch (e) {
-      // sin ruido en consola
-    }
-    return;
-  }
-
-  // Otros roles: intenta admin y, si 403, cae a /my/report/detail
-  try {
-    const { data } = await axios.get('/admin/report/detail', { params: paramsAdmin, ...auth });
-    applyRows(Array.isArray(data?.items) ? data.items : []);
-  } catch (e) {
-    if (e?.response?.status === 403) {
-      try {
-        const { data } = await axios.get('/my/report/detail', { params: { date: reportDate.value }, ...auth });
-        applyRows(Array.isArray(data?.items) ? data.items : []);
-      } catch {}
-    }
   }
 }
 
@@ -1551,12 +1498,6 @@ function agentHasRangeError(a) {
 // Computado global: ¿hay algún error de fechas en el listado?
 const hasDateErrors = computed(() => agents.value.some(agentHasRangeError))
 
-watch(reportDate, async () => {
-  msg.value = ''
-  await loadAgents()
-  await checkIfReportExists()
-})
-
 onMounted(async () => {
   await loadMe() // <--- Carga el usuario y unidad
   await loadMunicipalities();
@@ -1831,7 +1772,7 @@ const segments = computed(() => {
 // ✅ MT: solo dígitos y guiones, opcional, hasta 32 chars
 function isMtInvalid(val) {
   if (!val) return false
-  return !/^[0-9-]{1,32}$/.test(String(val).trim())
+  return !/^[0-9-]{1,120}$/.test(String(val).trim())
 }
 
 watch(reportDate, async () => {
