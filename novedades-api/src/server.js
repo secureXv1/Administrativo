@@ -858,17 +858,18 @@ app.put('/admin/report/check',
       );
       if (!ag) return res.status(404).json({ error:'Agente no encontrado' });
 
-      // Alcance leader_group
       if (String(req.user.role).toLowerCase()==='leader_group' &&
           Number(ag.groupId)!==Number(req.user.groupId)) {
         return res.status(403).json({ error:'No autorizado' });
       }
 
+      const leaderUserId = (req.user && (req.user.uid ?? req.user.id)) ?? null; // ✅ seguro
+
       const conn = await pool.getConnection();
       try {
         await conn.beginTransaction();
 
-        // 1) Asegura encabezado del reporte (requiere UNIQUE(reportDate,groupId,unitId))
+        // Asegura encabezado
         const [[drEx]] = await conn.query(
           'SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1',
           [isoDate, ag.groupId, ag.unitId]
@@ -883,7 +884,7 @@ app.put('/admin/report/check',
                OF_nov,SO_nov,PT_nov)
             VALUES (?, ?, ?, ?, 0,0,0, 0,0,0, 0,0,0)
             ON DUPLICATE KEY UPDATE updatedAt=CURRENT_TIMESTAMP(3)
-          `, [isoDate, ag.groupId, ag.unitId, req.user.uid]);
+          `, [isoDate, ag.groupId, ag.unitId, leaderUserId]);
 
           const [[dr]] = await conn.query(
             'SELECT id FROM dailyreport WHERE reportDate=? AND groupId=? AND unitId=? LIMIT 1',
@@ -892,7 +893,7 @@ app.put('/admin/report/check',
           reportId = dr.id;
         }
 
-        // 2) Upsert del detalle (solo `check`, pero si no existe, copiamos mt del agente)
+        // Upsert check (+ copia MT si es fila nueva)
         const [[row]] = await conn.query(
           'SELECT reportId FROM dailyreport_agent WHERE reportId=? AND agentId=? LIMIT 1',
           [reportId, agentId]
@@ -904,7 +905,6 @@ app.put('/admin/report/check',
             [val, reportId, agentId]
           );
         } else {
-          // Inserta con el estado y municipio actuales del agente y **MT del agente**
           await conn.query(`
             INSERT INTO dailyreport_agent
               (reportId, agentId, groupId, unitId,
@@ -922,15 +922,18 @@ app.put('/admin/report/check',
         res.json({ ok:true, reportId, agentId, check: !!val });
       } catch (e) {
         await conn.rollback();
-        res.status(500).json({ error:'ToggleCheckError', detail:e.message });
+        console.error('ToggleCheckError:', e?.sqlMessage || e?.message || e);
+        res.status(500).json({ error:'ToggleCheckError', detail:e?.sqlMessage || e?.message });
       } finally {
         conn.release();
       }
     } catch (e) {
-      res.status(500).json({ error:'ServerError', detail:e.message });
+      console.error('ServerError:', e?.message || e);
+      res.status(500).json({ error:'ServerError', detail:e?.message });
     }
   }
 );
+
 
 // Leer la ÚLTIMA novedad registrada del agente (opcionalmente hasta una fecha)
 app.get('/admin/agents/:id/novelty',
@@ -1680,115 +1683,121 @@ app.post('/admin/users/:id/unlock', auth, requireRole('superadmin'), async (req,
 
 // ---------- CRUD Agentes Admin ----------
 
-// Listado de agentes (admin/supervisión/supervisor/leader_group) con paginación
-app.get('/admin/agents', auth, requireRole('superadmin', 'supervision', 'supervisor', 'leader_group'), async (req, res) => {
+// GET /admin/agents
+app.get('/admin/agents', auth, requireRole('superadmin','supervision','supervisor','leader_group'), async (req, res) => {
   try {
-    const {
-      q,
-      code,
-      category,
-      groupId,
-      unitId,
-      freeOnly,
-      // 📄 nuevo: paginado
-      page = 1,
-      pageSize = 100, // default alto pero controlado
-    } = req.query;
+    // ======= Params
+    const q        = String(req.query.q || '').trim();
+    const groupId  = req.query.groupId ? Number(req.query.groupId) : null;
+    const unitId   = req.query.unitId  ? Number(req.query.unitId)  : null;
+    const freeOnly = Number(req.query.freeOnly || 0) === 1;   // SOLO sin unidad
+    const limit    = Math.min(Math.max(parseInt(req.query.limit)  || 100, 1), 5000);
+    const offset   = Math.max(parseInt(req.query.offset) || 0, 0);
 
-    const p = Math.max(parseInt(page, 10) || 1, 1);
-    const ps = Math.min(Math.max(parseInt(pageSize, 10) || 100, 1), 1000); // tope razonable
-    const offset = (p - 1) * ps;
+    // ======= Restringe por rol (líder sólo su grupo)
+    let leaderGroupId = null;
+    if (String(req.user.role).toLowerCase() === 'leader_group') {
+      leaderGroupId = Number(req.user.groupId) || null;
+      if (!leaderGroupId) return res.status(403).json({ error: 'No autorizado (sin groupId de líder)' });
+    }
 
-    let where = '1=1';
+    // ======= SELECT (LEFT JOIN para no perder "sin unidad"; backticks en `group`)
+    const baseSelect = `
+      SELECT
+        a.id, a.code, a.nickname, a.category,
+        a.groupId, a.unitId,
+        g.code AS groupCode,
+        u.name AS unitName
+      FROM agent a
+      LEFT JOIN \`group\` g ON g.id = a.groupId
+      LEFT JOIN unit u      ON u.id = a.unitId
+    `;
+
+    const where = [];
     const params = [];
 
-    // 🔐 Restricción para leader_group
-    if (req.user.role === 'leader_group') {
-      if (!req.user.groupId) return res.status(403).json({ error: 'Forbidden' });
-      // Si envían groupId distinto, bloquear
-      if (groupId && Number(groupId) !== Number(req.user.groupId)) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
-      where += ' AND a.groupId=?';
-      params.push(Number(req.user.groupId));
-    } else {
-      // Roles superiores
-      if (groupId) { where += ' AND a.groupId=?'; params.push(Number(groupId)); }
+    // Filtro "sin unidad": soporta NULL y 0
+    if (freeOnly) {
+      where.push('(a.unitId IS NULL OR a.unitId = 0)');
+    } else if (unitId) {
+      // si piden unidad específica y NO es freeOnly
+      where.push('a.unitId = ?');
+      params.push(unitId);
     }
 
-    if (code) {
-      where += ' AND a.code=?';
-      params.push(String(code).toUpperCase().trim());
-    } else if (q) {
-      where += ' AND a.code LIKE ?';
-      params.push(String(q).toUpperCase().trim() + '%');
+    if (groupId) {
+      where.push('a.groupId = ?');
+      params.push(groupId);
     }
 
-    if (category) {
-      where += ' AND a.category=?';
-      params.push(String(category));
+    // Forzar alcance del líder
+    if (leaderGroupId) {
+      where.push('a.groupId = ?');
+      params.push(leaderGroupId);
     }
 
-    if (unitId) {
-      where += ' AND a.unitId=?';
-      params.push(Number(unitId));
+    // Búsqueda
+    if (q) {
+      where.push('(a.code LIKE ? OR a.nickname LIKE ?)');
+      const like = `%${q}%`;
+      params.push(like, like);
     }
 
-    // Solo agentes sin unidad
-    if (String(freeOnly || '0') === '1') {
-      where += ' AND (a.unitId IS NULL OR a.unitId = 0)';
-    }
+    // (opcional) evita soft-deleted si lo usas
+    // where.push('IFNULL(a.isDeleted,0)=0');
 
-    // 📊 total para paginación
-    const [[{ total }]] = await pool.query(
-      `
-        SELECT COUNT(*) AS total
-          FROM agent a
-          LEFT JOIN \`group\` g ON g.id = a.groupId
-          LEFT JOIN unit u     ON u.id = a.unitId
-          LEFT JOIN municipality m ON m.id = a.municipalityId
-         WHERE ${where}
-      `,
-      params
-    );
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
-    // 🔎 página solicitada
-    const [rows] = await pool.query(
-      `
-        SELECT 
-          a.id, a.code, a.category, a.status,
-          a.groupId, g.code AS groupCode,
-          a.unitId, u.name AS unitName,
-          a.municipalityId, m.name AS municipalityName, m.dept,
-          a.nickname 
-          a.municipalityId, m.name AS municipalityName, m.dept,
-          a.nickname,
-          a.mt, a.birthday
-        FROM agent a
-        LEFT JOIN \`group\` g ON g.id = a.groupId
-        LEFT JOIN unit u ON u.id = a.unitId
-        LEFT JOIN municipality m ON a.municipalityId = m.id
-        WHERE ${where}
-        ORDER BY a.code
-        LIMIT ? OFFSET ?
-      `,
-      [...params, ps, offset]
-    );
-    const items = rows.map(r => ({
-      ...r,
-      nickname: decNullable(r.nickname),
-      mt: r.mt || null,
-      birthday: r.birthday ? String(r.birthday).slice(0,10) : null
+    // Orden estable: categoría (OF/SO/PT) y luego código
+    const orderSql = `
+      ORDER BY
+        CASE a.category
+          WHEN 'OF' THEN 1
+          WHEN 'SO' THEN 2
+          WHEN 'ME' THEN 2  -- por si convives SO/ME
+          WHEN 'PT' THEN 3
+          ELSE 99
+        END,
+        a.code
+    `;
+
+    // Count total
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM agent a
+      LEFT JOIN \`group\` g ON g.id = a.groupId
+      LEFT JOIN unit u      ON u.id = a.unitId
+      ${whereSql}
+    `;
+    const [cnt] = await pool.query(countSql, params);
+    const total = Number(cnt?.[0]?.total || 0);
+
+    // Paginado
+    const rowsSql = `
+      ${baseSelect}
+      ${whereSql}
+      ${orderSql}
+      LIMIT ? OFFSET ?
+    `;
+    const rowsParams = [...params, limit, offset];
+    const [rows] = await pool.query(rowsSql, rowsParams);
+
+    // Normaliza salida (nickname puede venir cifrado)
+    const items = (rows || []).map(r => ({
+      id: r.id,
+      code: r.code,
+      nickname: r.nickname ? decNullable(r.nickname) : null,
+      category: r.category,
+      groupId: r.groupId,
+      groupCode: r.groupCode,
+      unitId: r.unitId,
+      unitName: r.unitName
     }));
 
-    res.json({
-      page: p,
-      pageSize: ps,
-      total: Number(total) || 0,
-      items,
-    });
+    res.json({ items, total, limit, offset });
   } catch (e) {
-    res.status(500).json({ error: 'AgentListError', detail: e.message });
+    console.error('AdminAgentsError:', e);
+    res.status(500).json({ error: 'AdminAgentsError', detail: e.message });
   }
 });
 
