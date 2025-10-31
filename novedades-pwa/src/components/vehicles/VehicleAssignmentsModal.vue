@@ -10,13 +10,33 @@
 
       <!-- Formulario nueva asignación (oculto si hay una vigente) -->
       <div v-if="!hasActive" class="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4">
+        <!-- Agente (typeahead con datalist filtrado) -->
         <div class="sm:col-span-2">
           <label class="label">Agente</label>
-          <input v-model="form.agentCode" class="input" placeholder="Código de agente" list="agentsList" />
+          <input
+            v-model.trim="form.agentCode"
+            class="input"
+            placeholder="Código de agente"
+            list="agentsList"
+            autocomplete="off"
+          />
           <datalist id="agentsList">
-            <option v-for="a in agents" :key="a.id" :value="a.code" />
+            <option
+              v-for="a in filteredAgents"
+              :key="a.id"
+              :value="a.code"
+            >
+              {{ a.code }} — {{ a.nickname || a.name || '(sin nombre)' }}
+            </option>
           </datalist>
+          <p class="text-[11px] text-slate-500 mt-1" v-if="form.agentCode && !filteredAgents.length">
+            Sin coincidencias para “{{ form.agentCode }}”.
+          </p>
+          <p class="text-[11px] text-slate-500 mt-1" v-else-if="form.agentCode && filteredAgents.length === maxSuggestions">
+            Mostrando las primeras {{ maxSuggestions }} coincidencias…
+          </p>
         </div>
+
 
         <!-- 👇 Ya NO pedimos fecha; la pone el backend (CURDATE) -->
         <!-- <div>...Inicio...</div>  ELIMINADO -->
@@ -186,9 +206,10 @@ async function loadLastOdometer() {
 }
 
 async function loadAgents() {
-  const { data } = await http.get('/catalogs/agents', { params: { limit: 5000 } })
+  const { data } = await http.get('/catalogs/agents', { params: { limit: 20000 } })
   agents.value = data.items || data || []
 }
+
 async function loadAssignments() {
   loading.value = true
   try {
@@ -253,6 +274,28 @@ function deltaKm(a) {
   const d = e - s
   return d >= 0 ? d.toLocaleString('es-CO') : `-${Math.abs(d).toLocaleString('es-CO')}`
 }
+const maxSuggestions = 30
+
+const filteredAgents = computed(() => {
+  const q = (form.value.agentCode || '').toLowerCase().trim()
+  if (!q) return []
+  // filtra por código o nickname/name
+  return (agents.value || [])
+    .filter(a => {
+      const code = String(a.code || '').toLowerCase()
+      const nick = String(a.nickname || a.name || '').toLowerCase()
+      return code.includes(q) || nick.includes(q)
+    })
+    .slice(0, maxSuggestions)
+})
+
+watch(() => form.value.agentCode, (val) => {
+  if (!val) return
+  // si hay solo una coincidencia exacta, mantenla
+  const exact = (filteredAgents.value || []).find(a => a.code === val)
+  if (exact) return
+}, { flush: 'sync' })
+
 
 onMounted(() => {
   loadAssignments(); loadAgents(); loadLastAssignOdometer()

@@ -54,15 +54,32 @@
                 <span :class="estadoClass(v.estado)">{{ v.estado }}</span>
               </td>
               <td class="py-2 pr-3">
-                <BadgeDate :date="formatDate(v.soatDate)" />
+                <!-- SOAT -->
+                <span v-if="isExpired(v.soatDate)"
+                      class="text-red-600 font-medium"
+                      :title="formatDate(v.soatDate)">
+                  SIN SOAT
+                </span>
+                <span v-else :class="dateColorClass(v.soatDate)">
+                  {{ formatDate(v.soatDate) }}
+                </span>
               </td>
+
               <td class="py-2 pr-3">
-                <BadgeDate :date="formatDate(v.tecnoDate)" />
+                <!-- Tecno -->
+                <span v-if="isExpired(v.tecnoDate)"
+                      class="text-red-600 font-medium"
+                      :title="formatDate(v.tecnoDate)">
+                  SIN TECNO
+                </span>
+                <span v-else :class="dateColorClass(v.tecnoDate)">
+                  {{ formatDate(v.tecnoDate) }}
+                </span>
               </td>
               <td class="py-2 pr-3">{{ v.odometer ?? '—' }}</td>
               <td class="py-2 pr-3">
                 <span v-if="nextOilKm(v) != null" :class="oilClassByRemaining(v)">
-                  {{ nextOilKm(v) }} <small class="text-slate-400"> (faltan {{ Math.max(0, kmsToNextOil(v) ?? 0) }} km)</small>
+                  {{ nextOilKm(v) }} <small class="text-slate-400"> ( {{ Math.max(0, kmsToNextOil(v) ?? 0) }} km)</small>
                 </span>
                 <span v-else class="text-slate-400">—</span>
               </td>
@@ -468,6 +485,31 @@ function estadoClass(estado) {
   }
 }
 
+function daysTo(dateStr) {
+  if (!dateStr) return null
+  const now = new Date()
+  const d = new Date(String(dateStr))
+  return Math.ceil((d - now) / (1000 * 60 * 60 * 24))
+}
+
+function isExpired(dateStr) {
+  const d = daysTo(dateStr)
+  return d != null && d < 0
+}
+
+function dateColorClass(dateStr) {
+  const d = daysTo(dateStr)
+  if (d == null) return 'text-slate-400'
+  if (d < 0) return 'text-red-600 font-medium'       // vencido (aunque arriba lo cubrimos con SIN SOAT/TECNO)
+  if (d < 10) return 'text-red-600 font-medium'      // <10 rojo
+  if (d < 30) return 'text-amber-500 font-medium'    // 10–29 amarillo
+  return 'text-green-600 font-medium'                // ≥30 verde
+}
+
+function formatDate(val) {
+  return val ? String(val).slice(0, 10) : ''
+}
+
 function nextOilKm(v) {
   const last = Number(v.oil_last_km ?? NaN);
   const interval = Number(v.oil_interval_km ?? NaN);
@@ -638,10 +680,6 @@ async function loadVehicles() {
   } finally {
     loading.value = false
   }
-}
-
-function formatDate(val) {
-  return val ? String(val).slice(0, 10) : ''
 }
 
 // Vencimientos

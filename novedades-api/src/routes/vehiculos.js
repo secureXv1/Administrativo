@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken'
 import { pool } from '../db.js'
 import { logEvent, Actions } from '../audit.js'
 import { requireSuperadmin } from '../middlewares.js' // opcional aquí
+import crypto from 'crypto';   
 
 const router = express.Router()
 
@@ -56,8 +57,7 @@ const requireRole = (...allowed) => (req, res, next) => {
   next()
 }
 
-// Helper “decNullable” local (si tienes uno real, impórtalo)
-const decNullable = (val) => (val == null ? null : String(val))
+
 
 /* -------------------------------------------------------
    Helpers de negocio
@@ -154,9 +154,10 @@ router.get(
       );
 
       for (const row of rows) {
-        row.agentNickname = row.agentNickname == null ? null : String(row.agentNickname);
+        row.agentNickname = decNullable(row.agentNickname);
         row.hasOpenUse = !!row.hasOpenUse;
-      }
+        }
+
 
       const [[{ total }]] = await pool.query(
         `SELECT COUNT(*) AS total
@@ -991,5 +992,85 @@ router.get(
     }
   }
 )
+
+/* =======================================================
+   DESCIFRADO LOCAL (idéntico a server.js)
+======================================================= */
+const ENC_KEY_B64 = process.env.NOVELTY_ENC_KEY || '';
+const ENC_KEY = Buffer.from(ENC_KEY_B64, 'base64'); // debe medir 32 bytes
+
+function decNullable(maybeB64) {
+  if (maybeB64 == null || maybeB64 === '') return null;
+  // Si no hay clave válida, no intentes descifrar
+  if (ENC_KEY.length !== 32) return String(maybeB64);
+
+  try {
+    const raw = Buffer.from(String(maybeB64), 'base64');
+    // 12 (iv) + 16 (tag) + >=1 (ct) → mínimo 29; usamos 28 como umbral estricto (sin ct).
+    if (raw.length < 28) {
+      // No es nuestro formato → devolver tal cual
+      return String(maybeB64);
+    }
+    const iv  = raw.subarray(0, 12);
+    const tag = raw.subarray(12, 28);
+    const ct  = raw.subarray(28);
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENC_KEY, iv);
+    decipher.setAuthTag(tag);
+    const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+    return pt.toString('utf8');
+  } catch {
+    // Si falla (clave/ct incorrecto), devolver original
+    return String(maybeB64);
+  }
+}
+
+// === Catálogo de agentes (descifra nickname, respeta scope por rol) ===
+router.get('/catalogs/agents', requireAuth, async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 10000, 20000);
+    const q     = (req.query.q || '').trim();
+
+    const where = [];
+    const args  = [];
+
+    // Alcance por rol
+    const role = String(req.user?.role || '').toLowerCase();
+    if (role === 'leader_group') {
+      where.push('a.groupId = ?'); args.push(req.user.groupId);
+    } else if (role === 'leader_unit' || role === 'agent') {
+      where.push('a.unitId = ?');  args.push(req.user.unitId);
+    }
+
+    // Búsqueda opcional SOLO por código (nickname está cifrado → no sirve LIKE)
+    if (q) {
+      where.push('(a.code LIKE ?)');
+      args.push(`%${q}%`);
+    }
+
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const [rows] = await pool.query(
+      `SELECT a.id, a.code, a.nickname, a.groupId, a.unitId
+         FROM agent a
+         ${whereSql}
+        ORDER BY a.code
+        LIMIT ?`,
+      [...args, limit]
+    );
+
+    // Descifrar nickname con la misma util local
+    for (const r of rows) {
+      r.nickname = decNullable(r.nickname);
+    }
+
+    res.json({ items: rows });
+  } catch (e) {
+    console.error('[GET /catalogs/agents] error:', e);
+    res.status(500).json({ error: 'AgentsCatalogError', detail: e.message });
+  }
+});
+
+
 
 export default router
