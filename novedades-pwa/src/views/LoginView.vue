@@ -16,7 +16,7 @@
           <svg class="w-10 h-10" viewBox="0 0 48 48" fill="none"><circle cx="24" cy="24" r="24" fill="url(#grad1)"/><text x="50%" y="60%" text-anchor="middle" fill="#fff" font-size="26" font-family="Arial" dy=".3em">N</text><defs><linearGradient id="grad1" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse"><stop stop-color="#0ea5e9"/><stop offset="1" stop-color="#1e40af"/></linearGradient></defs></svg>
         </div>
         <h1 class="text-2xl font-bold text-slate-900 tracking-tight mt-1"></h1>
-        <p class="text-xs text-slate-500 text-center">Está ingresando a un sistema de información privado, su uso no autorizado incurre en el incumplimiento de las políticas de seguridad de la información y puede acarrear sanciones penales o administrativas.</p>
+        <p class="text-xs text-slate-500 text-center">Está ingresando a un sistema de información privado, su uso no autorizado incurre en el incumplimiento de las políticas de seguridad de la información y puede acarrear sanciones penales, disciplinarias y/o administrativas.</p>
       </div>
       <!-- Login form -->
       <form @submit.prevent="login" class="w-full flex flex-col gap-5">
