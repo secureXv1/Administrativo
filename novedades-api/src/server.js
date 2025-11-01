@@ -44,6 +44,28 @@ export function encNullable(plain) {
   }
 }
 
+function sanitizeStr(v, maxLen = 120) {
+  if (v == null) return null
+  const s = String(v).trim()
+  if (!s) return null
+  return s.length > maxLen ? s.slice(0, maxLen) : s
+}
+
+/** Acepta 'YYYY-MM-DD'. Devuelve 'YYYY-MM-DD' o null si no es válida/lógica */
+function validateISODate(iso) {
+  if (!iso) return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return null
+  const d = new Date(iso + 'T00:00:00Z')
+  if (Number.isNaN(d.getTime())) return null
+  // límites razonables
+  const y = d.getUTCFullYear()
+  if (y < 1900) return null
+  const today = new Date()
+  const todayYmd = today.toISOString().slice(0,10)
+  if (iso > todayYmd) return null
+  return iso
+}
+
 export function decNullable(maybeB64) {
   if (maybeB64 == null || maybeB64 === '') return null;
   // Si no hay clave válida, no intentes descifrar
@@ -1801,12 +1823,14 @@ app.get('/admin/agents', auth, requireRole('superadmin','supervision','superviso
   }
 });
 
-
 // Crear agente (con nickname cifrado)
 app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
-  const { code, category, groupId, unitId, nickname, mt, birthday } = req.body;
+  let { code, category, groupId, unitId, nickname, mt, birthday } = req.body;
 
+  code = String(code || '').trim().toUpperCase();
   if (!/^[A-Z][0-9]+$/.test(code)) return res.status(422).json({ error: 'Código inválido (LETRA + números)' });
+
+  category = String(category || '').toUpperCase();
   if (!['OF','SO','PT'].includes(category)) return res.status(422).json({ error: 'Categoría inválida' });
 
   if (groupId) {
@@ -1818,49 +1842,59 @@ app.post('/admin/agents', auth, requireRole('superadmin', 'supervision'), async 
     if (!u) return res.status(404).json({ error: 'Unidad no existe' });
   }
 
-  const encNick = encNullable(nickname && String(nickname).trim() !== '' ? String(nickname) : null);
+  const encNick = encNullable(sanitizeStr(nickname, 120));
+  const mtClean  = sanitizeStr(mt, 80);
+  const bday     = validateISODate(birthday);
 
-  // ❌ ignorar cualquier status/municipalityId que envíen
+  // ❌ ignorar status/municipalityId que envíen
   const status = 'SIN NOVEDAD';
-  const municipalityId = 11001; // o null si no quieres setear por defecto
+  const municipalityId = null; // ← si no quieres default fijo, deja null
 
   try {
-    await pool.query(
-      'INSERT INTO agent (code, category, groupId, unitId, status, municipalityId, nickname, mt, birthday) VALUES (?,?,?,?,?,?,?,?,?)',
-      [code.trim(), category, groupId || null, unitId || null, status, municipalityId, encNick, (mt || null), (birthday || null)]
+    const [r] = await pool.query(
+      `INSERT INTO agent (code, category, groupId, unitId, status, municipalityId, nickname, mt, birthday)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [code, category, groupId || null, unitId || null, status, municipalityId, encNick, mtClean, bday]
     );
-    res.json({ ok:true });
+
+    await logEvent({
+      req, userId: req.user.uid,
+      action: Actions.AGENT_CREATE,
+      details: { agentId: r.insertId, code, category, groupId: groupId||null, unitId: unitId||null, mt: mtClean, birthday: bday }
+    });
+
+    res.json({ ok: true, id: r.insertId });
   } catch (e) {
     if (e.code === 'ER_DUP_ENTRY') res.status(409).json({ error: 'El código ya existe' });
     else res.status(500).json({ error: 'No se pudo crear', detail: e.message });
   }
 });
 
-
 // Actualizar agente (SOLO campos propios de agent; sin status/municipalityId)
 app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), async (req, res) => {
   const { id } = req.params;
   let { code, category, groupId, unitId, nickname, mt, birthday } = req.body;
 
-  // ❌ Ignorar explícitamente campos que NO deben tocarse desde este flujo
-  // (si llegan, se desechan para no romper compatibilidad con front viejos)
   delete req.body.status;
   delete req.body.municipalityId;
 
   const sets = [], params = [];
   const changes = {};
 
+  // code (solo si viene)
   if (code !== undefined) {
-    if (!/^[A-Z][0-9]+$/.test(String(code))) return res.status(422).json({ error:'Código inválido' });
-    const codeUp = String(code).trim().toUpperCase();
+    const codeUp = String(code || '').trim().toUpperCase();
+    if (!/^[A-Z][0-9]+$/.test(codeUp)) return res.status(422).json({ error:'Código inválido' });
     sets.push('code=?'); params.push(codeUp);
     changes.code = codeUp;
   }
 
+  // category (solo si viene)
   if (category !== undefined) {
-    if (!['OF','SO','PT'].includes(String(category))) return res.status(422).json({ error:'Categoría inválida' });
-    sets.push('category=?'); params.push(category);
-    changes.category = category;
+    const catUp = String(category || '').toUpperCase();
+    if (!['OF','SO','PT'].includes(catUp)) return res.status(422).json({ error:'Categoría inválida' });
+    sets.push('category=?'); params.push(catUp);
+    changes.category = catUp;
   }
 
   if (groupId !== undefined) {
@@ -1883,21 +1917,27 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
 
   // nickname (cifrado)
   if (nickname !== undefined) {
-    const encNick = encNullable(nickname && String(nickname).trim() !== '' ? String(nickname) : null);
+    const encNick = encNullable(sanitizeStr(nickname, 120));
     sets.push('nickname=?'); params.push(encNick);
-    changes.nickname_set = !!(nickname && String(nickname).trim() !== '');
-  }
-  if (mt !== undefined) {
-   sets.push('mt=?'); params.push(mt && String(mt).trim() !== '' ? String(mt).trim() : null);
-   changes.mt_set = true;
-  }
-  if (birthday !== undefined) {
-    sets.push('birthday=?'); params.push(birthday || null);
-    changes.birthday = birthday || null;
+    changes.nickname_set = encNick != null;
   }
 
-  // Integridad: si cambias groupId sin unitId, forzar unitId=null
-  if (('groupId' in changes) && changes.groupId !== null && (unitId === undefined)) {
+  // mt (string corto o null)
+  if (mt !== undefined) {
+    const mtClean = sanitizeStr(mt, 80);
+    sets.push('mt=?'); params.push(mtClean);
+    changes.mt_set = true;
+  }
+
+  // birthday (ISO o null)
+  if (birthday !== undefined) {
+    const bday = validateISODate(birthday);
+    sets.push('birthday=?'); params.push(bday);
+    changes.birthday = bday;
+  }
+
+  // Integridad: si cambias groupId y NO enviaste unitId, forzar unitId=null
+  if (('groupId' in changes) && changes.groupId !== undefined && unitId === undefined) {
     sets.push('unitId=?'); params.push(null);
     changes.unitId = null;
   }
@@ -1917,6 +1957,7 @@ app.put('/admin/agents/:id', auth, requireRole('superadmin', 'supervision'), asy
 
     res.json({ ok:true });
   } catch (e) {
+    if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error:'El código ya existe' });
     res.status(500).json({ error:'No se pudo actualizar', detail:e.message });
   }
 });
@@ -2610,42 +2651,88 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
   }
 });
 
-
-
 // Obtener un agente por id (incluye joins útiles)
-app.get('/admin/agents/:id', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
-  const { id } = req.params;
-  const [[ag]] = await pool.query(
-    `SELECT 
-        a.id, a.code, a.category, a.status,
-        a.groupId, g.code AS groupCode,
-        a.unitId, u.name AS unitName,
-        a.municipalityId, m.name AS municipalityName, m.dept,
-        a.nickname
-        a.municipalityId, m.name AS municipalityName, m.dept,
-        a.nickname, a.mt, a.birthday
-      FROM agent a
-      LEFT JOIN \`group\` g ON g.id = a.groupId
-      LEFT JOIN unit u ON u.id = a.unitId
-      LEFT JOIN municipality m ON a.municipalityId = m.id
-     WHERE a.id = ? LIMIT 1`,
-    [id]
-  );
-  if (!ag) return res.status(404).json({ error: 'Agente no encontrado' });
+app.get(
+  '/admin/agents/:id',
+  auth,
+  requireRole('superadmin', 'supervision', 'leader_group'),
+  async (req, res) => {
+    const { id } = req.params;
 
-  // Seguridad: leader_group solo ve agentes de su grupo
-  if (req.user.role === 'leader_group' && ag.groupId !== req.user.groupId) {
-    return res.status(403).json({ error: 'No autorizado' });
+    try {
+      const [[row]] = await pool.query(
+        `
+        SELECT
+          a.id,
+          a.code,
+          a.category,
+          a.groupId,
+          a.unitId,
+          a.municipalityId,           -- ✅ alias correcto (no ".municipalityId")
+          m.name  AS municipalityName,
+          m.dept  AS municipalityDept,
+          a.nickname,
+          a.mt,
+          a.birthday,
+          g.code  AS groupCode,
+          u.name  AS unitName
+        FROM agent a
+        LEFT JOIN \`group\` g ON g.id = a.groupId
+        LEFT JOIN unit       u ON u.id = a.unitId
+        LEFT JOIN municipality m ON m.id = a.municipalityId
+        WHERE a.id = ?
+        LIMIT 1
+        `,
+        [id]
+      );
+
+      if (!row) return res.status(404).json({ error: 'Agente no encontrado' });
+
+      // Líder solo su grupo
+      if (String(req.user.role).toLowerCase() === 'leader_group') {
+        const myGroupId = req.user.groupId || req.user.group_id;
+        if (!myGroupId || String(row.groupId) !== String(myGroupId)) {
+          return res.status(403).json({ error: 'No autorizado para este agente' });
+        }
+      }
+
+      // Descifrado seguro
+      let nickname = null;
+      try { nickname = decNullable ? decNullable(row.nickname) : null; } catch { nickname = null; }
+
+      // YYYY-MM-DD para el input date
+      let birthday = null;
+      if (row.birthday) {
+        const d = new Date(row.birthday);
+        if (!isNaN(d.getTime())) {
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          birthday = `${yyyy}-${mm}-${dd}`;
+        }
+      }
+
+      res.json({
+        id: row.id,
+        code: row.code,
+        category: row.category,
+        groupId: row.groupId,
+        unitId: row.unitId,
+        groupCode: row.groupCode || null,
+        unitName: row.unitName || null,
+        municipalityId: row.municipalityId ?? null,
+        municipalityName: row.municipalityName ?? null,
+        municipalityDept: row.municipalityDept ?? null,
+        nickname,
+        mt: row.mt ?? null,
+        birthday
+      });
+    } catch (e) {
+      console.error('GET /admin/agents/:id error:', e);
+      res.status(500).json({ error: 'No se pudo cargar el agente', detail: e.message });
+    }
   }
-
-  res.json({
-    ...ag,
-    nickname: ag.nickname ? decNullable(ag.nickname) : null,
-    mt: ag.mt || null,
-   birthday: ag.birthday ? String(ag.birthday).slice(0,10) : null
-  });
-});
-
+);
 
 // Para líder de grupo: cumplimiento de unidades de SU grupo
 app.get('/dashboard/compliance-units', auth, requireRole('leader_group'), async (req, res) => {
@@ -2674,8 +2761,6 @@ app.get('/dashboard/compliance-units', auth, requireRole('leader_group'), async 
   }
   res.json({ date, done, pending });
 });
-
-
 
 // Descarga automatizada para alimentar el formato Excel
 app.get(

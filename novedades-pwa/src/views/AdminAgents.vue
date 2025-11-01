@@ -210,7 +210,29 @@
             </div>
           </div>
         </div>
+        <!-- MT -->
+        <div>
+          <label class="label">M.T</label>
+          <input
+            class="input"
+            v-model="form.mt"
+            maxlength="80"
+            placeholder="Ej: RECIBE AREA, ARMERA, etc."
+          />
+          <p class="text-[11px] text-slate-500 mt-1">Deja vacío si no aplica.</p>
+        </div>
 
+        <!-- Fecha de nacimiento -->
+        <div>
+          <label class="label">Fecha de nacimiento</label>
+          <input
+            type="date"
+            class="input"
+            v-model="form.birthday"
+            :max="maxBirthday"
+          />
+          <p class="text-[11px] text-slate-500 mt-1">Formato: AAAA-MM-DD</p>
+        </div>
         <!-- Footer -->
         <div class="px-5 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
           <button type="button" class="btn-ghost" @click="closeEdit">Cancelar</button>
@@ -398,6 +420,14 @@ const deleting = ref(false)
 
 function requestDelete(a) {
   pendingDelete.value = { id: a.id, code: a.code }
+}
+
+function authHeader() {
+  return {
+    headers: {
+      Authorization: 'Bearer ' + localStorage.getItem('token')
+    }
+  }
 }
 
 function cancelDelete() {
@@ -679,6 +709,8 @@ const canSubmit = computed(() => {
   return codeOk && catOk
 })
 
+const maxBirthday = new Date().toISOString().slice(0,10)
+
 const isCreating = ref(false)
 const editing = ref(null) // fila original cargada del backend
 const form = ref({
@@ -687,7 +719,9 @@ const form = ref({
   categoryUi: 'OF',   // UI: OF/ME/PT
   groupId: null,
   unitId: null,
-  nickname: ''
+  nickname: '',
+  mt: '',           
+  birthday: ''
 })
 
 function openCreate () {
@@ -699,31 +733,32 @@ function openCreate () {
     categoryUi: 'OF',
     groupId: null,
     unitId: null,
-    nickname: '' // 👈 evita usar a.nickname (no existe aquí)
+    nickname: '',
+    mt: '',
+    birthday: ''
   }
 }
 
 async function openEdit (a) {
   editing.value = null
   try {
-    // Siempre pide el objeto REAL del backend
     const { data } = await axios.get(`/admin/agents/${a.id}`, authHeader())
 
     form.value = {
       id: data.id,
       code: data.code,
-      categoryUi: catLabel(data.category), // OF/ME/PT
+      categoryUi: catLabel(data.category),     // OF/ME/PT
       groupId: data.groupId ?? null,
       unitId: data.unitId ?? null,
-      nickname: data.nickname || ''
+      nickname: data.nickname || '',
+      mt: data.mt || '',                       // 👈 NUEVO
+      birthday: data.birthday || ''            // 👈 NUEVO (backend debe dar YYYY-MM-DD)
     }
 
     editing.value = data
   } catch (e) {
     msg.value = e?.response?.data?.detail || e?.message || 'No se pudo cargar el agente'
   }
-
-  // ❌ Quitado: onStateChange(true) y cualquier lógica de novedad
 }
 
 function closeEdit () {
@@ -735,56 +770,55 @@ async function saveEdit () {
   msg.value = ''
   const id = form.value.id
 
+  // sanity date -> 'YYYY-MM-DD' o null
+  const birthday = (form.value.birthday && /^\d{4}-\d{2}-\d{2}$/.test(form.value.birthday))
+    ? form.value.birthday
+    : null
+
   try {
-    // === Crear (solo superadmin) ===
     if (isCreating.value) {
       if (!isSuperadmin.value) { msg.value = 'No autorizado'; return }
-
       const code = String(form.value.code || '').toUpperCase().trim()
       if (!/^[A-Z][0-9]+$/.test(code)) {
         msg.value = 'Código inválido (LETRA+números)'
         return
       }
-
       await axios.post('/admin/agents', {
         code,
-        category: uiToApiCategory(form.value.categoryUi), // OF/ME/PT -> API
-        groupId: form.value.groupId || null,
-        unitId: form.value.unitId || null,
-        nickname: (form.value.nickname || '').trim() || null
+        category: uiToApiCategory(form.value.categoryUi),
+        groupId : form.value.groupId || null,
+        unitId  : form.value.unitId  || null,
+        nickname: (form.value.nickname || '').trim() || null,
+        mt      : (form.value.mt || '').trim() || null,   // 👈 NUEVO
+        birthday                         // 👈 NUEVO
       }, authHeader())
 
       msg.value = 'Agente creado ✅'
       toast({ type:'success', title:'Agente creado', desc:`${form.value.code} guardado.` })
       closeEdit()
       await loadAgents()
-      return;
+      return
     }
 
-    // === Editar: SOLO campos de agent ===
+    // EDITAR
     if (isLeaderGroup.value) {
-      // Líder de grupo: solo mover de unidad (si cambió)
+      // líder: solo mover unidad si cambió
       if ((editing.value.unitId || null) !== (form.value.unitId || null)) {
-        await axios.put(
-          `/my/agents/${id}/unit`,
-          { unitId: form.value.unitId || null },
-          authHeader()
-        )
+        await axios.put(`/my/agents/${id}/unit`, { unitId: form.value.unitId || null }, authHeader())
       }
+      // líder NO toca mt/birthday por política (si quieres permitirlo, muévelo al bloque admin de abajo)
     } else if (isAdminLike.value) {
-      // Admin/supervisión: code/category (si superadmin), groupId, unitId, nickname
       const payload = {
         // Solo superadmin puede cambiar code/category
-        code: isSuperadmin.value ? String(form.value.code || '').toUpperCase().trim() : undefined,
-        category: isSuperadmin.value ? uiToApiCategory(form.value.categoryUi) : undefined,
-        groupId: form.value.groupId || null,
-        unitId: form.value.unitId || null,
-        nickname: (form.value.nickname ?? '').trim() || null
+        code    : isSuperadmin.value ? String(form.value.code || '').toUpperCase().trim() : undefined,
+        category: isSuperadmin.value ? uiToApiCategory(form.value.categoryUi)            : undefined,
+        groupId : form.value.groupId || null,
+        unitId  : form.value.unitId  || null,
+        nickname: (form.value.nickname ?? '').trim() || null,
+        mt      : (form.value.mt || '').trim() || null,   // 👈 NUEVO
+        birthday                                 // 👈 NUEVO
       }
-
-      // Limpia undefined para no enviar claves vacías
       Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k])
-
       await axios.put(`/admin/agents/${id}`, payload, authHeader())
     }
 
@@ -793,18 +827,10 @@ async function saveEdit () {
     closeEdit()
     await loadAgents()
   } catch (e) {
-    const data = e?.response?.data
-    console.error('saveEdit error →', {
-      status: e?.response?.status,
-      data
-    })
-    toast({ type:'error', title:'No se pudo guardar', desc: msg.value })
+    const detail = e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'Error al guardar'
+    msg.value = detail
+    toast({ type:'error', title:'No se pudo guardar', desc: detail })
   }
-}
-
-
-function authHeader(){
-  return { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }
 }
 
 async function deleteAgent(a){
@@ -1025,15 +1051,12 @@ onMounted(async () => {
   await Promise.all([loadGroups(), loadUnits(), loadMunicipalities()])
   await loadAgents()
 })
+
+watch(() => form.value.groupId, (newG) => {
+  if (!newG) { form.value.unitId = null; return }
+  const pool = isLeaderGroup.value ? myUnits.value : units.value
+  const ok = pool.some(u => String(u.id) === String(form.value.unitId) && String(u.groupId) === String(newG))
+  if (!ok) form.value.unitId = null
+})
+
 </script>
-
-<style scoped>
-.input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500; }
-.btn-primary { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700; }
-.btn-ghost { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100; }
-.label { @apply text-sm text-slate-600; }
-.card { @apply bg-white rounded-xl shadow; }
-.card-body { @apply p-4; }
-.table th, .table td { @apply whitespace-nowrap; }
-
-</style>
