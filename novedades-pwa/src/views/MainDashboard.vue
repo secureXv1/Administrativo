@@ -233,7 +233,7 @@ const isAdminView = computed(() => {
 // Filtros genéricos para el modal (ajusta las keys si usas otros nombres en MainDashboard)
 function buildCommonParams() {
   // Adapta estos params para tu contexto; date, grupo, unidad...
-  const params = { date: date.value }
+  const params = { date: fechaActual.value }
   if (selectedGroupId?.value && selectedGroupId.value !== 'all')
     params.groupId = selectedGroupId.value
   if (selectedUnitId?.value && selectedUnitId.value !== 'all')

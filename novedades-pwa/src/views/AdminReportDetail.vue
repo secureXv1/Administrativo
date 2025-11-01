@@ -11,7 +11,7 @@
 
     <main class="max-w-6xl mx-auto px-2 sm:px-4 py-6 space-y-4">
       <div v-if="loading" class="text-center py-12 text-brand-700 font-semibold">Cargando...</div>
-      <div v-else-if="!headerOk" class="text-center py-12 text-red-500">No se encontró información para los parámetros.</div>
+      <div v-else-if="!headerOk" class="text-center py-12 text-gray-500">No se encontró información para esta fecha!</div>
 
       <template v-else>
         <!-- Filtros: Fecha + Unidad -->
