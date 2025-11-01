@@ -94,84 +94,146 @@ async function vehicleHasOpenUse(vehicleId) {
    VEHICLES
 ------------------------------------------------------- */
 
-// GET /vehicles?query=&due_within=30&page=1&pageSize=100
+// GET /vehicles?query=&due_within=&page=1&pageSize=100&groupId=&unitId=&category=&estado=&onlyAssigned=1&hasOpenUse=1
 router.get(
   '/vehicles',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
     try {
-      const { query, due_within, page = 1, pageSize = 100 } = req.query;
-      const p = Math.max(parseInt(page,10)||1, 1);
+      const {
+        query,
+        due_within,
+        groupId,
+        unitId,
+        category,
+        estado,
+        onlyAssigned,
+        hasOpenUse,
+        page = 1,
+        pageSize = 100
+      } = req.query;
+
+      const p  = Math.max(parseInt(page,10)||1, 1);
       const ps = Math.min(Math.max(parseInt(pageSize,10)||100,1), 1000);
       const off = (p-1)*ps;
 
       const where = [];
       const args  = [];
 
+      // Búsqueda por placa/estado (conserva tu comportamiento)
       if (query && String(query).trim()) {
         where.push('(v.code LIKE ? OR v.estado LIKE ?)');
         const q = `%${String(query).trim()}%`;
         args.push(q, q);
       }
+
+      // Vencimientos dentro de N días (compatibilidad)
       if (!isNaN(parseInt(due_within,10))) {
         const n = Math.max(parseInt(due_within,10), 0);
-        where.push('(v.soat_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY) OR v.tecno_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY))');
+        where.push('((v.soat_date IS NOT NULL AND v.soat_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)) OR (v.tecno_date IS NOT NULL AND v.tecno_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)))');
         args.push(n, n);
+      }
+
+      // === NUEVOS FILTROS ===
+      if (groupId) {
+        where.push('v.group_id = ?');
+        args.push(Number(groupId));
+      }
+      if (unitId) {
+        where.push('v.unit_id = ?');
+        args.push(Number(unitId));
+      }
+      if (category) {
+        where.push('v.category = ?');
+        args.push(String(category));
+      }
+      if (estado) {
+        where.push('v.estado = ?');
+        args.push(String(estado));
+      }
+
+      // Vehículos con asignación vigente (hoy)
+      if (Number(onlyAssigned) === 1) {
+        where.push(`
+          EXISTS (
+            SELECT 1
+            FROM vehicle_assignments va2
+            WHERE va2.vehicle_id = v.id
+              AND (va2.end_date IS NULL OR va2.end_date > CURDATE())
+          )
+        `);
+      }
+
+      // Vehículos con uso abierto
+      if (Number(hasOpenUse) === 1) {
+        where.push(`
+          EXISTS (
+            SELECT 1
+            FROM vehicle_uses vu2
+            WHERE vu2.vehicle_id = v.id
+              AND vu2.ended_at IS NULL
+          )
+        `);
       }
 
       const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
 
-      const [rows] = await pool.query(
-        `SELECT
-            v.id,
-            v.code,
-            v.estado,
-            v.odometer,
-            v.oil_last_km,
-            v.oil_interval_km,
-            v.soat_date AS soatDate,
-            v.tecno_date AS tecnoDate,
-            v.category,
-            g.id AS groupId,
-            g.code AS groupName,
-            u.id AS unitId,
-            u.name AS unitName,
-            a.code AS agentCode,
-            a.nickname AS agentNickname,
-            EXISTS(
-              SELECT 1 FROM vehicle_uses vu WHERE vu.vehicle_id = v.id AND vu.ended_at IS NULL LIMIT 1
-            ) AS hasOpenUse
-          FROM vehicles v
-          LEFT JOIN \`group\` g ON g.id = v.group_id
-          LEFT JOIN unit u ON u.id = v.unit_id
-          LEFT JOIN vehicle_assignments va ON va.vehicle_id = v.id AND (va.end_date IS NULL OR va.end_date > CURDATE())
-          LEFT JOIN agent a ON a.id = va.agent_id
-          ${whereSql}
-          ORDER BY v.code
-          LIMIT ? OFFSET ?`,
-        [...args, ps, off]
-      );
+      // Nota: dejamos el LEFT JOIN a la asignación vigente para devolver agentCode/nickname
+      const selectSql = `
+        SELECT
+          v.id,
+          v.code,
+          v.estado,
+          v.odometer,
+          v.oil_last_km,
+          v.oil_interval_km,
+          v.soat_date  AS soatDate,
+          v.tecno_date AS tecnoDate,
+          v.category,
+          g.id   AS groupId,
+          g.code AS groupName,
+          u.id   AS unitId,
+          u.name AS unitName,
+          a.code     AS agentCode,
+          a.nickname AS agentNickname,
+          EXISTS(
+            SELECT 1 FROM vehicle_uses vu WHERE vu.vehicle_id = v.id AND vu.ended_at IS NULL
+          ) AS hasOpenUse
+        FROM vehicles v
+        LEFT JOIN \`group\` g
+               ON g.id = v.group_id
+        LEFT JOIN unit u
+               ON u.id = v.unit_id
+        LEFT JOIN vehicle_assignments va
+               ON va.vehicle_id = v.id
+              AND (va.end_date IS NULL OR va.end_date > CURDATE())
+        LEFT JOIN agent a
+               ON a.id = va.agent_id
+        ${whereSql}
+        ORDER BY v.code
+        LIMIT ? OFFSET ?`;
+
+      const countSql = `
+        SELECT COUNT(*) AS total
+        FROM vehicles v
+        ${whereSql}`;
+
+      const [rows]   = await pool.query(selectSql, [...args, ps, off]);
+      const [[{ total }]] = await pool.query(countSql, args);
 
       for (const row of rows) {
         row.agentNickname = decNullable(row.agentNickname);
         row.hasOpenUse = !!row.hasOpenUse;
-        }
+      }
 
-
-      const [[{ total }]] = await pool.query(
-        `SELECT COUNT(*) AS total
-         FROM vehicles v
-         ${whereSql}`, args
-      );
-
-      res.json({ page:p, pageSize:ps, total: Number(total)||0, items: rows });
+      res.json({ page: p, pageSize: ps, total: Number(total)||0, items: rows });
     } catch (e) {
+      console.error('[GET /vehicles] error', e);
       res.status(500).json({ error:'VehiclesListError', detail: e.message });
     }
   }
 );
-
 
 // POST /vehicles  (crear)
 router.post(
