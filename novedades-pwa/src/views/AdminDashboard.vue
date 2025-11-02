@@ -1314,9 +1314,9 @@ async function descargarExcel () {
     })
 
     const header = [
-      'codigo_agente','grupo','unidad',
-      'novedad','descripcion','ubicacion',
-      'fecha_inicio','fecha_fin','M.T'
+      'codigo_agente','novedad','descripcion',
+      'fecha_inicio','fecha_fin','grupo','unidad',
+      'ubicacion','M.T'
     ]
 
     const ws = XLSX.utils.json_to_sheet(normalizado, { header })
