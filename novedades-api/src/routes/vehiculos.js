@@ -57,28 +57,33 @@ const requireRole = (...allowed) => (req, res, next) => {
   next()
 }
 
-
-
 /* -------------------------------------------------------
    Helpers de negocio
 ------------------------------------------------------- */
 
 // Alcance por rol para operaciones con agente
 async function validateAgentScope(req, agentId) {
-  const role = String(req.user?.role || '').toLowerCase()
-  if (role === 'superadmin' || role === 'supervision') return true
+  const role = String(req.user?.role || '').toLowerCase();
+
+  // ✅ Si el que consulta es el propio agente -> permitir
+  const requesterAgentId = req.user?.agentId ?? req.user?.agent_id ?? null;
+  if (role === 'agent' && requesterAgentId && Number(requesterAgentId) === Number(agentId)) {
+    return true;
+  }
+
+  if (role === 'superadmin' || role === 'supervision') return true;
 
   if (role === 'leader_group') {
-    const [[row]] = await pool.query('SELECT groupId FROM agent WHERE id=? LIMIT 1', [agentId])
-    return row && Number(row.groupId) === Number(req.user.groupId)
+    const [[row]] = await pool.query('SELECT groupId FROM agent WHERE id=? LIMIT 1', [agentId]);
+    return row && Number(row.groupId) === Number(req.user.groupId);
   }
 
-  if (role === 'leader_unit' || role === 'agent') {
-    const [[row]] = await pool.query('SELECT unitId FROM agent WHERE id=? LIMIT 1', [agentId])
-    return row && Number(row.unitId) === Number(req.user.unitId)
+  if (role === 'leader_unit') {
+    const [[row]] = await pool.query('SELECT unitId FROM agent WHERE id=? LIMIT 1', [agentId]);
+    return row && Number(row.unitId) === Number(req.user.unitId);
   }
 
-  return false
+  return false;
 }
 
 // Saber si un vehículo tiene uso abierto

@@ -574,9 +574,72 @@
 </template>
 
 <script setup>
+
 import axios from 'axios'
 import { http } from '@/lib/http'
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+
+// Cliente dedicado a /login
+const httpLogin = axios.create({ baseURL: '/login', timeout: 20000 })
+httpLogin.interceptors.request.use((config) => {
+  const t = localStorage.getItem('token')
+  if (t) config.headers.Authorization = 'Bearer ' + t
+  return config
+})
+httpLogin.interceptors.response.use(
+  (r) => r,
+  (err) => {
+    const msg =
+      err?.response?.data?.error ||
+      err?.response?.data?.detail ||
+      err?.message || 'Network error'
+    console.error('[HTTP /login]', err?.config?.method?.toUpperCase(), err?.config?.url, msg)
+    return Promise.reject(err)
+  }
+)
+
+/**
+ * Prefer /login y si:
+ *  - status === 404
+ *  - o la respuesta NO parece JSON (content-type text/html, etc)
+ * entonces cae al raíz (http).
+ */
+async function preferLoginThenRoot(method, path, bodyOrOpts, maybeOpts){
+  const call = async (client, m, p, b, o) =>
+    client[m](p, ...(m==='get'||m==='delete' ? [o] : [b, o]))
+
+  const [body, opts] = (method==='get'||method==='delete')
+    ? [null, bodyOrOpts]
+    : [bodyOrOpts, maybeOpts]
+
+  try {
+    const res = await call(httpLogin, method, path, body, opts)
+    const ct = String(res?.headers?.['content-type'] || '')
+    const looksJson = ct.includes('application/json') || typeof res?.data === 'object'
+    if (!looksJson) {
+      // fuerza fallback si nos devolvieron HTML del SPA
+      throw { __forceFallback: true }
+    }
+    return res
+  } catch (e){
+    if (e?.response?.status === 404 || e?.__forceFallback) {
+      // Fallback al raíz
+      return await call(http, method, path, body, opts)
+    }
+    throw e
+  }
+}
+// === Helpers "login-only" (NO fallback) ===
+// ¡IMPORTANTE!: pasa rutas SIN prefijo /login, por ejemplo '/agents/me'
+const apiGetLogin    = (p, o) => httpLogin.get(p, o)
+const apiPostLogin   = (p, b, o) => httpLogin.post(p, b, o)
+const apiPatchLogin  = (p, b, o) => httpLogin.patch(p, b, o)
+const apiDeleteLogin = (p, o) => httpLogin.delete(p, o)
+
+const apiGet    = (p,o)     => preferLoginThenRoot('get',    p, o)
+const apiPost   = (p,b,o)   => preferLoginThenRoot('post',   p, b, o)
+const apiPatch  = (p,b,o)   => preferLoginThenRoot('patch',  p, b, o)
+const apiDelete = (p,o)     => preferLoginThenRoot('delete', p, o)
 
 /* ===== Sidebar / navegación ===== */
 const section = ref('novedades') // 'novedades' | 'vehiculos' | 'servicios'
@@ -595,7 +658,7 @@ const titleBySection = computed(() => ({
 
 /* ===== Usuario ===== */
 const me = ref(null)
-async function loadMe(){ const { data } = await http.get('/me'); me.value = data }
+async function loadMe(){ const { data } = await apiGet('/me'); me.value = data }
 function logout(){ localStorage.removeItem('token'); window.location.href='/login/' }
 
 /* ===== Vehículos (tu lógica tal cual) ===== */
@@ -950,12 +1013,12 @@ async function checkOpenUse(){
 async function startUse(){
   if (!selectedVehicle.value) return
   if (openUseId.value) return alert('Ya hay un uso abierto para este vehículo.')
-  if (!me.value?.agentId) return alert('No se pudo determinar tu agente.')
+  if (!meAgentId.value) return alert('No se pudo determinar tu agente.')
   starting.value = true
   try {
     await http.post('/vehicles/uses/start', {
       vehicle_id: selectedVehicle.value.id,
-      agent_id: me.value.agentId,
+      agent_id: meAgentId.value,
       odometer_start: form.value.odometer_start || null
     })
     await Promise.all([checkOpenUse(), loadUsesForSelected(), loadStagingNovedades()])
@@ -983,7 +1046,12 @@ async function loadUsesForSelected(){
   uses.value = []
   try {
     if (!selectedVehicle.value || !meAgentId.value) return
-    const { data } = await http.get('/vehicles/uses', { params: { vehicle_id: selectedVehicle.value.id, agent_id: me.value.agentId } })
+    const { data } = await http.get('/vehicles/uses', {
+      params: {
+        vehicle_id: selectedVehicle.value.id,
+        agent_id: meAgentId.value
+      }
+    })
     uses.value = data.items || []
   } finally { loadingUses.value = false }
 }
@@ -1044,7 +1112,7 @@ async function loadHistory () {
 
   for (const c of candidates) {
     try {
-      const { data } = await http.get(c.url, { params: c.params })
+      const { data } = await apiGet(c.url, { params: c.params })
       historyItems.value = normalize(data)
       break
     } catch {}
@@ -1192,12 +1260,7 @@ async function onSubmitPassword () {
   }
   submittingPwd.value = true
   try {
-    await axios.post('/me/change-password', {
-      oldPassword: formPwd.value.old,
-      newPassword: formPwd.value.new1
-    }, {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-    })
+    await apiPost('/me/change-password', { oldPassword: formPwd.value.old, newPassword: formPwd.value.new1 })
     pwdMsg.value = 'Contraseña actualizada correctamente.'
     pwdMsgOk.value = true
     // Limpia el form **después de un pequeño delay**, así el usuario ve el mensaje
@@ -1218,27 +1281,71 @@ async function onSubmitPassword () {
 }
 
 /* ===== Init ===== */
-// carga inicial
+async function ensureAgentId () {
+  if (meAgentId.value) return
+
+  // 1) /login/me primero (ya usa apiGet que prefiere /login)
+  if (!me.value) await loadMe()
+  if (meAgentId.value) return
+
+  // 2) Fallbacks "login-only" (evita caer al raíz)
+  const loginCandidates = [
+    '/agents/me',
+    '/agents/self',
+    '/agents?me=1'
+  ]
+  for (const url of loginCandidates) {
+    try {
+      // 👇 esto pega a /login/agents/me (porque httpLogin tiene baseURL '/login')
+      const { data } = await apiGetLogin(url)
+      const a = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      const id = a?.id ?? a?.agentId ?? a?.agent_id
+      if (id) {
+        me.value = { ...(me.value || {}), agentId: id }
+        return
+      }
+    } catch {/* sigue */}
+  }
+
+  // 3) (opcional) último intento con raíz por si el deploy cambia
+  const rootCandidates = [
+    '/agents/me',
+    '/agents/self',
+    '/agents?me=1'
+  ]
+  for (const url of rootCandidates) {
+    try {
+      const { data } = await apiGet(url) // este sí puede caer al raíz
+      const a = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      const id = a?.id ?? a?.agentId ?? a?.agent_id
+      if (id) {
+        me.value = { ...(me.value || {}), agentId: id }
+        return
+      }
+    } catch {/* nada */}
+  }
+}
+
 onMounted(async () => {
   await loadMe()
-  await nextTick() 
+  await ensureAgentId()
+  await nextTick()
   await loadDailyHistory()
   await loadMyActiveAssignments()
   await loadMyOpenUses()
 })
 
-watch(() => meAgentId.value, (id) => {
-  if (id) {
-    if (!myOpenUses.value.length && !loadingOpenUses.value) loadMyOpenUses()
-    if (!myAssignments.value.length && !loadingAssignments.value) loadMyActiveAssignments()
-  }
+watch(() => meAgentId.value, async (id) => {
+  if (!id) return
+  if (!myOpenUses.value.length && !loadingOpenUses.value) await loadMyOpenUses()
+  if (!myAssignments.value.length && !loadingAssignments.value) await loadMyActiveAssignments()
 })
 
-watch(section, (s) => {
-  if (s === 'vehiculos') {
-    if (!myOpenUses.value.length && !loadingOpenUses.value) loadMyOpenUses()
-    if (!myAssignments.value.length && !loadingAssignments.value) loadMyActiveAssignments()
-  }
+watch(section, async (s) => {
+  if (s !== 'vehiculos') return
+  if (!meAgentId.value) await ensureAgentId()
+  if (!myOpenUses.value.length && !loadingOpenUses.value) await loadMyOpenUses()
+  if (!myAssignments.value.length && !loadingAssignments.value) await loadMyActiveAssignments()
 })
 
 </script>
