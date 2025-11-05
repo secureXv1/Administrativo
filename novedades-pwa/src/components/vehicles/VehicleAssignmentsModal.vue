@@ -129,7 +129,7 @@
                   class="px-3 py-1 rounded-md text-white text-xs font-semibold bg-red-600 hover:bg-red-700
                         focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 transition"
                 >
-                  Cerrar
+                  Finalizar asignación
                 </button>
               </td>
             </tr>

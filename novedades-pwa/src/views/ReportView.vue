@@ -184,9 +184,7 @@
                     <td class="py-2 px-3">
                       <input
                         class="w-full sm:w-40 md:w-32 lg:w-28 xl:w-28 rounded-lg border px-3 py-2 shadow-sm focus:ring-2"
-                        :class="isMtInvalid(a.mt)
-                          ? 'border-rose-500 focus:ring-rose-200 bg-white'
-                          : 'border-slate-300 focus:ring-indigo-200 bg-white'"
+                        
                         v-model.trim="a.mt"
                         placeholder="0000-5555-6666"
                         maxlength="120"

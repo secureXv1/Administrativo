@@ -169,16 +169,44 @@
                         <th class="text-left py-2 px-3 font-semibold">Inicio</th>
                         <th class="text-left py-2 px-3 font-semibold">Km inicio</th>
                         <th class="text-left py-2 px-3 font-semibold">Nota</th>
+                        <th class="text-left py-2 px-3 font-semibold">Aceptación</th> <!-- NUEVO -->
+                        <th class="text-left py-2 px-3 font-semibold"></th>           <!-- Acciones -->
                       </tr>
                     </thead>
                     <tbody class="bg-white">
                       <tr v-for="row in myAssignments" :key="row.id" class="border-t">
-                        <td class="py-2 px-3 font-medium">{{ row.vehicle.code }} ({{ row.vehicle.sigla }})</td>
+                        <td class="py-2 px-3 font-medium">{{ row.vehicle.code }}</td>
                         <td class="py-2 px-3">{{ row.start_date }}</td>
                         <td class="py-2 px-3">{{ row.odometer_start ?? '—' }}</td>
+                        <td class="py-2 px-3">{{ row.notes || '—' }}</td>
+
                         <td class="py-2 px-3">
-                          <span v-if="row.notes?.trim()">{{ row.notes }}</span>
-                          <span v-else class="text-slate-400">—</span>
+                          <div v-if="row.agent_ack_at">
+                            <span class="text-emerald-700 text-xs font-medium">Aceptada</span>
+                            <div class="text-xs text-slate-600">
+                              {{ row.agent_ack_note || '—' }}
+                            </div>
+                          </div>
+                          <div v-else>
+                            <span class="text-amber-600 text-xs font-medium">Pendiente</span>
+                          </div>
+                        </td>
+
+                        <td class="py-2 px-3">
+                          <button
+                            v-if="!row.agent_ack_at"
+                            class="px-3 py-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 text-sm"
+                            @click="openAccept(row)"
+                          >
+                            Aceptar
+                          </button>
+                          <button
+                            v-else-if="row.agent_ack_at && !row.agent_ack_extra_at"
+                            class="px-3 py-1.5 rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 text-sm"
+                            @click="openAckExtraModal(row)"
+                          >
+                            Nota extra
+                          </button>
                         </td>
                       </tr>
                     </tbody>
@@ -213,7 +241,7 @@
                     <tbody class="bg-white">
                       <tr v-for="u in myOpenUses" :key="u.id" class="border-t">
                         <td class="py-2 px-3 font-medium">
-                          {{ u.vehicle?.code }} <span v-if="u.vehicle?.sigla">({{ u.vehicle.sigla }})</span>
+                          {{ u.vehicle?.code }}
                         </td>
                         <td class="py-2 px-3">{{ u.started_at }}</td>
                         <td class="py-2 px-3">{{ u.odometer_start ?? '—' }}</td>
@@ -240,7 +268,7 @@
                         v-model="vehicleQuery"
                         @input="searchVehicles"
                         class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Ej: 06-004 o 004"
+                        placeholder="Escribe código del vehículo (ej: 06-004)"
                         autocomplete="off"
                       />
                       <div
@@ -254,7 +282,7 @@
                           class="w-full text-left px-3 py-2 hover:bg-slate-50"
                           @click="pickVehicle(v)"
                         >
-                          <div class="font-medium text-sm">{{ v.code }} — {{ v.sigla }}</div>
+                          <div class="font-medium text-sm">{{ v.code }}</div>
                           <div class="text-[11px] text-slate-500">Grupo: {{ v.groupName || '—' }} · Unidad: {{ v.unitName || '—' }}</div>
                         </button>
                         <div v-if="!vehicleResults.length" class="px-3 py-2 text-sm text-slate-500">Sin resultados…</div>
@@ -265,7 +293,7 @@
                   <div class="md:col-span-1">
                     <label class="text-xs font-medium text-slate-600 mb-1 block">Seleccionado</label>
                     <div class="h-[42px] px-3 rounded-lg border flex items-center text-sm bg-slate-50">
-                      <span v-if="selectedVehicle">{{ selectedVehicle.code }} ({{ selectedVehicle.sigla }})</span>
+                      <span v-if="selectedVehicle">{{ selectedVehicle.code }}</span>
                       <span v-else class="text-slate-400">Ninguno</span>
                     </div>
                   </div>
@@ -495,12 +523,123 @@
       </div>
     </div>
   </div>
+  <!-- al final del template -->
+  <div v-if="showAccept" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">
+    <div class="bg-white rounded-2xl p-6 w-[96vw] max-w-md relative">
+      <button class="absolute top-2 right-2 text-xl text-slate-500" @click="closeAccept">&times;</button>
+      <h3 class="font-semibold text-lg mb-3">Aceptar asignación</h3>
+      <p class="text-sm text-slate-600 mb-3">
+        Confirma la aceptación de la asignación y registra una nota (solo se puede enviar una vez).
+      </p>
+
+      <div>
+        <label class="label">Nota (obligatoria, máx. 300)</label>
+        <textarea v-model="acceptNote" class="input w-full" rows="4" maxlength="300" />
+        <p class="text-xs text-slate-500 mt-1">{{ (acceptNote||'').length }}/300</p>
+        <p v-if="acceptErr" class="text-sm text-rose-600 mt-2">{{ acceptErr }}</p>
+      </div>
+
+      <div class="flex gap-3 pt-3">
+        <button class="btn-secondary flex-1" @click="closeAccept" :disabled="accepting">Cancelar</button>
+        <button class="btn-primary flex-1" @click="submitAccept" :disabled="accepting || !(acceptNote||'').trim()">
+          {{ accepting ? 'Enviando…' : 'Aceptar' }}
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- Modal Nota Extra -->
+  <div v-if="showAckExtra" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">
+    <div class="bg-white rounded-2xl p-6 w-[96vw] max-w-md relative">
+      <button class="absolute top-2 right-2 text-xl text-slate-500" @click="closeAckExtra">&times;</button>
+      <h3 class="font-semibold text-lg mb-3">Agregar nota extra</h3>
+      <p class="text-sm text-slate-600 mb-3">
+        Puedes dejar una nota complementaria una única vez después de aceptar la asignación.
+      </p>
+
+      <div>
+        <label class="label">Nota extra (obligatoria, máx. 500)</label>
+        <textarea v-model="ackExtraNote" class="input w-full" rows="4" maxlength="500" />
+        <p class="text-xs text-slate-500 mt-1">{{ (ackExtraNote||'').length }}/500</p>
+        <p v-if="ackExtraErr" class="text-sm text-rose-600 mt-2">{{ ackExtraErr }}</p>
+      </div>
+
+      <div class="flex gap-3 pt-3">
+        <button class="btn-secondary flex-1" @click="closeAckExtra" :disabled="sendingAckExtra">Cancelar</button>
+        <button class="btn-primary flex-1" @click="submitAckExtra" :disabled="sendingAckExtra || !(ackExtraNote||'').trim()">
+          {{ sendingAckExtra ? 'Enviando…' : 'Guardar' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
+
 import axios from 'axios'
 import { http } from '@/lib/http'
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+
+// Cliente dedicado a /login
+const httpLogin = axios.create({ baseURL: '/login', timeout: 20000 })
+httpLogin.interceptors.request.use((config) => {
+  const t = localStorage.getItem('token')
+  if (t) config.headers.Authorization = 'Bearer ' + t
+  return config
+})
+httpLogin.interceptors.response.use(
+  (r) => r,
+  (err) => {
+    const msg =
+      err?.response?.data?.error ||
+      err?.response?.data?.detail ||
+      err?.message || 'Network error'
+    console.error('[HTTP /login]', err?.config?.method?.toUpperCase(), err?.config?.url, msg)
+    return Promise.reject(err)
+  }
+)
+
+/**
+ * Prefer /login y si:
+ *  - status === 404
+ *  - o la respuesta NO parece JSON (content-type text/html, etc)
+ * entonces cae al raíz (http).
+ */
+async function preferLoginThenRoot(method, path, bodyOrOpts, maybeOpts){
+  const call = async (client, m, p, b, o) =>
+    client[m](p, ...(m==='get'||m==='delete' ? [o] : [b, o]))
+
+  const [body, opts] = (method==='get'||method==='delete')
+    ? [null, bodyOrOpts]
+    : [bodyOrOpts, maybeOpts]
+
+  try {
+    const res = await call(httpLogin, method, path, body, opts)
+    const ct = String(res?.headers?.['content-type'] || '')
+    const looksJson = ct.includes('application/json') || typeof res?.data === 'object'
+    if (!looksJson) {
+      // fuerza fallback si nos devolvieron HTML del SPA
+      throw { __forceFallback: true }
+    }
+    return res
+  } catch (e){
+    if (e?.response?.status === 404 || e?.__forceFallback) {
+      // Fallback al raíz
+      return await call(http, method, path, body, opts)
+    }
+    throw e
+  }
+}
+// === Helpers "login-only" (NO fallback) ===
+// ¡IMPORTANTE!: pasa rutas SIN prefijo /login, por ejemplo '/agents/me'
+const apiGetLogin    = (p, o) => httpLogin.get(p, o)
+const apiPostLogin   = (p, b, o) => httpLogin.post(p, b, o)
+const apiPatchLogin  = (p, b, o) => httpLogin.patch(p, b, o)
+const apiDeleteLogin = (p, o) => httpLogin.delete(p, o)
+
+const apiGet    = (p,o)     => preferLoginThenRoot('get',    p, o)
+const apiPost   = (p,b,o)   => preferLoginThenRoot('post',   p, b, o)
+const apiPatch  = (p,b,o)   => preferLoginThenRoot('patch',  p, b, o)
+const apiDelete = (p,o)     => preferLoginThenRoot('delete', p, o)
 
 /* ===== Sidebar / navegación ===== */
 const section = ref('novedades') // 'novedades' | 'vehiculos' | 'servicios'
@@ -519,7 +658,7 @@ const titleBySection = computed(() => ({
 
 /* ===== Usuario ===== */
 const me = ref(null)
-async function loadMe(){ const { data } = await http.get('/me'); me.value = data }
+async function loadMe(){ const { data } = await apiGet('/me'); me.value = data }
 function logout(){ localStorage.removeItem('token'); window.location.href='/login/' }
 
 /* ===== Vehículos (tu lógica tal cual) ===== */
@@ -549,6 +688,85 @@ const loadingNovedades = ref(false)
 const newNovedad = ref({ description: '', file: null })
 
 const openUseNovedades = ref([])
+
+const showAccept   = ref(false)
+const acceptItem   = ref(null)
+const acceptNote   = ref('')
+const acceptErr    = ref('')
+const accepting    = ref(false)
+
+function openAccept(row){
+  acceptItem.value = row
+  acceptNote.value = ''
+  acceptErr.value = ''
+  showAccept.value = true
+}
+function closeAccept(){
+  showAccept.value = false
+  acceptItem.value = null
+  acceptNote.value = ''
+  acceptErr.value = ''
+}
+
+async function submitAccept(){
+  acceptErr.value = ''
+  const note = (acceptNote.value || '').trim()
+  if (!note) { acceptErr.value = 'La nota es obligatoria.'; return }
+  if (note.length > 300) { acceptErr.value = 'Máximo 300 caracteres.'; return }
+  if (!acceptItem.value?.id) { acceptErr.value = 'Asignación inválida.'; return }
+
+  accepting.value = true
+  try {
+    // ⬇️ NUEVA RUTA /ack
+    await http.patch(`/vehicles/assignments/${acceptItem.value.id}/ack`, { note })
+    showAccept.value = false
+    await loadMyActiveAssignments()
+  } catch (e) {
+    acceptErr.value = e?.response?.data?.error || e?.message || 'No se pudo aceptar la asignación.'
+  } finally {
+    accepting.value = false
+  }
+}
+
+const showAckExtra   = ref(false)
+const ackExtraItem   = ref(null)
+const ackExtraNote   = ref('')
+const ackExtraErr    = ref('')
+const sendingAckExtra = ref(false)
+
+function openAckExtraModal(row){
+  ackExtraItem.value = row
+  ackExtraNote.value = ''
+  ackExtraErr.value = ''
+  showAckExtra.value = true
+}
+function closeAckExtra(){
+  showAckExtra.value = false
+  ackExtraItem.value = null
+  ackExtraNote.value = ''
+  ackExtraErr.value = ''
+}
+
+async function submitAckExtra(){
+  ackExtraErr.value = ''
+  const note = (ackExtraNote.value || '').trim()
+  if (!note) { ackExtraErr.value = 'La nota extra es obligatoria.'; return }
+  if (note.length > 500) { ackExtraErr.value = 'Máximo 500 caracteres.'; return }
+  if (!ackExtraItem.value?.id) { ackExtraErr.value = 'Asignación inválida.'; return }
+
+  sendingAckExtra.value = true
+  try {
+    // ⬇️ NUEVA RUTA /extra
+    await http.patch(`/vehicles/assignments/${ackExtraItem.value.id}/extra`, { note })
+    showAckExtra.value = false
+    await loadMyActiveAssignments()
+  } catch (e) {
+    ackExtraErr.value = e?.response?.data?.error || e?.message || 'No se pudo guardar la nota extra.'
+  } finally {
+    sendingAckExtra.value = false
+  }
+}
+
 
 function hideDropdownSoon(){ setTimeout(()=>vehicleResultsVisible.value=false,150) }
 function onPhoto(e){ newNovedad.value.file = e.target.files?.[0] || null }
@@ -582,10 +800,10 @@ async function loadOpenUseNovedades(){
   openUseNovedades.value = data.items || []
 }
 
-async function loadMyActiveAssignments() {
+async function loadMyActiveAssignments () {
   loadingAssignments.value = true
   try {
-    // Asegura que /me esté cargado para obtener el id del agente
+    // 1) Asegura /me para tomar agentId
     if (!(me.value?.agentId ?? me.value?.agent_id)) {
       await loadMe()
     }
@@ -595,69 +813,87 @@ async function loadMyActiveAssignments() {
       return
     }
 
-    // --- (Opcional) Si tienes endpoint directo por agente, descomenta y listo ---
-    /*
-    const { data } = await http.get(`/agents/${agentIdVal}/assignments`, { params: { active: 1, pageSize: 500 } })
-    const items = data?.items ?? data ?? []
-    myAssignments.value = items.map(a => ({
-      ...a,
-      start_date: a.start_date ?? a.startDate ?? a.started_at ?? a.startedAt ?? a.start ?? '',
-      odometer_start: a.odometer_start ?? a.odometerStart ?? a.km_inicio ?? a.kmStart ?? null,
-      notes: a.notes ?? a.note ?? a.observation ?? '',
-      vehicle: a.vehicle || { id: a.vehicle_id, code: a.vehicle_code, sigla: a.sigla ?? a.vehicle_sigla }
-    })).sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''))
-    return
-    */
+    // Normalizador robusto
+    const normalizeAssignment = (a, vehicleData = null) => {
+      const endRaw =
+        a.end_date ?? a.endDate ?? a.ended_at ?? a.endedAt ?? a.end ?? null
 
-    // --- Fallback: recorrer vehículos como antes, con comparaciones tolerantes ---
-    const { data: vehs } = await http.get('/vehicles', { params: { pageSize: 500 } })
-    const vehicles = vehs?.items ?? []
+      // true si NO hay fin (soporta null, undefined, '', '0000-00-00', 'null', 0)
+      const isOpen = (
+        endRaw === null ||
+        endRaw === undefined ||
+        endRaw === '' ||
+        endRaw === false ||
+        endRaw === 0 ||
+        (typeof endRaw === 'string' && (
+          endRaw.trim() === '' ||
+          endRaw.trim().toLowerCase() === 'null' ||
+          endRaw.startsWith('0000-00-00')
+        ))
+      )
+
+      return {
+        id: a.id,
+        start_date: a.start_date ?? a.startDate ?? '',
+        odometer_start: a.odometer_start ?? a.odometerStart ?? null,
+        notes: a.notes ?? a.note ?? '',
+        // Backend actual usa accept_*; los agent_ack_* quedan para compatibilidad futura
+        agent_ack_at: a.accept_at ?? a.agent_ack_at ?? null,
+        agent_ack_note: a.accept_note ?? a.agent_ack_note ?? null,
+        agent_ack_extra_note: a.agent_ack_extra_note ?? null,
+        agent_ack_extra_at: a.agent_ack_extra_at ?? null,
+        vehicle: vehicleData || {
+          id: a.vehicle_id ?? a.vehicleId ?? null,
+          code: a.vehicle_code ?? a.code ?? '',
+        },
+        isOpen
+      }
+    }
+
+    // 2) Plan A (si algún día agregas /agents/:id/assignments)
+    try {
+      const { data } = await http.get(`/agents/${agentIdVal}/assignments`, {
+        params: { active: 1, pageSize: 500 }
+      })
+      const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+      if (list.length) {
+        myAssignments.value = list
+          .map(a => normalizeAssignment(a, a.vehicle))
+          .filter(a => a.isOpen)
+          .sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''))
+        return
+      }
+    } catch { /* no existe → seguimos */ }
+
+    // 3) Plan B (robusto y acotado): primero pido solo vehículos con asignación vigente
+    const { data: vehsRes } = await http.get('/vehicles', {
+      params: { pageSize: 500, onlyAssigned: 1 } // ⚡ evita recorrer todo el parque
+    })
+    const vehicles = Array.isArray(vehsRes?.items) ? vehsRes.items : []
     const out = []
 
-    await Promise.all(vehicles.map(async v => {
+    await Promise.all(vehicles.map(async (v) => {
       try {
-        const { data: asg } = await http.get(`/vehicles/${v.id}/assignments`, { params: { pageSize: 500 } })
-        const list = asg?.items ?? asg ?? []
-        list.forEach(a => {
-          const aAgent = a.agentId ?? a.agent_id ?? a.agent?.id
-          const endRaw = a.end_date ?? a.endDate ?? a.ended_at ?? a.endedAt ?? a.end
-
-          // isOpen compatible con múltiples “falsy” que tu backend puede usar
-          const isOpen =
-            endRaw === null ||
-            endRaw === undefined ||
-            endRaw === '' ||
-            endRaw === false ||
-            endRaw === 0 ||
-            (typeof endRaw === 'string' && endRaw.trim() === '') ||
-            (typeof endRaw === 'string' && endRaw.startsWith('0000-00-00'))
-
-          // Comparación tolerante (== a propósito para string/number)
-          if ((aAgent ?? '') == (agentIdVal ?? '')) {
-            if (isOpen) {
-              out.push({
-                ...a,
-                start_date: a.start_date ?? a.startDate ?? a.started_at ?? a.startedAt ?? a.start ?? '',
-                odometer_start: a.odometer_start ?? a.odometerStart ?? a.km_inicio ?? a.kmStart ?? null,
-                notes: a.notes ?? a.note ?? a.observation ?? '',
-                vehicle: {
-                  id: v.id,
-                  code: v.code ?? v.vehicle_code ?? '',
-                  sigla: v.sigla ?? v.short ?? v.alias ?? v.vehicle_sigla ?? ''
-                }
-              })
-            }
+        const { data: asgRes } = await http.get(`/vehicles/${v.id}/assignments`, { params: { pageSize: 200 } })
+        const list = Array.isArray(asgRes?.items) ? asgRes.items : (Array.isArray(asgRes) ? asgRes : [])
+        for (const a of list) {
+          const aAgent = a.agent_id ?? a.agentId ?? a.agent?.id
+          // comparación tolerante de tipos
+          if (String(aAgent) === String(agentIdVal)) {
+            const item = normalizeAssignment(a, { id: v.id, code: v.code })
+            if (item.isOpen) out.push(item)
           }
-        })
-      } catch {}
+        }
+      } catch { /* ignorar errores por vehículo */ }
     }))
 
-    out.sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''))
+    out.sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''))
     myAssignments.value = out
   } finally {
     loadingAssignments.value = false
   }
 }
+
 
 async function loadMyOpenUses() {
   loadingOpenUses.value = true
@@ -711,14 +947,13 @@ function mapUseRow(u, vehOpt) {
   const notes = u.notes ?? u.note ?? u.observation ?? ''
   const v = u.vehicle || vehOpt || {}
   const vCode = v.code ?? u.vehicle_code ?? ''
-  const vSigla = v.sigla ?? v.short ?? v.alias ?? u.vehicle_sigla ?? ''
   const vId = v.id ?? u.vehicle_id
   return {
     id: u.id,
     started_at: started,
     odometer_start: odoStart,
     notes,
-    vehicle: { id: vId, code: vCode, sigla: vSigla }
+    vehicle: { id: vId, code: vCode }
   }
 }
 
@@ -736,7 +971,7 @@ function searchVehicles(){
 
 async function pickVehicle(v){
   selectedVehicle.value = v
-  vehicleQuery.value = `${v.code} — ${v.sigla}`
+  vehicleQuery.value = `${v.code}`
   vehicleResultsVisible.value = false
   await afterSelectVehicle()
 }
@@ -778,12 +1013,12 @@ async function checkOpenUse(){
 async function startUse(){
   if (!selectedVehicle.value) return
   if (openUseId.value) return alert('Ya hay un uso abierto para este vehículo.')
-  if (!me.value?.agentId) return alert('No se pudo determinar tu agente.')
+  if (!meAgentId.value) return alert('No se pudo determinar tu agente.')
   starting.value = true
   try {
     await http.post('/vehicles/uses/start', {
       vehicle_id: selectedVehicle.value.id,
-      agent_id: me.value.agentId,
+      agent_id: meAgentId.value,
       odometer_start: form.value.odometer_start || null
     })
     await Promise.all([checkOpenUse(), loadUsesForSelected(), loadStagingNovedades()])
@@ -811,7 +1046,12 @@ async function loadUsesForSelected(){
   uses.value = []
   try {
     if (!selectedVehicle.value || !meAgentId.value) return
-    const { data } = await http.get('/vehicles/uses', { params: { vehicle_id: selectedVehicle.value.id, agent_id: me.value.agentId } })
+    const { data } = await http.get('/vehicles/uses', {
+      params: {
+        vehicle_id: selectedVehicle.value.id,
+        agent_id: meAgentId.value
+      }
+    })
     uses.value = data.items || []
   } finally { loadingUses.value = false }
 }
@@ -872,7 +1112,7 @@ async function loadHistory () {
 
   for (const c of candidates) {
     try {
-      const { data } = await http.get(c.url, { params: c.params })
+      const { data } = await apiGet(c.url, { params: c.params })
       historyItems.value = normalize(data)
       break
     } catch {}
@@ -1020,12 +1260,7 @@ async function onSubmitPassword () {
   }
   submittingPwd.value = true
   try {
-    await axios.post('/me/change-password', {
-      oldPassword: formPwd.value.old,
-      newPassword: formPwd.value.new1
-    }, {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-    })
+    await apiPost('/me/change-password', { oldPassword: formPwd.value.old, newPassword: formPwd.value.new1 })
     pwdMsg.value = 'Contraseña actualizada correctamente.'
     pwdMsgOk.value = true
     // Limpia el form **después de un pequeño delay**, así el usuario ve el mensaje
@@ -1046,27 +1281,71 @@ async function onSubmitPassword () {
 }
 
 /* ===== Init ===== */
-// carga inicial
+async function ensureAgentId () {
+  if (meAgentId.value) return
+
+  // 1) /login/me primero (ya usa apiGet que prefiere /login)
+  if (!me.value) await loadMe()
+  if (meAgentId.value) return
+
+  // 2) Fallbacks "login-only" (evita caer al raíz)
+  const loginCandidates = [
+    '/agents/me',
+    '/agents/self',
+    '/agents?me=1'
+  ]
+  for (const url of loginCandidates) {
+    try {
+      // 👇 esto pega a /login/agents/me (porque httpLogin tiene baseURL '/login')
+      const { data } = await apiGetLogin(url)
+      const a = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      const id = a?.id ?? a?.agentId ?? a?.agent_id
+      if (id) {
+        me.value = { ...(me.value || {}), agentId: id }
+        return
+      }
+    } catch {/* sigue */}
+  }
+
+  // 3) (opcional) último intento con raíz por si el deploy cambia
+  const rootCandidates = [
+    '/agents/me',
+    '/agents/self',
+    '/agents?me=1'
+  ]
+  for (const url of rootCandidates) {
+    try {
+      const { data } = await apiGet(url) // este sí puede caer al raíz
+      const a = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      const id = a?.id ?? a?.agentId ?? a?.agent_id
+      if (id) {
+        me.value = { ...(me.value || {}), agentId: id }
+        return
+      }
+    } catch {/* nada */}
+  }
+}
+
 onMounted(async () => {
   await loadMe()
-  await nextTick() 
+  await ensureAgentId()
+  await nextTick()
   await loadDailyHistory()
   await loadMyActiveAssignments()
   await loadMyOpenUses()
 })
 
-watch(() => meAgentId.value, (id) => {
-  if (id) {
-    if (!myOpenUses.value.length && !loadingOpenUses.value) loadMyOpenUses()
-    if (!myAssignments.value.length && !loadingAssignments.value) loadMyActiveAssignments()
-  }
+watch(() => meAgentId.value, async (id) => {
+  if (!id) return
+  if (!myOpenUses.value.length && !loadingOpenUses.value) await loadMyOpenUses()
+  if (!myAssignments.value.length && !loadingAssignments.value) await loadMyActiveAssignments()
 })
 
-watch(section, (s) => {
-  if (s === 'vehiculos') {
-    if (!myOpenUses.value.length && !loadingOpenUses.value) loadMyOpenUses()
-    if (!myAssignments.value.length && !loadingAssignments.value) loadMyActiveAssignments()
-  }
+watch(section, async (s) => {
+  if (s !== 'vehiculos') return
+  if (!meAgentId.value) await ensureAgentId()
+  if (!myOpenUses.value.length && !loadingOpenUses.value) await loadMyOpenUses()
+  if (!myAssignments.value.length && !loadingAssignments.value) await loadMyActiveAssignments()
 })
 
 </script>

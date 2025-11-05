@@ -1,31 +1,113 @@
 <template>
   <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <div class="card-body flex items-center justify-between">
-      <h2 class="font-semibold text-slate-800">Gestión de vehículos</h2>
-      <div class="flex gap-2">
-        <button class="btn-secondary" @click="activeTab='list'">Vehículos</button>
-        <button class="btn-secondary" @click="activeTab='due'">Vencimientos</button>
-        <button class="btn-primary" @click="showAddVehicle = true">+ Agregar vehículo</button>
+    <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">V</div>
+          <div>
+            <h2 class="font-semibold text-slate-900">Gestión de vehículos</h2>
+            <p class="text-slate-500 text-xs">Inventario, asignaciones y vencimientos</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <!-- Segmented control -->
+          <div class="inline-flex rounded-2xl border border-slate-300 p-1 bg-white shadow-sm">
+            <button
+              :class="['px-3 py-1.5 rounded-xl text-sm flex items-center gap-2',
+                      activeTab==='list' ? 'bg-slate-900 text-white shadow' : 'text-slate-700 hover:bg-slate-100']"
+              @click="activeTab='list'">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18M3 12h18M3 19h18"/></svg>
+              Vehículos
+            </button>
+            <button
+              :class="['px-3 py-1.5 rounded-xl text-sm flex items-center gap-2',
+                      activeTab==='due' ? 'bg-slate-900 text-white shadow' : 'text-slate-700 hover:bg-slate-100']"
+              @click="activeTab='due'">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+              Vencimientos
+            </button>
+          </div>
+
+          <!-- Add -->
+          <button class="btn-primary inline-flex items-center gap-2" @click="showAddVehicle = true">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Agregar
+          </button>
+        </div>
       </div>
     </div>
 
-    <!-- Filtros -->
+    <!-- FILTROS (solo lista) -->
     <div class="card" v-if="activeTab==='list'">
-      <div class="card-body grid grid-cols-1 sm:grid-cols-6 gap-3 sm:items-end">
-        <div class="sm:col-span-3">
-          <label class="label">Buscar</label>
-          <input v-model="filters.query" class="input" placeholder="PLaca" @keyup.enter="loadVehicles" />
+      <div class="card-body">
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+          <div class="md:col-span-3">
+            <label class="label">Buscar</label>
+            <input
+              v-model="filters.query"
+              class="input"
+              placeholder="Placa, funcionario…"
+              @input="onQueryInput" />
+          </div>
+
+          <div class="md:col-span-3">
+            <label class="label">Grupo</label>
+            <select
+              v-model="filters.groupId"
+              class="input"
+              @change="filters.unitId=''; applyFilters()">
+              <option value="">— Todos —</option>
+              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">{{ g.code }}</option>
+            </select>
+          </div>
+
+          <div class="md:col-span-3">
+            <label class="label">Unidad</label>
+            <select v-model="filters.unitId" class="input" @change="applyFilters">
+              <option value="">— Todas —</option>
+              <option v-for="u in unidadesFiltrado" :key="u.id" :value="String(u.id)">{{ u.name }}</option>
+            </select>
+          </div>
+
+          <div class="md:col-span-3">
+            <label class="label">Categoría</label>
+            <select v-model="filters.category" class="input" @change="applyFilters">
+              <option value="">— Todas —</option>
+              <option value="CM">Camioneta</option>
+              <option value="VH">Vehículo</option>
+              <option value="MT">Moto</option>
+            </select>
+          </div>
+
+          <div class="md:col-span-3">
+            <label class="label">Estado</label>
+            <select v-model="filters.estado" class="input" @change="applyFilters">
+              <option value="">— Todos —</option>
+              <option value="SERVICIO">SERVICIO</option>
+              <option value="EN TALLER">EN TALLER</option>
+              <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
+            </select>
+          </div>
+
+          <div class="md:col-span-3 flex items-end gap-3">
+            <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" v-model="filters.onlyAssigned" @change="applyFilters" />
+              <span>Solo asignados</span>
+            </label>
+            <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" v-model="filters.hasOpenUse" @change="applyFilters" />
+              <span>Con uso abierto</span>
+            </label>
+          </div>
+
+          <div class="md:col-span-6 flex items-end justify-end gap-2">
+            <button class="btn-secondary" @click="resetFilters">Limpiar</button>
+            <!-- Botón Aplicar filtros eliminado -->
+          </div>
         </div>
-        <div>
-          <label class="label">Alertar ≤ días</label>
-          <input
-            type="number"
-            v-model="filters.due_within"
-            class="input"
-            min="0"
-            placeholder="Días alerta (opcional)"
-          />
-        </div>
+        <div v-if="loading" class="text-xs text-slate-500 mt-2">Actualizando…</div>
       </div>
     </div>
 
@@ -448,7 +530,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue' // ⬅️ añade onUnmounted
 import { http } from '@/lib/http'
 import VehicleAssignmentsModal from '@/components/vehicles/VehicleAssignmentsModal.vue'
 import VehicleUsesModal from '@/components/vehicles/VehicleUsesModal.vue'
@@ -457,7 +539,6 @@ import BadgeDate from '@/components/BadgeDate.vue'
 const activeTab = ref('list')
 const loading = ref(false)
 const vehicles = ref([])
-const filters = ref({ query: '', due_within: '' })
 
 const showAssign = ref(false)
 const showUses = ref(false)
@@ -656,21 +737,51 @@ async function loadStatusHistory(vehicleId) {
   }
 }
 
+// NUEVOS filtros (reemplaza la línea actual de filters)
+const filters = ref({
+  query: '',
+  groupId: '',
+  unitId: '',
+  category: '',
+  estado: '',
+  onlyAssigned: false,
+  hasOpenUse: false,
+})
+
+// Computed para dependencias Grupo -> Unidad (añadir)
+const unidadesFiltrado = computed(() => {
+  if (!filters.value.groupId) return unidades.value
+  return unidades.value.filter(u => String(u.groupId) === String(filters.value.groupId))
+})
+
+// reset (actualiza para limpiar todo y recargar)
 function resetFilters() {
-  filters.value = { query: '', due_within: 30 }
+  filters.value = {
+    query: '',
+    groupId: '',
+    unitId: '',
+    category: '',
+    estado: '',
+    onlyAssigned: false,
+    hasOpenUse: false,
+  }
   loadVehicles()
 }
 
+// loadVehicles (actualiza para enviar los nuevos filtros)
 async function loadVehicles() {
   loading.value = true
   try {
     const params = {
-      query: filters.value.query || undefined,
       page: 1,
-      pageSize: 500
-    }
-    if (filters.value.due_within !== '' && filters.value.due_within != null) {
-      params.due_within = filters.value.due_within
+      pageSize: 500,
+      query: filters.value.query || undefined,
+      groupId: filters.value.groupId || undefined,
+      unitId: filters.value.unitId || undefined,
+      category: filters.value.category || undefined,
+      estado: filters.value.estado || undefined,
+      onlyAssigned: filters.value.onlyAssigned ? 1 : undefined,
+      hasOpenUse: filters.value.hasOpenUse ? 1 : undefined,
     }
     const { data } = await http.get('/vehicles', { params })
     vehicles.value = data.items || []
@@ -914,6 +1025,21 @@ async function cerrarUso(useId) {
     alert(e?.response?.data?.error || 'Error al cerrar el uso')
   }
 }
+function applyFilters() {
+  loadVehicles();
+}
+
+let queryTimer = null;
+function onQueryInput() {
+  clearTimeout(queryTimer);
+  queryTimer = setTimeout(() => {
+    loadVehicles();
+  }, 350); // debounce
+}
+
+onUnmounted(() => {
+  clearTimeout(queryTimer);
+});
 
 onMounted(async () => {
   await cargarCatalogos()
@@ -921,8 +1047,5 @@ onMounted(async () => {
   await loadDue()
 })
 
-watch(() => filters.value.due_within, () => {
-  // recarga siempre que cambie el filtro
-  loadVehicles()
-})
+
 </script>

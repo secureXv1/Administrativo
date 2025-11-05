@@ -1,7 +1,9 @@
-<!-- src/components/NovedadesBlock.vue — ALINEADO CON /routes/vehiculos.js -->
+<!-- src/components/NovedadesBlock.vue -->
 <template>
   <div class="mt-8">
-    <h4 class="font-semibold mb-2">Novedades registradas</h4>
+    <h4 class="font-semibold mb-2">
+      Novedades registradas <span class="text-slate-400 text-xs">({{ tipoLabel }})</span>
+    </h4>
 
     <!-- Lista -->
     <div class="space-y-2 mb-3">
@@ -11,12 +13,14 @@
         class="text-xs border-b py-1 flex items-center gap-2"
       >
         <span>• {{ n.description }}</span>
+
         <a
           v-if="n.photoUrl"
           :href="`/${n.photoUrl}`"
           target="_blank"
           class="text-blue-600 underline"
         >foto</a>
+
         <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
 
         <button
@@ -25,6 +29,7 @@
           @click="eliminarNovedad(n.id)"
         >Eliminar</button>
       </div>
+
       <div v-if="!novedades.length" class="text-slate-400 text-xs">Sin novedades</div>
     </div>
 
@@ -42,18 +47,29 @@
         class="input"
         accept="image/*"
         @change="e => form.file = e.target.files?.[0] || null"
+        :disabled="tipo !== 'vehicle'"
+        :title="tipo !== 'vehicle' ? 'Solo se pueden adjuntar novedades al vehículo (no al uso)' : ''"
       />
-      <button class="btn-primary" @click="guardarNovedad">Agregar</button>
+      <button
+        class="btn-primary"
+        @click="guardarNovedad"
+        :disabled="tipo !== 'vehicle'"
+        :title="tipo !== 'vehicle' ? 'Solo se pueden agregar novedades al vehículo (no al uso)' : ''"
+      >
+        Agregar
+      </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { http } from '@/lib/http'
 
 const props = defineProps({
-  /** ID del vehículo */
+  /** 'vehicle' | 'uses' (coincide con /vehicles/:tipo/:id/novelties) */
+  tipo: { type: String, default: 'vehicle' },
+  /** ID del recurso según el tipo (vehículo o uso) */
   refId: { type: [String, Number], required: true },
   /** Solo lectura (oculta el formulario) */
   readonly: { type: Boolean, default: false },
@@ -61,32 +77,43 @@ const props = defineProps({
   canDelete: { type: Boolean, default: true }
 })
 
+const tipoLabel = computed(() => props.tipo === 'uses' ? 'del uso' : 'del vehículo')
+
 const novedades = ref([])
 const form = ref({ description: '', file: null })
 const fileEl = ref(null)
 
+function buildUrl() {
+  // Alineado con el backend: GET /vehicles/:tipo/:id/novelties
+  return `/vehicles/${props.tipo}/${props.refId}/novelties`
+}
+
 async function loadNovedades() {
   if (!props.refId) return
   try {
-    // SIEMPRE contra vehículo (ya no uses/assignments)
-    const url = `/vehicles/vehicle/${props.refId}/novelties`
-    const { data } = await http.get(url)
+    const { data } = await http.get(buildUrl())
     novedades.value = data.items || []
   } catch (e) {
     console.error('[NovedadesBlock] loadNovedades error', e)
+    novedades.value = []
   }
 }
 
 async function guardarNovedad() {
   if (props.readonly) return
+  // El backend SOLO permite POST cuando tipo === 'vehicle'
+  if (props.tipo !== 'vehicle') {
+    alert('Solo se pueden registrar novedades directamente al vehículo (no al uso).')
+    return
+  }
+
   const fd = new FormData()
   if (form.value.description) fd.append('description', form.value.description)
   if (form.value.file) fd.append('photo', form.value.file)
   if (![...fd.keys()].length) return
 
   try {
-    const url = `/vehicles/vehicle/${props.refId}/novelties`
-    await http.post(url, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+    await http.post(buildUrl(), fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     form.value = { description: '', file: null }
     if (fileEl.value) fileEl.value.value = ''
     await loadNovedades()
@@ -108,4 +135,5 @@ async function eliminarNovedad(id) {
 
 onMounted(loadNovedades)
 watch(() => props.refId, loadNovedades)
+watch(() => props.tipo, loadNovedades)
 </script>

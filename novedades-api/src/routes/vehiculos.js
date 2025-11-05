@@ -57,28 +57,33 @@ const requireRole = (...allowed) => (req, res, next) => {
   next()
 }
 
-
-
 /* -------------------------------------------------------
    Helpers de negocio
 ------------------------------------------------------- */
 
 // Alcance por rol para operaciones con agente
 async function validateAgentScope(req, agentId) {
-  const role = String(req.user?.role || '').toLowerCase()
-  if (role === 'superadmin' || role === 'supervision') return true
+  const role = String(req.user?.role || '').toLowerCase();
+
+  // ✅ Si el que consulta es el propio agente -> permitir
+  const requesterAgentId = req.user?.agentId ?? req.user?.agent_id ?? null;
+  if (role === 'agent' && requesterAgentId && Number(requesterAgentId) === Number(agentId)) {
+    return true;
+  }
+
+  if (role === 'superadmin' || role === 'supervision') return true;
 
   if (role === 'leader_group') {
-    const [[row]] = await pool.query('SELECT groupId FROM agent WHERE id=? LIMIT 1', [agentId])
-    return row && Number(row.groupId) === Number(req.user.groupId)
+    const [[row]] = await pool.query('SELECT groupId FROM agent WHERE id=? LIMIT 1', [agentId]);
+    return row && Number(row.groupId) === Number(req.user.groupId);
   }
 
-  if (role === 'leader_unit' || role === 'agent') {
-    const [[row]] = await pool.query('SELECT unitId FROM agent WHERE id=? LIMIT 1', [agentId])
-    return row && Number(row.unitId) === Number(req.user.unitId)
+  if (role === 'leader_unit') {
+    const [[row]] = await pool.query('SELECT unitId FROM agent WHERE id=? LIMIT 1', [agentId]);
+    return row && Number(row.unitId) === Number(req.user.unitId);
   }
 
-  return false
+  return false;
 }
 
 // Saber si un vehículo tiene uso abierto
@@ -94,84 +99,146 @@ async function vehicleHasOpenUse(vehicleId) {
    VEHICLES
 ------------------------------------------------------- */
 
-// GET /vehicles?query=&due_within=30&page=1&pageSize=100
+// GET /vehicles?query=&due_within=&page=1&pageSize=100&groupId=&unitId=&category=&estado=&onlyAssigned=1&hasOpenUse=1
 router.get(
   '/vehicles',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
     try {
-      const { query, due_within, page = 1, pageSize = 100 } = req.query;
-      const p = Math.max(parseInt(page,10)||1, 1);
+      const {
+        query,
+        due_within,
+        groupId,
+        unitId,
+        category,
+        estado,
+        onlyAssigned,
+        hasOpenUse,
+        page = 1,
+        pageSize = 100
+      } = req.query;
+
+      const p  = Math.max(parseInt(page,10)||1, 1);
       const ps = Math.min(Math.max(parseInt(pageSize,10)||100,1), 1000);
       const off = (p-1)*ps;
 
       const where = [];
       const args  = [];
 
+      // Búsqueda por placa/estado (conserva tu comportamiento)
       if (query && String(query).trim()) {
         where.push('(v.code LIKE ? OR v.estado LIKE ?)');
         const q = `%${String(query).trim()}%`;
         args.push(q, q);
       }
+
+      // Vencimientos dentro de N días (compatibilidad)
       if (!isNaN(parseInt(due_within,10))) {
         const n = Math.max(parseInt(due_within,10), 0);
-        where.push('(v.soat_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY) OR v.tecno_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY))');
+        where.push('((v.soat_date IS NOT NULL AND v.soat_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)) OR (v.tecno_date IS NOT NULL AND v.tecno_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)))');
         args.push(n, n);
+      }
+
+      // === NUEVOS FILTROS ===
+      if (groupId) {
+        where.push('v.group_id = ?');
+        args.push(Number(groupId));
+      }
+      if (unitId) {
+        where.push('v.unit_id = ?');
+        args.push(Number(unitId));
+      }
+      if (category) {
+        where.push('v.category = ?');
+        args.push(String(category));
+      }
+      if (estado) {
+        where.push('v.estado = ?');
+        args.push(String(estado));
+      }
+
+      // Vehículos con asignación vigente (hoy)
+      if (Number(onlyAssigned) === 1) {
+        where.push(`
+          EXISTS (
+            SELECT 1
+            FROM vehicle_assignments va2
+            WHERE va2.vehicle_id = v.id
+              AND (va2.end_date IS NULL OR va2.end_date > CURDATE())
+          )
+        `);
+      }
+
+      // Vehículos con uso abierto
+      if (Number(hasOpenUse) === 1) {
+        where.push(`
+          EXISTS (
+            SELECT 1
+            FROM vehicle_uses vu2
+            WHERE vu2.vehicle_id = v.id
+              AND vu2.ended_at IS NULL
+          )
+        `);
       }
 
       const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : '';
 
-      const [rows] = await pool.query(
-        `SELECT
-            v.id,
-            v.code,
-            v.estado,
-            v.odometer,
-            v.oil_last_km,
-            v.oil_interval_km,
-            v.soat_date AS soatDate,
-            v.tecno_date AS tecnoDate,
-            v.category,
-            g.id AS groupId,
-            g.code AS groupName,
-            u.id AS unitId,
-            u.name AS unitName,
-            a.code AS agentCode,
-            a.nickname AS agentNickname,
-            EXISTS(
-              SELECT 1 FROM vehicle_uses vu WHERE vu.vehicle_id = v.id AND vu.ended_at IS NULL LIMIT 1
-            ) AS hasOpenUse
-          FROM vehicles v
-          LEFT JOIN \`group\` g ON g.id = v.group_id
-          LEFT JOIN unit u ON u.id = v.unit_id
-          LEFT JOIN vehicle_assignments va ON va.vehicle_id = v.id AND (va.end_date IS NULL OR va.end_date > CURDATE())
-          LEFT JOIN agent a ON a.id = va.agent_id
-          ${whereSql}
-          ORDER BY v.code
-          LIMIT ? OFFSET ?`,
-        [...args, ps, off]
-      );
+      // Nota: dejamos el LEFT JOIN a la asignación vigente para devolver agentCode/nickname
+      const selectSql = `
+        SELECT
+          v.id,
+          v.code,
+          v.estado,
+          v.odometer,
+          v.oil_last_km,
+          v.oil_interval_km,
+          v.soat_date  AS soatDate,
+          v.tecno_date AS tecnoDate,
+          v.category,
+          g.id   AS groupId,
+          g.code AS groupName,
+          u.id   AS unitId,
+          u.name AS unitName,
+          a.code     AS agentCode,
+          a.nickname AS agentNickname,
+          EXISTS(
+            SELECT 1 FROM vehicle_uses vu WHERE vu.vehicle_id = v.id AND vu.ended_at IS NULL
+          ) AS hasOpenUse
+        FROM vehicles v
+        LEFT JOIN \`group\` g
+               ON g.id = v.group_id
+        LEFT JOIN unit u
+               ON u.id = v.unit_id
+        LEFT JOIN vehicle_assignments va
+               ON va.vehicle_id = v.id
+              AND (va.end_date IS NULL OR va.end_date > CURDATE())
+        LEFT JOIN agent a
+               ON a.id = va.agent_id
+        ${whereSql}
+        ORDER BY v.code
+        LIMIT ? OFFSET ?`;
+
+      const countSql = `
+        SELECT COUNT(*) AS total
+        FROM vehicles v
+        ${whereSql}`;
+
+      const [rows]   = await pool.query(selectSql, [...args, ps, off]);
+      const [[{ total }]] = await pool.query(countSql, args);
 
       for (const row of rows) {
         row.agentNickname = decNullable(row.agentNickname);
         row.hasOpenUse = !!row.hasOpenUse;
-        }
+      }
 
-
-      const [[{ total }]] = await pool.query(
-        `SELECT COUNT(*) AS total
-         FROM vehicles v
-         ${whereSql}`, args
-      );
-
-      res.json({ page:p, pageSize:ps, total: Number(total)||0, items: rows });
+      res.json({ page: p, pageSize: ps, total: Number(total)||0, items: rows });
     } catch (e) {
+      console.error('[GET /vehicles] error', e);
       res.status(500).json({ error:'VehiclesListError', detail: e.message });
     }
   }
 );
-
 
 // POST /vehicles  (crear)
 router.post(
@@ -564,17 +631,241 @@ router.get(
   async (req, res) => {
     const { id } = req.params
     const [rows] = await pool.query(`
-      SELECT va.id, va.agent_id AS agentId, a.code AS agentCode,
-             DATE_FORMAT(va.start_date,'%Y-%m-%d') AS start_date,
-             DATE_FORMAT(va.end_date  ,'%Y-%m-%d') AS end_date,
-             va.odometer_start, va.odometer_end,
-             va.notes
+      SELECT 
+        va.id, 
+        va.vehicle_id                         AS vehicle_id,
+        va.agent_id                           AS agentId, 
+        a.code                                AS agentCode,
+        DATE_FORMAT(va.start_date,'%Y-%m-%d') AS start_date,
+        DATE_FORMAT(va.end_date  ,'%Y-%m-%d') AS end_date,
+        va.odometer_start, 
+        va.odometer_end,
+        va.notes,
+        -- ✅ Campos correctos que sí existen en tu tabla:
+        va.agent_ack_at                       AS agent_ack_at,
+        va.agent_ack_note                     AS agent_ack_note,
+        va.agent_ack_locked                   AS agent_ack_locked,
+        va.agent_ack_extra_note               AS agent_ack_extra_note,
+        va.agent_ack_extra_at                 AS agent_ack_extra_at
       FROM vehicle_assignments va
       JOIN agent a ON a.id = va.agent_id
       WHERE va.vehicle_id=?
       ORDER BY (va.end_date IS NULL) DESC, va.start_date DESC, va.id DESC
     `,[id])
-    res.json(rows)
+    // Formato que tu front entiende (items o array directo):
+    res.json({ items: rows })
+  }
+)
+
+// GET /agents/:agentId/assignments?active=1&pageSize=500
+router.get(
+  '/agents/:agentId/assignments',
+  requireAuth,
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  async (req, res) => {
+    const { agentId } = req.params
+    const { active } = req.query
+    // Seguridad por alcance de rol
+    const okScope = await validateAgentScope(req, Number(agentId))
+    if (!okScope) return res.status(403).json({ error:'ForbiddenScope' })
+
+    const where = ['va.agent_id = ?']
+    const args  = [agentId]
+    if (String(active) === '1') {
+      where.push('(va.end_date IS NULL OR va.end_date > CURDATE())')
+    }
+    const whereSql = 'WHERE ' + where.join(' AND ')
+
+    const [rows] = await pool.query(`
+      SELECT 
+        va.id,
+        va.vehicle_id                         AS vehicle_id,
+        v.code                                AS vehicle_code,
+        DATE_FORMAT(va.start_date,'%Y-%m-%d') AS start_date,
+        DATE_FORMAT(va.end_date  ,'%Y-%m-%d') AS end_date,
+        va.odometer_start,
+        va.odometer_end,
+        va.notes,
+        va.agent_ack_at                       AS agent_ack_at,
+        va.agent_ack_note                     AS agent_ack_note,
+        va.agent_ack_locked                   AS agent_ack_locked,
+        va.agent_ack_extra_note               AS agent_ack_extra_note,
+        va.agent_ack_extra_at                 AS agent_ack_extra_at
+      FROM vehicle_assignments va
+      JOIN vehicles v ON v.id = va.vehicle_id
+      ${whereSql}
+      ORDER BY (va.end_date IS NULL) DESC, va.start_date DESC, va.id DESC
+    `, args)
+
+    // Formato amigable para el front
+    const items = rows.map(r => ({
+      id: r.id,
+      start_date: r.start_date,
+      end_date: r.end_date,
+      odometer_start: r.odometer_start,
+      odometer_end: r.odometer_end,
+      notes: r.notes,
+      agent_ack_at: r.agent_ack_at,
+      agent_ack_note: r.agent_ack_note,
+      agent_ack_locked: r.agent_ack_locked,
+      agent_ack_extra_note: r.agent_ack_extra_note,
+      agent_ack_extra_at: r.agent_ack_extra_at,
+      vehicle: { id: r.vehicle_id, code: r.vehicle_code }
+    }))
+
+    res.json({ items })
+  }
+)
+
+// PATCH /vehicles/assignments/:id/accept  { note }
+router.patch(
+  '/vehicles/assignments/:id/accept',
+  requireAuth,
+  requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
+  async (req, res) => {
+    const { id }   = req.params
+    const noteRaw  = (req.body?.note ?? '').trim()
+
+    if (!noteRaw) return res.status(422).json({ error: 'La nota es obligatoria.' })
+    if (noteRaw.length > 300) return res.status(422).json({ error: 'La nota no puede superar 300 caracteres.' })
+
+    // Traer la asignación
+    const [[row]] = await pool.query(
+      `SELECT vehicle_id, agent_id, end_date, accept_at
+         FROM vehicle_assignments
+        WHERE id=? LIMIT 1`, [id]
+    )
+    if (!row) return res.status(404).json({ error: 'Asignación no encontrada' })
+
+    // Solo la puede aceptar el mismo agente y si sigue vigente
+    const isAgent = String(req.user?.role || '').toLowerCase() === 'agent'
+    const requesterAgentId = req.user?.agentId ?? req.user?.agent_id ?? null
+    if (isAgent) {
+      if (!requesterAgentId || Number(requesterAgentId) !== Number(row.agent_id)) {
+        return res.status(403).json({ error: 'No puedes aceptar una asignación de otro agente.' })
+      }
+    } else {
+      // líderes/supervisión pueden forzar aceptación en nombre del agente si así lo quieres;
+      // si NO lo deseas, descomenta este return:
+      // return res.status(403).json({ error: 'Solo el agente asignado puede aceptar.' })
+    }
+
+    if (row.end_date) return res.status(409).json({ error: 'La asignación ya está cerrada.' })
+    if (row.accept_at) return res.status(409).json({ error: 'La asignación ya fue aceptada previamente.' })
+
+    await pool.query(
+      `UPDATE vehicle_assignments
+          SET accept_at = NOW(), accept_note = ?
+        WHERE id = ?`,
+      [noteRaw, id]
+    )
+
+    await logEvent({
+      req,
+      userId: req.user.uid,
+      action: Actions.VEHICLE_ASSIGN_ACCEPT ?? 'VEHICLE_ASSIGN_ACCEPT',
+      details: { assignmentId: Number(id) }
+    })
+
+    res.json({ ok: true })
+  }
+)
+
+// PATCH /vehicles/assignments/:id/ack  { note }
+router.patch(
+  '/vehicles/assignments/:id/ack',
+  requireAuth,
+  requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
+  async (req, res) => {
+    const { id }   = req.params
+    const noteRaw  = String(req.body?.note || '').trim()
+
+    if (!noteRaw) return res.status(422).json({ error: 'La nota es obligatoria.' })
+    if (noteRaw.length > 300) return res.status(422).json({ error: 'La nota no puede superar 300 caracteres.' })
+
+    const [[row]] = await pool.query(
+      `SELECT agent_id, end_date, agent_ack_at, agent_ack_locked
+         FROM vehicle_assignments
+        WHERE id=? LIMIT 1`, [id]
+    )
+    if (!row) return res.status(404).json({ error: 'Asignación no encontrada' })
+
+    const isAgent = String(req.user?.role || '').toLowerCase() === 'agent'
+    const requesterAgentId = req.user?.agentId ?? req.user?.agent_id ?? null
+    if (isAgent) {
+      if (!requesterAgentId || Number(requesterAgentId) !== Number(row.agent_id)) {
+        return res.status(403).json({ error: 'No puedes aceptar una asignación de otro agente.' })
+      }
+    }
+
+    if (row.end_date) return res.status(409).json({ error: 'La asignación ya está cerrada.' })
+    if (row.agent_ack_at) return res.status(409).json({ error: 'La asignación ya fue aceptada previamente.' })
+    if (Number(row.agent_ack_locked) === 1) return res.status(409).json({ error: 'La aceptación está bloqueada.' })
+
+    await pool.query(
+      `UPDATE vehicle_assignments
+          SET agent_ack_at = NOW(), agent_ack_note = ?
+        WHERE id = ?`,
+      [noteRaw, id]
+    )
+
+    await logEvent({
+      req,
+      userId: req.user.uid,
+      action: Actions.VEHICLE_ASSIGN_ACCEPT ?? 'VEHICLE_ASSIGN_ACCEPT',
+      details: { assignmentId: Number(id) }
+    })
+
+    res.json({ ok: true })
+  }
+)
+
+// PATCH /vehicles/assignments/:id/extra  { note }
+router.patch(
+  '/vehicles/assignments/:id/extra',
+  requireAuth,
+  requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
+  async (req, res) => {
+    const { id }   = req.params
+    const noteRaw  = String(req.body?.note || '').trim()
+
+    if (!noteRaw) return res.status(422).json({ error: 'La nota extra es obligatoria.' })
+    if (noteRaw.length > 500) return res.status(422).json({ error: 'La nota extra no puede superar 500 caracteres.' })
+
+    const [[row]] = await pool.query(
+      `SELECT agent_id, end_date, agent_ack_at, agent_ack_extra_at
+         FROM vehicle_assignments
+        WHERE id=? LIMIT 1`, [id]
+    )
+    if (!row) return res.status(404).json({ error: 'Asignación no encontrada' })
+
+    const isAgent = String(req.user?.role || '').toLowerCase() === 'agent'
+    const requesterAgentId = req.user?.agentId ?? req.user?.agent_id ?? null
+    if (isAgent) {
+      if (!requesterAgentId || Number(requesterAgentId) !== Number(row.agent_id)) {
+        return res.status(403).json({ error: 'No puedes anotar en asignaciones de otro agente.' })
+      }
+    }
+
+    if (row.end_date) return res.status(409).json({ error: 'La asignación ya está cerrada.' })
+    if (!row.agent_ack_at) return res.status(409).json({ error: 'Primero debes aceptar la asignación.' })
+    if (row.agent_ack_extra_at) return res.status(409).json({ error: 'La nota extra ya fue registrada.' })
+
+    await pool.query(
+      `UPDATE vehicle_assignments
+          SET agent_ack_extra_at = NOW(), agent_ack_extra_note = ?
+        WHERE id = ?`,
+      [noteRaw, id]
+    )
+
+    await logEvent({
+      req,
+      userId: req.user.uid,
+      action: Actions.VEHICLE_ASSIGN_ACK_EXTRA ?? 'VEHICLE_ASSIGN_ACK_EXTRA',
+      details: { assignmentId: Number(id) }
+    })
+
+    res.json({ ok: true })
   }
 )
 
