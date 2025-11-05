@@ -402,40 +402,144 @@
 
       <!-- Por Tipo -->
       <div v-show="novTab==='tipos'" class="overflow-x-auto">
-        <table class="table w-full text-xs sm:text-sm">
-          <thead>
-            <tr>
-              <th class="w-1/2">Novedad</th>
-              <th class="text-center">OF</th>
-              <th class="text-center">ME</th>
-              <th class="text-center">PT</th>
-              <th class="text-center">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in novTiposRows" :key="row.novedad">
-              <td class="font-medium">{{ row.novedad }}</td>
-              <td class="text-center">{{ row.OF }}</td>
-              <td class="text-center">{{ row.ME }}</td>
-              <td class="text-center">{{ row.PT }}</td>
-              <td class="text-center font-semibold">{{ row.total }}</td>
-            </tr>
-            <tr v-if="!novTiposRows.length">
-              <td colspan="5" class="text-center text-slate-500 py-4">Sin datos</td>
-            </tr>
-          </tbody>
-          <tfoot v-if="novTiposRows.length">
-            <tr class="bg-slate-50">
-              <td class="font-semibold">Total general</td>
-              <td class="text-center font-semibold">{{ sum(novTiposRows,'OF') }}</td>
-              <td class="text-center font-semibold">{{ sum(novTiposRows,'ME') }}</td>
-              <td class="text-center font-semibold">{{ sum(novTiposRows,'PT') }}</td>
-              <td class="text-center font-bold">{{ sum(novTiposRows,'total') }}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
+          <!-- Tabla de novedad -->
+          <div class="overflow-x-auto">
+            <table class="table w-full text-xs sm:text-sm">
+              <thead>
+                <tr>
+                  <th class="w-1/2">Novedad</th>
+                  <th class="text-center">OF</th>
+                  <th class="text-center">ME</th>
+                  <th class="text-center">PT</th>
+                  <th class="text-center">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="row in novTiposRows"
+                  :key="row.novedad"
+                  class="cursor-pointer hover:bg-slate-50"
+                  :class="novSelected===row.novedad ? 'ring-1 ring-brand-500/50' : ''"
+                  @click="onClickNovedad(row.novedad)"
+                  title="Ver funcionarios"
+                >
+                  <td class="font-medium">
+                    <span class="inline-flex items-center gap-2">
+                      <span
+                        class="inline-block w-2 h-2 rounded-full"
+                        :class="novSelected===row.novedad ? 'bg-brand-600' : 'bg-slate-300'"
+                      />
+                      {{ row.novedad }}
+                    </span>
+                  </td>
+                  <td class="text-center">{{ row.OF }}</td>
+                  <td class="text-center">{{ row.ME }}</td>
+                  <td class="text-center">{{ row.PT }}</td>
+                  <td class="text-center font-semibold">{{ row.total }}</td>
+                </tr>
+                <tr v-if="!novTiposRows.length">
+                  <td colspan="5" class="text-center text-slate-500 py-4">Sin datos</td>
+                </tr>
+              </tbody>
+              <tfoot v-if="novTiposRows.length">
+                <tr class="bg-slate-50">
+                  <td class="font-semibold">Total general</td>
+                  <td class="text-center font-semibold">{{ sum(novTiposRows,'OF') }}</td>
+                  <td class="text-center font-semibold">{{ sum(novTiposRows,'ME') }}</td>
+                  <td class="text-center font-semibold">{{ sum(novTiposRows,'PT') }}</td>
+                  <td class="text-center font-bold">{{ sum(novTiposRows,'total') }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
 
+          <!-- Panel derecho: funcionarios de la novedad seleccionada -->
+          <div class="border border-slate-200 rounded-xl p-3 bg-white min-h-[260px]">
+            <div class="flex items-center justify-between gap-2 mb-2">
+              <div class="font-semibold text-slate-800">
+                {{ novSelected ? ('Funcionarios — ' + novSelected) : 'Funcionarios' }}
+              </div>
+              <div class="flex items-center gap-2">
+                <!--button
+                  class="btn-ghost h-8 px-2 text-xs"
+                  :disabled="!novSelected || novAgentsLoading"
+                  @click="exportNovAgentsCsv"
+                >
+                  Exportar CSV
+                </button-->
+                <button
+                  class="btn-ghost h-8 px-2 text-xs"
+                  :disabled="!novSelected || novAgentsLoading"
+                  @click="reloadNovAgents"
+                  title="Recargar"
+                >
+                  Recargar
+                </button>
+              </div>
+            </div>
+
+            <div class="mb-2 flex items-center gap-2">
+              <input
+                v-model="novAgentsQuery"
+                type="text"
+                class="input !py-1 !text-xs"
+                placeholder="Buscar por código o nombre…"
+              />
+              <select v-model="novAgentsCat" class="input !py-1 !text-xs w-[110px]">
+                <option value="ALL">Todos</option>
+                <option value="OF">OF</option>
+                <option value="ME">ME</option>
+                <option value="PT">PT</option>
+              </select>
+            </div>
+
+            <div v-if="novAgentsLoading" class="text-slate-500 text-sm">Cargando…</div>
+
+            <template v-else>
+              <div v-if="!novSelected" class="text-slate-500 text-sm">
+                Selecciona una novedad en la tabla para ver el detalle.
+              </div>
+              <div v-else>
+                <div class="text-xs text-slate-500 mb-2">
+                  Total: <b>{{ novAgentsFiltered.length }}</b> •
+                  OF: <b>{{ novCounts.OF }}</b> •
+                  ME: <b>{{ novCounts.ME }}</b> •
+                  PT: <b>{{ novCounts.PT }}</b>
+                </div>
+
+                <div class="border rounded-lg overflow-hidden" style="max-height: 360px; overflow-y: auto;">
+                  <table class="table w-full text-xs">
+                    <thead class="bg-slate-50 sticky top-0 z-10">
+                      <tr>
+                        <th class="w-[22%]">Código</th>
+                        <th class="w-[50%]">Funcionario</th>
+                        <th class="w-[8%] text-center">Cat.</th>
+                        <th class="w-[20%]">Grupo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="a in novAgentsFiltered" :key="a.id" class="hover:bg-slate-50">
+                        <td class="font-semibold">{{ a.code }}</td>
+                        <td class="font-medium">{{ a.nickname }}</td>
+                        <td class="text-center">{{ a.category === 'SO' ? 'ME' : a.category }}</td>
+                        <td class="text-slate-600">
+                          <span v-if="isAdminView">{{ a.groupCode || ('G'+(a.groupId || '—')) }}</span>
+                          <span v-else>{{ a.unitName || ('U'+(a.unitId || '—')) }}</span>
+                        </td>
+                      </tr>
+                      <tr v-if="!novAgentsFiltered.length">
+                        <td colspan="4" class="text-center text-slate-500 py-4">Sin resultados</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
       <!-- Por Ámbito -->
       <div v-show="novTab==='ambito'" class="overflow-x-auto">
         <!-- Totales por ámbito -->
@@ -489,7 +593,9 @@
                   <div
                     v-for="it in card.items"
                     :key="it.novedad"
-                    class="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 text-xs">
+                    class="px-2 py-1 rounded-lg bg-slate-50 border border-slate-200 text-slate-800 text-xs cursor-pointer hover:bg-slate-100"
+                    @click="pickScopeAndNovedad(card.label, it.novedad)"
+                  >
                     <span class="font-medium">{{ it.novedad }}</span>:
                     <span>{{ it.total }}</span>
                     <span class="opacity-70"> ({{ it.OF }}/{{ it.ME }}/{{ it.PT }})</span>
@@ -507,57 +613,55 @@
   </div>
 </div>
 
-<!-- MODAL AGENTES SIN UNIDAD -->
-<div v-if="sinUnidadModalOpen" class="fixed inset-0 z-[1100] flex items-center justify-center">
-  <div class="absolute inset-0 bg-black/40" @click="sinUnidadModalOpen=false"></div>
+  <!-- MODAL AGENTES SIN UNIDAD -->
+  <div v-if="sinUnidadModalOpen" class="fixed inset-0 z-[1100] flex items-center justify-center">
+    <div class="absolute inset-0 bg-black/40" @click="sinUnidadModalOpen=false"></div>
 
-  <div class="relative bg-white w-screen h-screen sm:w-[520px] sm:h-auto sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-xl flex flex-col">
-    <!-- Header -->
-    <div class="p-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white">
-      <div class="font-semibold text-slate-800">
-        Agentes sin unidad — <span class="text-amber-700">{{ agentesSinUnidad }}</span>
+    <div class="relative bg-white w-screen h-screen sm:w-[520px] sm:h-auto sm:max-h-[80vh] rounded-none sm:rounded-xl shadow-xl flex flex-col">
+      <!-- Header -->
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white">
+        <div class="font-semibold text-slate-800">
+          Agentes sin unidad — <span class="text-amber-700">{{ agentesSinUnidad }}</span>
+        </div>
+        <button class="btn-ghost" @click="sinUnidadModalOpen=false">Cerrar</button>
       </div>
-      <button class="btn-ghost" @click="sinUnidadModalOpen=false">Cerrar</button>
-    </div>
 
-    <!-- Body -->
-    <div class="p-4 overflow-auto">
-      <template v-if="agentesSinUnidad > 0">
-        <div class="mb-2 text-xs text-slate-500">
-          * Permanecen en su grupo. Cambio de grupo solo por Super Admin.
+      <!-- Body -->
+      <div class="p-4 overflow-auto">
+        <template v-if="agentesSinUnidad > 0">
+          <div class="mb-2 text-xs text-slate-500">
+            * Permanecen en su grupo. Cambio de grupo solo por Super Admin.
+          </div>
+
+          <div class="border rounded-xl overflow-hidden">
+            <table class="table w-full text-sm">
+              <thead>
+                <tr class="bg-slate-50">
+                  <th class="w-[25%]">Código</th>
+                  <th class="w-[25%]">Agente</th>
+                  <th class="w-[25%]">Cat.</th>
+                  <th class="w-[25%]">Grupo</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="a in agentesSinUnidadList" :key="a.id">
+                  <td class="font-semibold">{{ a.code }}</td>
+                  <td class="font-semibold">{{ a.nickname }}</td>
+                  <td>{{ a.category === 'SO' ? 'ME' : a.category }}</td>
+                  <td>{{ a.groupCode || ('G'+(a.groupId ?? '—')) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </template>
+
+        <div v-else class="text-slate-500 text-sm text-center py-6">
+          Sin agentes sin unidad.
         </div>
-
-        <div class="border rounded-xl overflow-hidden">
-          <table class="table w-full text-sm">
-            <thead>
-              <tr class="bg-slate-50">
-                <th class="w-[25%]">Código</th>
-                <th class="w-[25%]">Agente</th>
-                <th class="w-[25%]">Cat.</th>
-                <th class="w-[25%]">Grupo</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="a in agentesSinUnidadList" :key="a.id">
-                <td class="font-semibold">{{ a.code }}</td>
-                <td class="font-semibold">{{ a.nickname }}</td>
-                <td>{{ a.category === 'SO' ? 'ME' : a.category }}</td>
-                <td>{{ a.groupCode || ('G'+(a.groupId ?? '—')) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </template>
-
-      <div v-else class="text-slate-500 text-sm text-center py-6">
-        Sin agentes sin unidad.
       </div>
     </div>
   </div>
-</div>
-</div>
-
-
+  </div>
 
 </template>
 
@@ -1344,10 +1448,16 @@ function sum(list, key) {
   return list.reduce((a, b) => a + (Number(b[key])||0), 0)
 }
 
-function openNovModal() {
+async function openNovModal() {
   novModalOpen.value = true
   novTab.value = 'tipos'
-  loadNovDetails()
+  await loadNovDetails()
+
+  // 🟢 Si no hay selección, toma la primera novedad con datos
+  if (!novSelected.value && novTiposRows.value.length) {
+    novSelected.value = novTiposRows.value[0].novedad
+    await loadNovAgents() // carga inmediata del panel derecho
+  }
 }
 
 // arma filtros según rol y selects actuales
@@ -1441,6 +1551,251 @@ async function loadNovDetails() {
   )
 }
 
+function findGroupIdByCode(code) {
+  if (!code) return null;
+  const g = grupos.value.find(x => String(x.code).toUpperCase() === String(code).toUpperCase());
+  return g?.id ?? null;
+}
+
+function findUnitIdByName(name) {
+  if (!name) return null;
+  const u = units.value.find(x => String(x.name).toUpperCase() === String(name).toUpperCase());
+  return u?.id ?? null;
+}
+
+/**
+ * A partir de la etiqueta de card/fila ("G01" o "Unidad Central")
+ * fija el ámbito correspondiente (groupId o unitId) y retorna true si lo logró.
+ */
+function applyScopeFromLabel(label) {
+  if (isAdminView.value) {
+    // En Admin, las labels de "ambito" son groupCode
+    const gid = findGroupIdByCode(label);
+    if (gid) {
+      selectedGroupId.value = String(gid);
+      selectedUnitId.value = 'all';
+      return true;
+    }
+  } else {
+    // En líder, las labels son nombre de unidad
+    const uid = findUnitIdByName(label);
+    if (uid) {
+      selectedLeaderUnitId.value = String(uid);
+      return true;
+    }
+  }
+  return false;
+}
+
+async function pickScopeAndNovedad(label, novedad) {
+  // 1) fija ámbito desde la etiqueta
+  const ok = applyScopeFromLabel(label);
+  // 2) selecciona novedad y asegura pestaña correcta
+  novSelected.value = novedad;
+  novTab.value = 'tipos';
+
+  // 3) si no pudo fijar ámbito (admin sin match), no intentes cargar
+  if (isAdminView.value && !ok && !buildCommonParams().groupId && !buildCommonParams().unitId) {
+    return;
+  }
+
+  await loadNovAgents();
+}
+
+// ===== Detalle: funcionarios por novedad (panel lateral)
+const novSelected = ref(null)         // string con el nombre de la novedad seleccionada
+const novAgents = ref([])             // [{ id, code, nickname, category, groupCode?, unitName? }]
+const novAgentsLoading = ref(false)
+const novAgentsQuery = ref('')
+const novAgentsCat = ref('ALL')       // ALL | OF | ME | PT
+
+function onClickNovedad(novedad) {
+  if (novSelected.value === novedad) {
+    novSelected.value = null;
+    novAgents.value = [];
+    return;
+  }
+  novSelected.value = novedad;
+  // opcional: garantiza que estás en la pestaña "Por novedad"
+  novTab.value = 'tipos';
+  loadNovAgents();
+}
+
+function normStr(x) {
+  return String(x || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // sin tildes
+    .trim().toUpperCase();
+}
+
+async function reloadNovAgents(){ if (novSelected.value) await loadNovAgents() }
+
+// ---- CACHÉ DE AGENTES PARA ENRIQUECER (code -> {nickname, category, groupCode, unitName})
+const _agentsCache = ref(null) // Map<string, AgentMin>
+async function getAgentsLookup () {
+  if (_agentsCache.value) return _agentsCache.value
+
+  const token = localStorage.getItem('token')
+  let items = []
+  try {
+    if (isLeaderGroup.value) {
+      // líder: que el backend limite a su grupo
+      const { data } = await axios.get('/my/agents', {
+        params: { limit: 5000 },
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    } else {
+      // admin/supervisor: todos
+      const { data } = await axios.get('/admin/agents', {
+        params: { limit: 5000 },
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    }
+  } catch (e) {
+    console.error('getAgentsLookup error:', e)
+    items = []
+  }
+
+  // arma el map por código (string)
+  const map = new Map()
+  for (const a of items) {
+    const code = String(a.code ?? a.codigo ?? '').trim()
+    if (!code) continue
+    map.set(code, {
+      nickname: a.nickname ?? a.nombre ?? a.name ?? '',
+      category: a.category ?? a.categoria ?? '',
+      groupCode: a.groupCode ?? a.grupo ?? '',
+      unitName : a.unitName  ?? a.unidad ?? ''
+    })
+  }
+  _agentsCache.value = map
+  return map
+}
+
+// ---- CARGA DE FUNCIONARIOS POR NOVEDAD (sin depender de filtro grupo/unidad)
+async function loadNovAgents() {
+  if (!novSelected.value) { novAgents.value = []; return; }
+
+  novAgentsLoading.value = true
+  try {
+    const token = localStorage.getItem('token')
+
+    // 1) Trae TODO el día desde export (rol ya restringe lo que corresponde)
+    const { data } = await axios.get('/reports/export', {
+      params: { date: date.value },
+      headers: { Authorization: 'Bearer ' + token }
+    })
+    const rows = Array.isArray(data) ? data : (data?.items || [])
+
+    const sel = normStr(novSelected.value)
+
+    // 2) Filtra por novedad (y excluye SIN NOVEDAD)
+    const filtered = rows.filter(r => {
+      const nov = normStr(r.novedad || r.novelty || '')
+      return nov && nov !== 'SIN NOVEDAD' && nov === sel
+    })
+
+    // 3) Lookup de agentes por código para enriquecer (nickname / category / grupo / unidad)
+    const lookup = await getAgentsLookup()
+
+    // 4) Normaliza y enriquece
+    const norm = filtered.map(row => {
+      const code =
+        String(row.codigo_agente ?? row.code ?? '').trim()
+
+      const base = lookup.get(code) || {
+        nickname: row.funcionario || '',     // por si tu export ya lo incluyera en el futuro
+        category: row.categoria || '',       // idem
+        groupCode: row.grupo || '',
+        unitName : row.unidad || ''
+      }
+
+      // SO -> ME como pedías
+      const cat = (base.category === 'SO' ? 'ME' : base.category) || '—'
+
+      return {
+        id: row.id || row.agentId || code,
+        code,
+        nickname: base.nickname || '—',
+        category: cat,
+        groupCode: base.groupCode || '',
+        unitName : base.unitName || ''
+      }
+    })
+
+    // 5) Orden: categoría y nombre
+    const CAT_ORDER = { OF: 1, ME: 2, PT: 3 }
+    novAgents.value = norm.sort((x, y) =>
+      (CAT_ORDER[x.category] || 99) - (CAT_ORDER[y.category] || 99) ||
+      String(x.nickname || '').localeCompare(String(y.nickname || ''), 'es', { sensitivity: 'base' })
+    )
+  } catch (e) {
+    console.error('loadNovAgents error:', e)
+    novAgents.value = []
+  } finally {
+    novAgentsLoading.value = false
+  }
+}
+
+const novAgentsFiltered = computed(() => {
+  let list = novAgents.value
+  if (novAgentsCat.value !== 'ALL') {
+    list = list.filter(a => a.category === novAgentsCat.value)
+  }
+  const q = novAgentsQuery.value.trim().toLowerCase()
+  if (q) {
+    list = list.filter(a =>
+      (a.code||'').toLowerCase().includes(q) ||
+      (a.nickname||'').toLowerCase().includes(q)
+    )
+  }
+  return list
+})
+
+const novCounts = computed(() => {
+  return novAgents.value.reduce((acc, a) => {
+    acc[a.category] = (acc[a.category] || 0) + 1
+    return acc
+  }, { OF:0, ME:0, PT:0 })
+})
+
+// Export CSV de los funcionarios listados
+async function exportNovAgentsCsv () {
+  try {
+    // Construye con el filtro actual aplicado (buscador + categoría)
+    const rows = novAgentsFiltered.value.map(a => ({
+      codigo: a.code,
+      funcionario: a.nickname,
+      categoria: a.category,
+      ambito: isAdminView.value
+        ? (a.groupCode || ('G'+(a.groupId || '—')))
+        : (a.unitName || ('U'+(a.unitId || '—'))),
+      novedad: novSelected.value
+    }))
+
+    // Genera CSV simple (sin dependencias extra)
+    const header = ['codigo','funcionario','categoria','ambito','novedad']
+    const lines = [
+      header.join(','),
+      ...rows.map(r => header.map(h => {
+        const v = (r[h] ?? '').toString().replace(/"/g,'""')
+        return /[",\n]/.test(v) ? `"${v}"` : v
+      }).join(','))
+    ]
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `funcionarios_${(novSelected.value||'novedad')}_${date.value}.csv`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('exportNovAgentsCsv error:', e)
+    alert('No se pudo exportar el CSV')
+  }
+}
+
 async function applyFilters () {
   await load()
   if (isLeaderGroup.value) await loadComplianceLeader()
@@ -1517,38 +1872,8 @@ onMounted(async () => {
 onBeforeUnmount(() => document.removeEventListener('click', onComplianceOutsideClick))
 
 watch([date, selectedGroupId, selectedUnitId], async () => {
+  novSelected.value = null;     
+  novAgents.value = [];         
   await applyFilters()
 })
 </script>
-
-<style scoped>
-/* Utilidades base (Tailwind) */
-.input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand-500; }
-.btn-primary { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700; }
-.btn-ghost { @apply inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-100; }
-.label { @apply text-sm text-slate-600; }
-.card { @apply bg-white rounded-xl shadow; }
-.card-body { @apply p-4; }
-.kpi { @apply bg-white rounded-xl shadow; }
-
-/* Botón overlay Fullscreen */
-.map-fs-btn{
-  position:absolute; right:12px; top:12px; z-index:1000;
-  width:44px; height:44px; border-radius:12px;
-  display:flex; align-items:center; justify-content:center;
-  background:#ffffffeb; color:#0f172a;
-  border:1px solid #cbd5e1;
-  box-shadow:0 6px 18px rgba(15,23,42,.18);
-  transition: transform .08s ease, box-shadow .08s ease, background .2s ease;
-}
-.map-fs-btn:hover{ transform: translateY(-1px); background:#ffffff; }
-
-/* Fullscreen API */
-#mapa-agentes:fullscreen,
-#mapa-agentes:-webkit-full-screen{ width:100% !important; height:100% !important; }
-:deep(.leaflet-container.leaflet-fullscreen-on){ width:100% !important; height:100% !important; }
-
-/* Si Tailwind purga colores, añade en tailwind.config.js:
-safelist: [{ pattern: /(bg|text|border)-(green|amber)-(50|100|200|400|600|700|800)/ }]
-*/
-</style>
