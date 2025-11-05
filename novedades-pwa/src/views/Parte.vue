@@ -50,7 +50,7 @@
 
     <!-- FILTROS / KPIs -->
     <div class="max-w-6xl mx-auto px-4 py-4">
-      <div v-if="isSuperLike" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div v-if="isSuperLike" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <!-- KPI: FD esperado -->
         <section class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
           <div class="text-xs text-slate-500">FUERZA DISPONIBLE</div>
@@ -67,6 +67,26 @@
             {{ kpiMarcadosTriad[0] }}/{{ kpiMarcadosTriad[1] }}/{{ kpiMarcadosTriad[2] }} 
           </div>
           <div class="text-xs text-slate-500 mt-1">{{ kpiMarcadosTotal }}</div>
+        </section>
+
+        <!-- ✅ KPI: Ausentes -->
+        <section class="bg-white rounded-xl border border-rose-200 p-4 shadow-sm">
+          <div class="text-xs text-rose-600">AUSENTES</div>
+          <div class="text-2xl font-semibold text-rose-600">
+            {{ kpiAusentesTotal }}
+          </div>
+          <div class="text-xs text-slate-500 mt-1">
+            {{ kpiAusentesTriad[0] }}/{{ kpiAusentesTriad[1] }}/{{ kpiAusentesTriad[2] }} (OF/ME/PT)
+          </div>
+          <div class="mt-3">
+            <button
+              class="px-3 py-1.5 text-xs rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50"
+              :disabled="kpiAusentesTotal===0"
+              @click="showAbsentModal = true"
+            >
+              Ver detalle
+            </button>
+          </div>
         </section>
       </div>
     </div>
@@ -138,13 +158,52 @@
 
           <div v-if="dataset[group]?.noReport" class="text-center text-slate-500 py-3">
             No existe reporte creado para esta fecha.
-            </div>
-            <div v-else-if="agentRows(group).length === 0" class="text-center text-slate-500 py-3">
+          </div>
+          <div v-else-if="agentRows(group).length === 0" class="text-center text-slate-500 py-3">
             No hay registros para este filtro.
           </div>
         </div>
       </div>
     </div>
+
+    <!-- 🔍 Modal detalle ausentes -->
+    <div v-if="showAbsentModal" class="fixed inset-0 z-50">
+      <div class="absolute inset-0 bg-black/40" @click="showAbsentModal=false"></div>
+      <div class="absolute inset-0 grid place-items-center p-4">
+        <div class="w-full max-w-3xl bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden">
+          <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+            <h3 class="font-semibold text-slate-800">Detalle de ausentes ({{ kpiAusentesTotal }})</h3>
+            <button class="text-slate-500 hover:text-slate-700" @click="showAbsentModal=false">Cerrar</button>
+          </div>
+          <div class="px-4 py-3 max-h-[70vh] overflow-auto">
+            <div v-if="absentRows.length === 0" class="text-sm text-slate-500">No hay ausentes.</div>
+
+            <table v-else class="w-full text-sm">
+              <thead class="text-left text-slate-500">
+                <tr>
+                  <th class="py-2 pr-3">Grupo</th>
+                  <th class="py-2 pr-3">Código</th>
+                  <th class="py-2 pr-3">Nickname</th>
+                  <th class="py-2 pr-3">Categoría</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in absentRows" :key="row.gid + '-' + row.id" class="border-t">
+                  <td class="py-2 pr-3">{{ row.group }}</td>
+                  <td class="py-2 pr-3">{{ row.code }}</td>
+                  <td class="py-2 pr-3">{{ row.nickname || '—' }}</td>
+                  <td class="py-2 pr-3">{{ row.category }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="px-4 py-3 border-t border-slate-200 text-right">
+            <button class="px-3 py-1.5 text-sm rounded-lg border border-slate-200 hover:bg-slate-50" @click="showAbsentModal=false">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- /Modal -->
   </div>
 </template>
 
@@ -158,25 +217,18 @@ const showServicio = ref(false)
 const showOnlyNoCheck = ref(false)
 const loading = ref(false)
 const isSaving = ref(new Set())
+const showAbsentModal = ref(false)
 
 const groups = ref([])
 const selectedGroups = reactive(new Set())
 const openAcc = reactive({})
 
-// gid -> {
-//   sinNovedadEsperados:Set<number>,
-//   servicio:Set<number>,
-//   checked:Set<number>,                 // ✅ agentIds con check=1
-//   reportIdByAgent: Map<agentId,reportId>,
-//   agentsById: Map<agentId, AgentRow>
-// }
+// gid -> { sinNovedadEsperados:Set<number>, servicio:Set<number>, checked:Set<number>, reportIdByAgent:Map, agentsById:Map, noReport:boolean }
 const dataset = reactive({})
-// Overrides locales (para “desmarcar” sólo en UI si lo necesitas)
 const uiUnchecks = reactive({}) // gid -> Set(agentId)
 const getUiSet = (gid) => (uiUnchecks[gid] || (uiUnchecks[gid] = new Set()))
 function markUiUnchecked(gid, agentId) { getUiSet(gid).add(agentId) }
 function clearUiUnchecked(gid, agentId) { getUiSet(gid).delete(agentId) }
-
 
 const isSuperLike = computed(() =>
   ['superadmin','supervision','leader_group'].includes(String(me.value?.role||'').toLowerCase())
@@ -243,8 +295,8 @@ function clearGroupBox(box) {
 function isPresentUI(gid, agentId) {
   const box = dataset[gid]
   if (!box) return false
-  const serverChecked = box.checked.has(agentId)   // ✅ ahora usamos checked
-  const forcedUncheck = getUiSet(gid).has(agentId) // override local opcional
+  const serverChecked = box.checked.has(agentId)
+  const forcedUncheck = getUiSet(gid).has(agentId)
   return serverChecked && !forcedUncheck
 }
 
@@ -281,7 +333,7 @@ const agentRows = gid => {
   return filtered
 }
 
-/* ---------- KPIs / Triadas con checked ---------- */
+/* ---------- KPIs / Triadas ---------- */
 function triadEsperadosByGroup(gid) {
   const box = dataset[gid]; const out = [0,0,0]
   if (!box) return out
@@ -309,6 +361,16 @@ function triadServicioByGroup(gid) {
     out[catRank(normalizeCat(a.category))]++
   }
   return out
+}
+
+function triadAusentesByGroup(gid) {
+  const need = triadEsperadosByGroup(gid)
+  const have = triadPresentesByGroupUI(gid)
+  return [
+    Math.max(need[0]-have[0], 0),
+    Math.max(need[1]-have[1], 0),
+    Math.max(need[2]-have[2], 0)
+  ]
 }
 
 function triadText(gid) {
@@ -360,6 +422,50 @@ const kpiMarcadosTriad = computed(() => {
   return out
 })
 
+/* ✅ Nuevos KPIs: AUSENTES */
+const kpiAusentesTotal = computed(() => kpiFdEsperadoTotal.value - kpiMarcadosTotal.value)
+const kpiAusentesTriad = computed(() => {
+  const out = [0,0,0]
+  for (const gid of visibleGroupIds.value) {
+    const t = triadAusentesByGroup(gid)
+    out[0]+=t[0]; out[1]+=t[1]; out[2]+=t[2]
+  }
+  return out
+})
+
+/* ✅ Listado para el modal de ausentes */
+const absentRows = computed(() => {
+  const rows = []
+  for (const gid of visibleGroupIds.value) {
+    const box = dataset[gid]
+    if (!box || box.noReport) continue
+    for (const id of box.sinNovedadEsperados) {
+      if (box.checked.has(id)) continue
+      const a = box.agentsById.get(id)
+      if (!a) continue
+      rows.push({
+        gid,
+        id,
+        group: groupCode(gid),
+        code: a.code,
+        nickname: a.nickname || null,
+        category: a.category
+      })
+    }
+  }
+  // Orden: Grupo, categoría (OF/ME/PT), número de código
+  rows.sort((x,y) => {
+    const gc = String(x.group).localeCompare(String(y.group))
+    if (gc !== 0) return gc
+    const cx = catRank(normalizeCat(x.category)), cy = catRank(normalizeCat(y.category))
+    if (cx !== cy) return cx - cy
+    const nx = codeNum(x.code), ny = codeNum(y.code)
+    if (nx !== ny) return nx - ny
+    return String(x.code).localeCompare(String(y.code))
+  })
+  return rows
+})
+
 /* ---------- Carga de datos ---------- */
 function resetDataset() { for (const k of Object.keys(dataset)) delete dataset[k] }
 
@@ -375,7 +481,6 @@ async function loadGroups() {
 }
 
 async function syncGroup(gid) {
-  // Siempre crea la caja primero
   const box = ensureGroupBox(gid)
 
   // 0) ¿Existe reporte?
@@ -384,7 +489,6 @@ async function syncGroup(gid) {
   })
 
   if (!ex.exists) {
-    // Limpia y marca noReport, luego corta
     clearGroupBox(box)
     box.noReport = true
     return
@@ -422,7 +526,7 @@ async function syncGroup(gid) {
       nickname: r.nickname || null,
       category: r.category,
       status: (r.state || '').toUpperCase(),
-      mt: r.mt || r.mt_report || r.mt_agent || null // ✅ asegura MT
+      mt: r.mt || r.mt_report || r.mt_agent || null
     };
     box.agentsById.set(a.id, a);
 
@@ -433,9 +537,7 @@ async function syncGroup(gid) {
     if (a.status === 'SERVICIO') box.servicio.add(a.id);
     if (r.reportId) box.reportIdByAgent.set(a.id, r.reportId);
   }
-
 }
-
 
 async function refreshAll (silent = false) {
   try {
@@ -470,7 +572,7 @@ function ensureIso(d) {
 
 async function onTogglePresent(gid, a) {
   const box = dataset[gid]; if (!box) return
-  const currentlyChecked = box.checked.has(a.id)   // ✅ basado en checked
+  const currentlyChecked = box.checked.has(a.id)
   const nextVal = currentlyChecked ? 0 : 1
 
   try {
@@ -482,13 +584,12 @@ async function onTogglePresent(gid, a) {
       check: nextVal
     })
 
-    // Refleja localmente sin recargar todo:
     if (nextVal === 1) {
       clearUiUnchecked(gid, a.id)
-      box.checked.add(a.id)          // ✅ marcar
+      box.checked.add(a.id)
     } else {
       markUiUnchecked(gid, a.id)
-      box.checked.delete(a.id)       // ✅ desmarcar
+      box.checked.delete(a.id)
     }
   } catch (e) {
     console.error('Toggle check error', e)
@@ -496,8 +597,6 @@ async function onTogglePresent(gid, a) {
     isSaving.value.delete(a.id)
   }
 }
-
-
 
 /* ---------- Exclusión de filtros ---------- */
 function onToggleServicio() {

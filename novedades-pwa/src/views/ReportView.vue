@@ -940,7 +940,7 @@ function businessDateBogota(cutoffHour /* 0..23 */) {
   return ymdInTZ(base)
 }
 
-const reportDate = ref(businessDateBogota(6)) // flip a las 05:00 Bogotá
+const reportDate = ref(businessDateBogota(9)) // flip a las 05:00 Bogotá
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
 
