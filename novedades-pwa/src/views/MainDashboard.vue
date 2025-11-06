@@ -323,31 +323,48 @@ const overview = ref({
   absences_today: 0,
   target_date: null
 })
+
 async function loadOverview() {
   try {
-    const { data } = await api.get('/dashboard/overview', {
-      params: { groupId: filters.value.groupId || undefined }
-    })
+    const corte = filters.value.corte
+
+    // 1) Cumplimiento (cobertura + unidades)
+    const { data: comp } = await api.get('/dashboard/compliance', { params: { date: corte } })
+    const done = comp?.done?.length || 0
+    const pend = comp?.pending?.length || 0
+    const expectedUnits = done + pend
+    const coveragePercent = expectedUnits ? Math.round((done / expectedUnits) * 100) : 0
+
+    // 2) Agentes activos / inactivos
+    const { data: ag } = await api.get('/catalogs/agents', { params: { limit: 1000, groupId: filters.value.groupId || undefined } })
+    const agents = Array.isArray(ag?.items) ? ag.items : (Array.isArray(ag) ? ag : [])
+    const act = agents.filter(a => String(a.status || '').toUpperCase() === 'ACTIVE').length
+    const inact = agents.length - act
+
+    // 3) Ausencias del día (toma PT del día)
+    const { data: tipos } = await api.get('/dashboard/novelties-by-type', { params: { date: corte, groupId: filters.value.groupId || undefined } })
+    const rows = (tipos?.items || (Array.isArray(tipos) ? tipos : []))
+    const PT_total = rows.reduce((acc, r) => acc + Number(r.PT || r.PT_count || 0), 0)
+
+    // 4) Top racha (opcional: filtra a estado SNV)
+    const { data: streaks } = await api.get('/admin/agents-streaks', { params: { pageSize: 200, groupId: filters.value.groupId || undefined } })
+    const items = streaks?.items || []
+    const top = items.reduce((best, a) => (a.current_streak > (best?.current_streak || 0) ? a : best), null)
+    const topStreak = top ? { agent_id: top.id || top.agentId, name: top.nickname || top.code, days: top.current_streak || 0 } : { agent_id:null, name:null, days:0 }
+
     overview.value = {
-      agents_active: Number(data?.agents_active || 0),
-      agents_inactive: Number(data?.agents_inactive || 0),
-      coverage: {
-        received: Number(data?.coverage?.received || 0),
-        expected: Number(data?.coverage?.expected || 0),
-        percent: Number(data?.coverage?.percent || 0),
-      },
-      units_reported_today: {
-        count: Number(data?.units_reported_today?.count || 0),
-        percent: Number(data?.units_reported_today?.percent || 0),
-      },
-      top_streak_snv: data?.top_streak_snv || { agent_id: null, name: null, days: 0 },
-      absences_today: Number(data?.absences_today || 0),
-      target_date: data?.target_date || null
+      agents_active: act, agents_inactive: inact,
+      coverage: { received: done, expected: expectedUnits, percent: coveragePercent },
+      units_reported_today: { count: done, percent: coveragePercent },
+      top_streak_snv: topStreak,
+      absences_today: PT_total,
+      target_date: corte
     }
   } catch (e) {
     console.error('overview error:', e?.response?.data || e?.message || e)
   }
 }
+
 
 // ====== (legacy) KPIs por corte (si los sigues mostrando en el modal) ======
 const tot = ref({ OF_FE:0, SO_FE:0, PT_FE:0, OF_FD:0, SO_FD:0, PT_FD:0, OF_N:0, SO_N:0, PT_N:0 })
@@ -428,31 +445,37 @@ const topPermits = ref([])  // [{id,name,days}]
 const plus30 = ref({ count: 0, items: [] }) // {count, items:[]}
 
 async function loadLeaderboards() {
-  const common = { date_from: filters.value.from, date_to: filters.value.to }
+  const common = {}
   if (filters.value.groupId) common.groupId = filters.value.groupId
 
   try {
-    const { data } = await api.get('/dashboard/agents-top', { params: { ...common, metric: 'worked_days', limit: 5 } })
-    topWorked.value = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-  } catch (e) {
-    console.warn('Top worked no disponible:', e?.message || e)
-    topWorked.value = []
-  }
-
-  try {
-    const { data } = await api.get('/dashboard/agents-top', { params: { ...common, metric: 'permits_days', limit: 5 } })
-    topPermits.value = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-  } catch (e) {
-    console.warn('Top permits no disponible:', e?.message || e)
-    topPermits.value = []
-  }
-
-  try {
-    const { data } = await api.get('/dashboard/agents-threshold', { params: { ...common, metric: 'worked_days', gte: 30 } })
+    const { data } = await api.get('/admin/agents-streaks', { params: { page: 1, pageSize: 1000, ...common } })
     const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    plus30.value = { count: (data?.count ?? items.length), items }
+
+    // Top 5 "laborados" ≈ mayor racha actual
+    topWorked.value = [...items]
+      .sort((a,b) => (b.current_streak||0) - (a.current_streak||0))
+      .slice(0, 5)
+      .map(a => ({ id: a.id || a.agentId, name: a.nickname || a.code, days: a.current_streak || 0 }))
+
+    // Top 5 "permisos" = estado actual PERMISO con mayor racha
+    topPermits.value = items
+      .filter(a => String(a.status || '').toUpperCase() === 'PERMISO')
+      .sort((a,b) => (b.current_streak||0) - (a.current_streak||0))
+      .slice(0, 5)
+      .map(a => ({ id: a.id || a.agentId, name: a.nickname || a.code, days: a.current_streak || 0 }))
+
+    // "+30" = racha >= 30 días
+    const ge30 = items
+      .filter(a => (a.current_streak || 0) >= 30)
+      .sort((a,b) => (b.current_streak||0) - (a.current_streak||0))
+      .map(a => ({ id: a.id || a.agentId, name: a.nickname || a.code, days: a.current_streak || 0 }))
+
+    plus30.value = { count: ge30.length, items: ge30.slice(0, 100) }
   } catch (e) {
-    console.warn('+30 worked no disponible:', e?.message || e)
+    console.warn('Leaderboards no disponibles:', e?.message || e)
+    topWorked.value = []
+    topPermits.value = []
     plus30.value = { count: 0, items: [] }
   }
 }
@@ -509,7 +532,7 @@ async function loadNovDetails() {
   }
 
   try {
-    const scopeUrl = isAdminView.value ? '/dashboard/novelties-by-group' : '/dashboard/novelties-by-unit'
+    const scopeUrl = '/dashboard/novelties-by-unit'
     const { data: amb } = await api.get(scopeUrl, { params: p })
     novAmbitoRows.value = (amb?.items || (Array.isArray(amb) ? amb : []))
       .map(r => {
@@ -586,16 +609,16 @@ async function exportCsv() {
 // Fechas conmemorativas de la semana (dom-sáb)
 async function loadAnniversaries() {
   try {
-    const { data } = await api.get('/anniversaries/week', { params: { date: filters.value.corte } })
-    annivItems.value = (data?.items || []).map((x, i) => ({
-      emoji: x.emoji || (i % 2 ? '🎗️' : '🇨🇴'),
-      title: x.title,
-      subtitle: x.subtitle || 'Conmemoración',
-      dateISO: x.date,
-      dateLabel: new Date(x.date).toLocaleDateString('es-CO', { weekday:'short', month:'short', day:'2-digit' }),
+    const { data } = await api.get('/api/fechas/semana', { params: { date: filters.value.corte } })
+    const arr = Array.isArray(data?.items) ? data.items : []
+    annivItems.value = arr.map((x, i) => ({
+      emoji: i % 2 ? '🎗️' : '🇨🇴',
+      title: x.description || 'Conmemoración',
+      subtitle: x.gao || 'Institucional',
+      dateISO: String(x.fecha).slice(0,10),
+      dateLabel: new Date(x.fecha).toLocaleDateString('es-CO', { weekday:'short', month:'short', day:'2-digit' }),
       bg: pastelBGs[i % pastelBGs.length],
     }))
-    // Fallback si la API vino vacía
     if (!annivItems.value.length) {
       const week = getWeekDatesISO(filters.value.corte)
       annivItems.value = buildAnnivDummy(week)
@@ -610,26 +633,33 @@ async function loadAnniversaries() {
 // Cumpleaños del mes
 async function loadBirthdays() {
   try {
-    const d = new Date(filters.value.corte)
-    const month = d.getMonth() + 1
-    const { data } = await api.get('/agents/birthdays', { params: { month } })
-    const year = d.getFullYear()
-    bdayItems.value = (data?.items || [])
-      .sort((a,b) => new Date(`${year}-${new Date(a.birthdate).getMonth()+1}-${new Date(a.birthdate).getDate()}`) - new Date(`${year}-${new Date(b.birthdate).getMonth()+1}-${new Date(b.birthdate).getDate()}`))
+    const base = new Date(filters.value.corte)
+    const month = base.getMonth() // 0..11
+    const year  = base.getFullYear()
+
+    const { data } = await api.get('/catalogs/agents', { params: { limit: 1000, groupId: filters.value.groupId || undefined } })
+    const agents = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    const monthAgents = agents.filter(a => {
+      const bd = a.birthday ? new Date(a.birthday) : null
+      return bd && bd.getMonth() === month
+    })
+
+    bdayItems.value = monthAgents
+      .sort((a,b) => new Date(a.birthday).getDate() - new Date(b.birthday).getDate())
       .map((a, i) => {
-        const bd = new Date(a.birthdate)
+        const bd = new Date(a.birthday)
         const next = new Date(year, bd.getMonth(), bd.getDate())
-        const age = Math.max(18, Math.min(65, year - bd.getFullYear()))
+        const age = Math.max(18, Math.min(80, year - bd.getFullYear()))
         return {
           emoji: ['🎂','🎉','🎁','🥳','🍰','🎈'][i % 6],
-          title: a.name,
+          title: a.nickname || a.code,
           subtitle: `Cumple ${age}`,
           dateISO: next.toISOString().slice(0,10),
           dateLabel: next.toLocaleDateString('es-CO', { month:'short', day:'2-digit' }),
           bg: pastelBGs[(i+3) % pastelBGs.length],
         }
       })
-    // Fallback si la API vino vacía
+
     if (!bdayItems.value.length) {
       bdayItems.value = buildBirthdaysDummy(filters.value.corte)
     }
@@ -642,7 +672,7 @@ async function loadBirthdays() {
 // ====== CATALOGOS ======
 async function loadGroups() {
   try {
-    const { data } = await api.get('/groups', { params: { limit: 200 } })
+    const { data } = await api.get('/admin/groups', { params: { limit: 200 } })
     grupos.value = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
   } catch (e) {
     console.warn('No se pudieron cargar grupos (opcional):', e?.message || e)

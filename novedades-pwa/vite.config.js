@@ -21,10 +21,13 @@ export default defineConfig({
     '/reports': 'http://localhost:8080',
     '/dashboard': 'http://localhost:8080',
     '/debug': 'http://localhost:8080',
-
-    // 👇 AGREGA ESTAS LÍNEAS
     '/vehicles': 'http://localhost:8080',
-    '/uploads': 'http://localhost:8080', // si sirves fotos desde backend
+    '/uploads': 'http://localhost:8080', 
+    '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        rewrite: path => path.replace(/^\/api/, ''), 
+      },
   },
 },
 })

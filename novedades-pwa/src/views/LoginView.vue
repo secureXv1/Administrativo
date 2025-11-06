@@ -1,6 +1,6 @@
 <template>
   <div class="w-screen h-screen flex items-center justify-center bg-black bg-cover bg-center bg-no-repeat relative"
-     style="background-image: url('/fondo.jpg');">
+    style="background-image: url('/login/fondo.jpg');">
   <!-- Overlay oscuro -->
   <div class="absolute inset-0 bg-black/10 z-0"></div>
     <!-- Marca agua SVG -->
