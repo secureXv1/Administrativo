@@ -3,9 +3,8 @@
 
     <!-- BARRA SUPERIOR -->
     <header class="sticky top-0 z-10 bg-gradient-to-r from-sky-700 to-cyan-600 text-white rounded-xl p-4 shadow">
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-3">
-          <!-- Icon -->
           <div class="w-10 h-10 rounded-xl bg-white/15 grid place-items-center">
             <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-width="1.5" d="M3 3h18M3 9h18M3 15h18M3 21h18"/>
@@ -13,37 +12,20 @@
           </div>
           <div>
             <h1 class="text-xl font-semibold">Panel Operativo</h1>
-            <p class="text-white/80 text-sm">KPIs por <b>corte</b> y analítica por <b>rango</b></p>
+            <p class="text-white/80 text-sm">KPIs del día y analítica</p>
           </div>
         </div>
 
-        <!-- FILTROS -->
-        <div class="grid grid-cols-2 md:grid-cols-6 gap-2 w-full md:w-auto">
-          <div class="col-span-2 md:col-span-2">
-            <label class="block text-xs text-white/80 mb-1">Corte (KPIs)</label>
-            <input type="date" v-model="filters.corte" class="w-full rounded-md border border-white/30 bg-white/10 px-3 py-2 placeholder-white/60" />
-          </div>
-          <div>
-            <label class="block text-xs text-white/80 mb-1">Desde</label>
-            <input type="date" v-model="filters.from" class="w-full rounded-md border border-white/30 bg-white/10 px-3 py-2" />
-          </div>
-          <div>
-            <label class="block text-xs text-white/80 mb-1">Hasta</label>
-            <input type="date" v-model="filters.to" class="w-full rounded-md border border-white/30 bg-white/10 px-3 py-2" />
-          </div>
-          <div>
-            <label class="block text-xs text-white/80 mb-1">Grupo</label>
-            <select v-model="filters.groupId" class="w-full rounded-md border border-white/30 bg-white/10 px-3 py-2">
-              <option value="">Todos</option>
-              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">{{ g.code || g.name || ('Grupo '+g.id) }}</option>
-            </select>
-          </div>
-          <div class="flex gap-2">
-            <button @click="reloadAll" :disabled="loading"
-                    class="w-full rounded-md bg-white/90 text-sky-700 font-medium px-3 py-2 hover:bg-white disabled:opacity-60">Aplicar</button>
-            <button @click="exportCsv" :disabled="loading"
-                    class="w-full rounded-md bg-white/10 text-white border border-white/30 px-3 py-2 hover:bg-white/20 disabled:opacity-60">CSV</button>
-          </div>
+        <!-- Acciones rápidas -->
+        <div class="flex items-center gap-2">
+          <button @click="reloadAll" :disabled="loading"
+                  class="rounded-md bg-white/90 text-sky-700 font-medium px-3 py-2 hover:bg-white disabled:opacity-60">
+            Actualizar
+          </button>
+          <button @click="exportCsv" :disabled="loading"
+                  class="rounded-md bg-white/10 text-white border border-white/30 px-3 py-2 hover:bg-white/20 disabled:opacity-60">
+            CSV
+          </button>
         </div>
       </div>
 
@@ -116,19 +98,27 @@
       </div>
     </section>
 
-   <!-- FILA DE GRAF Y TOP NOV -->
+    <!-- FILA DE MAPA Y SLIDERS -->
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <!-- Fechas conmemorativas (semana dom-sáb) -->
-      <div class="bg-white rounded-xl border border-slate-200 p-4 h-[]">
-        <SliderStrip :items="annivItems" title="Fechas conmemorativas (semana)" :autoplayMs="3800">
-          <template #icon="{ item }">
-            <div class="text-2xl leading-none">{{ item.emoji || '📅' }}</div>
-          </template>
-        </SliderStrip>
+      <!-- Mini-mapa de personas -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <h2 class="text-sm font-semibold text-slate-800 mb-2">Ubicación de personas (en vivo)</h2>
+        <MapMini
+          :dateISO="filters.corte"
+          :groupId="filters.groupId"
+          endpoint="/admin/agents-locations-latest"  
+          :refreshMs="15000"
+        />
       </div>
 
-            <!-- Cumpleaños del mes -->
-      <div class="bg-white rounded-xl border border-slate-200 p-4 h-[]">
+      <!-- Cumpleaños del mes (x2 como pediste) -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <SliderStrip :items="bdayItems" title="Cumpleaños del mes" :autoplayMs="3400">
+          <template #icon="{ item }">
+            <div class="text-2xl leading-none">{{ item.emoji || '🎂' }}</div>
+          </template>
+        </SliderStrip>
+        <br>
         <SliderStrip :items="bdayItems" title="Cumpleaños del mes" :autoplayMs="3400">
           <template #icon="{ item }">
             <div class="text-2xl leading-none">{{ item.emoji || '🎂' }}</div>
@@ -137,71 +127,129 @@
       </div>
     </section>
 
-
     <!-- LEADERBOARDS -->
     <section class="grid grid-cols-1 xl:grid-cols-4 gap-4">
+      <!-- +30 días -->
       <div class="bg-white rounded-xl border border-slate-200 p-4">
         <div class="flex items-center justify-between">
           <h3 class="font-semibold">+30 días laborados</h3>
           <span class="text-xs text-slate-500">{{ plus30.count }}</span>
         </div>
-        <ul class="mt-2 space-y-1 max-h-64 overflow-auto pr-1">
-          <li v-for="a in plus30.items" :key="a.id" class="text-sm flex justify-between">
-            <span class="truncate">{{ a.name }}</span>
-            <span class="text-slate-500">{{ a.days }} d</span>
+        <ul class="mt-3 space-y-2 max-h-64 overflow-auto pr-1">
+          <li v-for="(a,i) in plus30.items.slice(0,10)" :key="a.id" class="text-sm">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-full bg-slate-200 grid place-items-center text-[10px] font-bold text-slate-700">
+                {{ (a.name||'?').slice(0,1) }}
+              </div>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="truncate">{{ a.name }}</span>
+                  <span class="text-slate-500">{{ a.days }} d</span>
+                </div>
+                <div class="h-2 bg-slate-100 rounded mt-1">
+                  <div class="h-2 rounded bg-emerald-500" :style="{ width: pct(a.days, maxStreak)+'%' }"></div>
+                </div>
+              </div>
+            </div>
           </li>
           <li v-if="!plus30.items.length" class="text-slate-400 text-sm">—</li>
         </ul>
       </div>
 
+      <!-- Top laborados -->
       <div class="bg-white rounded-xl border border-slate-200 p-4">
-        <h3 class="font-semibold">Top 5 laborados</h3>
-        <ul class="mt-2 space-y-1">
-          <li v-for="(a,i) in topWorked" :key="a.id" class="text-sm flex justify-between">
-            <span class="truncate">{{ i+1 }}. {{ a.name }}</span>
-            <span class="text-slate-500">{{ a.days }} d</span>
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">Top laborados</h3>
+          <span class="text-xs text-slate-500">Top 5</span>
+        </div>
+        <ul class="mt-3 space-y-2">
+          <li v-for="(a,i) in topWorked" :key="a.id" class="text-sm">
+            <div class="flex items-center gap-2">
+              <span class="w-6 h-6 shrink-0 grid place-items-center rounded-full"
+                    :class="i===0 ? 'bg-amber-500 text-white' : i===1 ? 'bg-slate-400 text-white' : i===2 ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'">
+                {{ i+1 }}
+              </span>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="truncate">{{ a.name }}</span>
+                  <span class="text-slate-500">{{ a.days }} d</span>
+                </div>
+                <div class="h-2 bg-slate-100 rounded mt-1">
+                  <div class="h-2 rounded bg-sky-500" :style="{ width: pct(a.days, maxWorked)+'%' }"></div>
+                </div>
+              </div>
+            </div>
           </li>
           <li v-if="!topWorked.length" class="text-slate-400 text-sm">—</li>
         </ul>
       </div>
 
+      <!-- Top permisos -->
       <div class="bg-white rounded-xl border border-slate-200 p-4">
-        <h3 class="font-semibold">Top 5 permisos</h3>
-        <ul class="mt-2 space-y-1">
-          <li v-for="(a,i) in topPermits" :key="a.id" class="text-sm flex justify-between">
-            <span class="truncate">{{ i+1 }}. {{ a.name }}</span>
-            <span class="text-slate-500">{{ a.days }} d</span>
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">Top permisos</h3>
+          <span class="text-xs text-slate-500">Top 5</span>
+        </div>
+        <ul class="mt-3 space-y-2">
+          <li v-for="(a,i) in topPermits" :key="a.id" class="text-sm">
+            <div class="flex items-center gap-2">
+              <span class="w-6 h-6 shrink-0 grid place-items-center rounded-full"
+                    :class="i===0 ? 'bg-amber-500 text-white' : i===1 ? 'bg-slate-400 text-white' : i===2 ? 'bg-amber-700 text-white' : 'bg-slate-200 text-slate-700'">
+                {{ i+1 }}
+              </span>
+              <div class="flex-1">
+                <div class="flex justify-between">
+                  <span class="truncate">{{ a.name }}</span>
+                  <span class="text-slate-500">{{ a.days }} d</span>
+                </div>
+                <div class="h-2 bg-slate-100 rounded mt-1">
+                  <div class="h-2 rounded bg-rose-500" :style="{ width: pct(a.days, maxPermits)+'%' }"></div>
+                </div>
+              </div>
+            </div>
           </li>
           <li v-if="!topPermits.length" class="text-slate-400 text-sm">—</li>
         </ul>
       </div>
 
+      <!-- Top novedades (lista) -->
       <div class="bg-white rounded-xl border border-slate-200 p-4">
-        <h3 class="font-semibold">Top 5 novedades (lista)</h3>
-        <ul class="mt-2 space-y-1">
-          <li v-for="(n,i) in topNovelties" :key="n.label" class="text-sm flex justify-between">
-            <span class="truncate">{{ i+1 }}. {{ n.label }}</span>
-            <span class="text-slate-500">{{ n.total }}</span>
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">Top novedades</h3>
+          <span class="text-xs text-slate-500">Top 5</span>
+        </div>
+        <ul class="mt-3 space-y-2">
+          <li v-for="(n,i) in topNovelties" :key="n.label" class="text-sm">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full"
+                    :class="['bg-rose-500','bg-amber-500','bg-sky-500','bg-emerald-500','bg-fuchsia-500'][i % 5]"></span>
+              <div class="flex-1 flex justify-between">
+                <span class="truncate">{{ i+1 }}. {{ n.label }}</span>
+                <span class="text-slate-500">{{ n.total }}</span>
+              </div>
+            </div>
           </li>
           <li v-if="!topNovelties.length" class="text-slate-400 text-sm">—</li>
         </ul>
       </div>
     </section>
+
+    <!-- GRÁFICAS -->
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div class="bg-white rounded-xl border border-slate-200 p-4 h-[340]">
+      <div class="bg-white rounded-xl border border-slate-200 p-4 h-[340px]">
         <div class="bg-white rounded-xl border border-slate-200 p-6 h-[340px]">
           <h2 class="text-lg font-semibold mb-2">Reportes por día</h2>
           <Bar :data="barData" :options="barOptions" class="h-[260px]" />
         </div>
       </div>
-      <div class="bg-white rounded-xl border border-slate-200 p-4 h-[340]">
+      <div class="bg-white rounded-xl border border-slate-200 p-4 h-[340px]">
         <div class="bg-white rounded-xl border border-slate-200 p-6 h-[340px]">
           <h2 class="text-lg font-semibold mb-2">Reportes por día</h2>
           <Bar :data="barData" :options="barOptions" class="h-[260px]" />
         </div>
       </div>
     </section>
-    
+
     <!-- MODAL NOVEDADES -->
     <div v-if="novModalOpen" class="fixed inset-0 z-[9998] grid place-items-center bg-black/40 p-4">
       <div class="bg-white rounded-2xl shadow-xl max-w-4xl w-full relative border border-slate-200">
@@ -272,16 +320,16 @@
 </template>
 
 <script setup>
-import FechasBanner from '@/components/FechasBanner.vue'
 import { Bar, Pie } from 'vue-chartjs'
 import { Chart, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js'
 import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import SliderStrip from '@/components/SliderStrip.vue'
+import MapMini from '@/components/MapMini.vue'
 Chart.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement)
 
 // ====== API CLIENT ======
-const API_BASE = import.meta.env.VITE_API_BASE || '' // e.g. http://localhost:8080/api  ó vacío si usas proxy
+const API_BASE = import.meta.env.VITE_API_BASE || ''
 const api = axios.create({ baseURL: API_BASE })
 api.interceptors.request.use(cfg => {
   const t = localStorage.getItem('token')
@@ -297,23 +345,22 @@ const defaultFrom = new Date(today); defaultFrom.setDate(today.getDate() - 6)
 // ====== STATE ======
 const loading = ref(false)
 const error = ref('')
-const grupos = ref([]) // opcional (si tienes endpoint de grupos)
-// ====== LEADERBOARDS (Agentes) ======
-const topNovelties = ref([]) // [{label,total}]  <-- FALTABA ESTA
+const grupos = ref([])
+const topNovelties = ref([])
 
 // ====== SLIDERS ======
-const annivItems = ref([]) // [{title, subtitle, dateISO, dateLabel, extra?, bg?}]
-const bdayItems  = ref([]) // idem
+const annivItems = ref([])
+const bdayItems  = ref([])
 
-// Filtros (NO afectan a los KPIs overview; solo a gráficas/tops y al modal)
+// Filtros (NO afectan overview; sí gráficas/tops y modal)
 const filters = ref({
-  corte: ymd(today),           // usado solo por el modal de novedades (detalle de un día)
-  from: ymd(defaultFrom),      // usado por gráficas y tops
+  corte: ymd(today),
+  from: ymd(defaultFrom),
   to: ymd(today),
   groupId: ''
 })
 
-// ====== KPIs NUEVOS (overview -> NO usan filtros de fecha) ======
+// ====== KPIs NUEVOS (overview) ======
 const overview = ref({
   agents_active: 0,
   agents_inactive: 0,
@@ -328,25 +375,25 @@ async function loadOverview() {
   try {
     const corte = filters.value.corte
 
-    // 1) Cumplimiento (cobertura + unidades)
+    // 1) Cumplimiento
     const { data: comp } = await api.get('/dashboard/compliance', { params: { date: corte } })
     const done = comp?.done?.length || 0
     const pend = comp?.pending?.length || 0
     const expectedUnits = done + pend
     const coveragePercent = expectedUnits ? Math.round((done / expectedUnits) * 100) : 0
 
-    // 2) Agentes activos / inactivos
+    // 2) Agentes activos/inactivos
     const { data: ag } = await api.get('/catalogs/agents', { params: { limit: 1000, groupId: filters.value.groupId || undefined } })
     const agents = Array.isArray(ag?.items) ? ag.items : (Array.isArray(ag) ? ag : [])
     const act = agents.filter(a => String(a.status || '').toUpperCase() === 'ACTIVE').length
     const inact = agents.length - act
 
-    // 3) Ausencias del día (toma PT del día)
+    // 3) Ausencias del día (PT)
     const { data: tipos } = await api.get('/dashboard/novelties-by-type', { params: { date: corte, groupId: filters.value.groupId || undefined } })
     const rows = (tipos?.items || (Array.isArray(tipos) ? tipos : []))
     const PT_total = rows.reduce((acc, r) => acc + Number(r.PT || r.PT_count || 0), 0)
 
-    // 4) Top racha (opcional: filtra a estado SNV)
+    // 4) Top racha
     const { data: streaks } = await api.get('/admin/agents-streaks', { params: { pageSize: 200, groupId: filters.value.groupId || undefined } })
     const items = streaks?.items || []
     const top = items.reduce((best, a) => (a.current_streak > (best?.current_streak || 0) ? a : best), null)
@@ -365,8 +412,7 @@ async function loadOverview() {
   }
 }
 
-
-// ====== (legacy) KPIs por corte (si los sigues mostrando en el modal) ======
+// ====== (legacy) KPIs por corte ======
 const tot = ref({ OF_FE:0, SO_FE:0, PT_FE:0, OF_FD:0, SO_FD:0, PT_FD:0, OF_N:0, SO_N:0, PT_N:0 })
 const kpiFE  = computed(() => `${tot.value.OF_FE}/${tot.value.SO_FE}/${tot.value.PT_FE}`)
 const kpiFD  = computed(() => `${tot.value.OF_FD}/${tot.value.SO_FD}/${tot.value.PT_FD}`)
@@ -402,7 +448,6 @@ const pieOptions = { responsive: true, plugins: { legend: { position: 'bottom' }
 
 async function loadSeriesAndTop() {
   try {
-    // Serie por día (conteo de reportes)
     const p = { date_from: filters.value.from, date_to: filters.value.to }
     if (filters.value.groupId) p.groupId = filters.value.groupId
     const { data } = await api.get('/dashboard/reports', { params: p })
@@ -415,7 +460,6 @@ async function loadSeriesAndTop() {
     const ordered = Array.from(byDate.entries()).sort((a,b)=> a[0].localeCompare(b[0]))
     barData.value = { labels: ordered.map(([d])=>d), datasets: [{ label:'Reportes', data: ordered.map(([,c])=>c) }] }
 
-    // Top 5 novedades en la fecha "to"
     const pNov = { date: filters.value.to }
     if (filters.value.groupId) pNov.groupId = filters.value.groupId
     const { data: tipos } = await api.get('/dashboard/novelties-by-type', { params: pNov })
@@ -430,7 +474,6 @@ async function loadSeriesAndTop() {
 
     topNovelties.value = ranked
     pieData.value = { labels: ranked.map(r=>r.label), datasets: [{ data: ranked.map(r=>r.total) }] }
-
   } catch (e) {
     console.error('Series/Top error:', e?.response?.data || e?.message || e)
     barData.value = { labels: [], datasets: [{ label:'Reportes', data: [] }] }
@@ -440,9 +483,9 @@ async function loadSeriesAndTop() {
 }
 
 // ====== LEADERBOARDS (Agentes) ======
-const topWorked = ref([])   // [{id,name,days}]
-const topPermits = ref([])  // [{id,name,days}]
-const plus30 = ref({ count: 0, items: [] }) // {count, items:[]}
+const topWorked = ref([])
+const topPermits = ref([])
+const plus30 = ref({ count: 0, items: [] })
 
 async function loadLeaderboards() {
   const common = {}
@@ -452,20 +495,17 @@ async function loadLeaderboards() {
     const { data } = await api.get('/admin/agents-streaks', { params: { page: 1, pageSize: 1000, ...common } })
     const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
 
-    // Top 5 "laborados" ≈ mayor racha actual
     topWorked.value = [...items]
       .sort((a,b) => (b.current_streak||0) - (a.current_streak||0))
       .slice(0, 5)
       .map(a => ({ id: a.id || a.agentId, name: a.nickname || a.code, days: a.current_streak || 0 }))
 
-    // Top 5 "permisos" = estado actual PERMISO con mayor racha
     topPermits.value = items
       .filter(a => String(a.status || '').toUpperCase() === 'PERMISO')
       .sort((a,b) => (b.current_streak||0) - (a.current_streak||0))
       .slice(0, 5)
       .map(a => ({ id: a.id || a.agentId, name: a.nickname || a.code, days: a.current_streak || 0 }))
 
-    // "+30" = racha >= 30 días
     const ge30 = items
       .filter(a => (a.current_streak || 0) >= 30)
       .sort((a,b) => (b.current_streak||0) - (a.current_streak||0))
@@ -590,8 +630,8 @@ async function exportCsv() {
 
     const csv1 = [head1.join(','), ...rows1.map(a=>a.join(','))].join('\n')
     const csv2 = [head2.join(','), ...rowsNov.map(a=>a.join(','))].join('\n')
-
     const csv  = `${csv1}\n\nTOP_5_NOVEDADES\n${csv2}\n`
+
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -630,11 +670,26 @@ async function loadAnniversaries() {
   }
 }
 
+const maxWorked  = computed(() => Math.max(1, ...topWorked.value.map(x => x.days || 0)))
+const maxPermits = computed(() => Math.max(1, ...topPermits.value.map(x => x.days || 0)))
+const maxStreak  = computed(() => Math.max(1, ...plus30.value.items.map(x => x.days || 0)))
+function pct(v, max) { return Math.round((Number(v||0) / Number(max||1)) * 100) }
+
+// Paleta intensa para cumpleaños (sin pastel)
+const boldBdayBGs = [
+  'from-violet-700 to-fuchsia-700 text-white',
+  'from-indigo-700 to-blue-700 text-white',
+  'from-emerald-700 to-teal-700 text-white',
+  'from-rose-700 to-pink-700 text-white',
+  'from-amber-600 to-orange-700 text-white',
+  'from-slate-700 to-gray-800 text-white',
+]
+
 // Cumpleaños del mes
 async function loadBirthdays() {
   try {
     const base = new Date(filters.value.corte)
-    const month = base.getMonth() // 0..11
+    const month = base.getMonth()
     const year  = base.getFullYear()
 
     const { data } = await api.get('/catalogs/agents', { params: { limit: 1000, groupId: filters.value.groupId || undefined } })
@@ -656,10 +711,9 @@ async function loadBirthdays() {
           subtitle: `Cumple ${age}`,
           dateISO: next.toISOString().slice(0,10),
           dateLabel: next.toLocaleDateString('es-CO', { month:'short', day:'2-digit' }),
-          bg: pastelBGs[(i+3) % pastelBGs.length],
+          bg: boldBdayBGs[i % boldBdayBGs.length],
         }
       })
-
     if (!bdayItems.value.length) {
       bdayItems.value = buildBirthdaysDummy(filters.value.corte)
     }
@@ -690,7 +744,7 @@ function getWeekDatesISO(baseISO) {
     const d = new Date(start); d.setDate(start.getDate() + i)
     out.push(d.toISOString().slice(0,10))
   }
-  return out // [domingo...sábado]
+  return out
 }
 
 const pastelBGs = [
@@ -728,7 +782,7 @@ function buildAnnivDummy(weekISO) {
 function buildBirthdaysDummy(baseISO) {
   const base = new Date(baseISO || new Date())
   const year = base.getFullYear()
-  const month = base.getMonth() // 0..11
+  const month = base.getMonth()
   const people = [
     { name: 'María Fernanda', day: 2,  emoji: '🎂' },
     { name: 'Juan Pérez',     day: 8,  emoji: '🎉' },
@@ -742,7 +796,7 @@ function buildBirthdaysDummy(baseISO) {
     return {
       emoji: p.emoji,
       title: p.name,
-      subtitle: `Cumple ${year - (year - 30) - (i % 5) + 25}`.replace('Cumple NaN', 'Cumple 30'), // número simpático
+      subtitle: `Cumple ${year - (year - 30) - (i % 5) + 25}`.replace('Cumple NaN', 'Cumple 30'),
       dateISO: d.toISOString().slice(0,10),
       dateLabel: d.toLocaleDateString('es-CO', { month:'short', day:'2-digit' }),
       bg: pastelBGs[(i+2) % pastelBGs.length],
@@ -756,13 +810,13 @@ async function reloadAll() {
   error.value = ''
   try {
     await Promise.all([
-      loadOverview(),       // KPIs NUEVOS (sin filtros)
+      loadOverview(),
       loadGroups(),
-      loadKPIsSnapshot(),   // (para el modal por "corte" si lo usas)
+      loadKPIsSnapshot(),
       loadSeriesAndTop(),
       loadLeaderboards(),
-      loadAnniversaries(),   // <— nuevo
-      loadBirthdays(), 
+      loadAnniversaries(),
+      loadBirthdays(),
     ])
   } catch (e) {
     error.value = e?.response?.data?.message || e?.message || 'Error desconocido'
@@ -773,4 +827,3 @@ async function reloadAll() {
 
 onMounted(reloadAll)
 </script>
-

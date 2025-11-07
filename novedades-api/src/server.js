@@ -3434,6 +3434,102 @@ app.get('/my/report/detail',
   }
 );
 
+// server.js
+app.get(
+  '/admin/agents-locations-latest',
+  auth,
+  requireRole('superadmin','supervision','leader_group'),
+  async (req, res) => {
+    const { date, groupId } = req.query;
+    const dateISO = (date || new Date().toISOString().slice(0,10));
+
+    try {
+      const where = ['dr2.reportDate <= ?'];
+      const params = [dateISO];
+      if (groupId) { where.push('da2.groupId = ?'); params.push(Number(groupId)); }
+
+      const sql = `
+        /* 1) última fecha por agente (hasta dateISO) */
+        WITH latest_date AS (
+          SELECT da2.agentId, MAX(dr2.reportDate) AS last_date
+          FROM dailyreport_agent da2
+          JOIN dailyreport dr2 ON dr2.id = da2.reportId
+          WHERE ${where.join(' AND ')}
+          GROUP BY da2.agentId
+        ),
+        /* 2) en esa fecha, último registro por timestamp (createdAt) */
+        latest_row AS (
+          SELECT
+            da3.agentId,
+            ld.last_date,
+            MAX(COALESCE(da3.createdAt, CONCAT(ld.last_date,' 00:00:00'))) AS last_ts
+          FROM dailyreport_agent da3
+          JOIN dailyreport dr3 ON dr3.id = da3.reportId
+          JOIN latest_date ld
+            ON ld.agentId = da3.agentId
+           AND ld.last_date = dr3.reportDate
+          GROUP BY da3.agentId, ld.last_date
+        )
+        SELECT
+          a.id AS agentId,
+          a.nickname,
+          g.code AS groupCode,
+          u.name AS unitName,
+          da.state AS status,
+
+          /* Coordenadas: municipality de DRA -> municipality de AGENT */
+          CAST(REPLACE(COALESCE(m_da.lat, m_a.lat), ',', '.') AS DECIMAL(10,6)) AS lat,
+          CAST(REPLACE(COALESCE(m_da.lon, m_a.lon), ',', '.') AS DECIMAL(10,6)) AS lng,
+
+          COALESCE(da.createdAt, CONCAT(dr.reportDate,' 00:00:00')) AS updated_at
+
+        FROM dailyreport_agent da
+        JOIN dailyreport dr ON dr.id = da.reportId
+        JOIN agent a        ON a.id  = da.agentId
+        LEFT JOIN \`group\` g ON g.id = da.groupId
+        LEFT JOIN unit u      ON u.id = da.unitId
+
+        /* municipality desde el registro del día (si lo hay) */
+        LEFT JOIN municipality m_da ON m_da.id = da.municipalityId
+        /* municipality “fijo” del agente como respaldo */
+        LEFT JOIN municipality m_a  ON m_a.id  = a.municipalityId
+
+        JOIN latest_row lr
+          ON lr.agentId  = da.agentId
+         AND lr.last_date = dr.reportDate
+         AND lr.last_ts   = COALESCE(da.createdAt, CONCAT(dr.reportDate,' 00:00:00'))
+
+        WHERE COALESCE(m_da.lat, m_a.lat) IS NOT NULL
+          AND COALESCE(m_da.lon, m_a.lon) IS NOT NULL
+
+        ORDER BY updated_at DESC;
+      `;
+
+      const [rows] = await pool.query(sql, params);
+
+      const items = rows.map(r => ({
+        agentId: r.agentId,
+        nickname: (typeof decNullable === 'function') ? decNullable(r.nickname) : r.nickname,
+        groupCode: r.groupCode,
+        unitName: r.unitName,
+        status: r.status,
+        lat: r.lat,
+        lng: r.lng,
+        updated_at: r.updated_at
+      }));
+
+      res.json({ ok: 1, items });
+    } catch (e) {
+      console.error('[agents-locations-latest] SQL ERROR:', e?.sqlMessage || e?.message || e);
+      res.status(500).json({
+        ok: 0,
+        message: 'Error obteniendo últimas ubicaciones',
+        sqlMessage: e?.sqlMessage || e?.message
+      });
+    }
+  }
+);
+
 // Mantén tu ruta original…
 app.get('/fechas/semana', auth, fechasSemanaHandler);
 // …y añade este alias para que funcione con tu patrón /api/...
