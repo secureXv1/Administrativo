@@ -12,11 +12,11 @@
           </div>
           <div>
             <h1 class="text-xl font-semibold">Panel Operativo</h1>
-            <p class="text-white/80 text-sm">KPIs del día y analítica</p>
+            <!--p class="text-white/80 text-sm">KPIs del día y analítica</p-->
           </div>
         </div>
 
-        <!-- Acciones rápidas -->
+        <!-- Acciones rápidas >
         <div class="flex items-center gap-2">
           <button @click="reloadAll" :disabled="loading"
                   class="rounded-md bg-white/90 text-sky-700 font-medium px-3 py-2 hover:bg-white disabled:opacity-60">
@@ -26,7 +26,7 @@
                   class="rounded-md bg-white/10 text-white border border-white/30 px-3 py-2 hover:bg-white/20 disabled:opacity-60">
             CSV
           </button>
-        </div>
+        </div-->
       </div>
 
       <!-- Estado -->
@@ -685,6 +685,41 @@ const boldBdayBGs = [
   'from-slate-700 to-gray-800 text-white',
 ]
 
+// === Helpers para cumpleaños ===
+function parseBirthday(val) {
+  if (!val) return null
+  // Normaliza: acepta 'YYYY-MM-DD', 'YYYY-MM-DDTHH:mm:ss', y 'DD/MM/YYYY'
+  const s = String(val).trim()
+
+  // DD/MM/YYYY
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
+    const [d, m, y] = s.split('/')
+    const bd = new Date(Number(y), Number(m) - 1, Number(d))
+    return isNaN(+bd) ? null : bd
+  }
+
+  // YYYY-MM-DD (o con hora)
+  const iso = s.slice(0, 10) // 'YYYY-MM-DD'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, m, d] = iso.split('-').map(Number)
+    const bd = new Date(y, m - 1, d) // local, evita problemas de zona
+    return isNaN(+bd) ? null : bd
+  }
+
+  // Último intento
+  const bd = new Date(s)
+  return isNaN(+bd) ? null : bd
+}
+
+function calcAge(bd, onDate) {
+  const on = onDate instanceof Date ? onDate : new Date(onDate)
+  let age = on.getFullYear() - bd.getFullYear()
+  const m = on.getMonth() - bd.getMonth()
+  if (m < 0 || (m === 0 && on.getDate() < bd.getDate())) age -= 1
+  // Ajusta límites si quieres (18–80)
+  return Math.max(18, Math.min(80, age))
+}
+
 // Cumpleaños del mes
 async function loadBirthdays() {
   try {
@@ -692,19 +727,22 @@ async function loadBirthdays() {
     const month = base.getMonth()
     const year  = base.getFullYear()
 
-    const { data } = await api.get('/catalogs/agents', { params: { limit: 1000, groupId: filters.value.groupId || undefined } })
-    const agents = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    const monthAgents = agents.filter(a => {
-      const bd = a.birthday ? new Date(a.birthday) : null
-      return bd && bd.getMonth() === month
+    const { data } = await api.get('/catalogs/agents', {
+      params: { limit: 1000, groupId: filters.value.groupId || undefined }
     })
+    const agents = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
 
-    bdayItems.value = monthAgents
-      .sort((a,b) => new Date(a.birthday).getDate() - new Date(b.birthday).getDate())
+    // Parsear y filtrar por mes actual (usando Date local para evitar desfases)
+    const parsed = agents
+      .map(a => ({ ...a, bd: parseBirthday(a.birthday) }))
+      .filter(a => a.bd && a.bd.getMonth() === month)
+
+    bdayItems.value = parsed
+      .sort((a,b) => a.bd.getDate() - b.bd.getDate())
       .map((a, i) => {
-        const bd = new Date(a.birthday)
-        const next = new Date(year, bd.getMonth(), bd.getDate())
-        const age = Math.max(18, Math.min(80, year - bd.getFullYear()))
+        const bd = a.bd
+        const next = new Date(year, bd.getMonth(), bd.getDate()) // próximo cumpleaños este año
+        const age = calcAge(bd, base) // edad “a la fecha de corte”
         return {
           emoji: ['🎂','🎉','🎁','🥳','🍰','🎈'][i % 6],
           title: a.nickname || a.code,
@@ -714,6 +752,7 @@ async function loadBirthdays() {
           bg: boldBdayBGs[i % boldBdayBGs.length],
         }
       })
+
     if (!bdayItems.value.length) {
       bdayItems.value = buildBirthdaysDummy(filters.value.corte)
     }
@@ -722,6 +761,7 @@ async function loadBirthdays() {
     bdayItems.value = buildBirthdaysDummy(filters.value.corte)
   }
 }
+
 
 // ====== CATALOGOS ======
 async function loadGroups() {

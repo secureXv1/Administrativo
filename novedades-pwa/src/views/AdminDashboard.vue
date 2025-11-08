@@ -919,8 +919,120 @@ async function goToGroupDetailButton() {
   }
 }
 
-
 // ===== Mapa
+
+// ---- CACHÉ DE AGENTES: code -> { nickname, groupCode, unitName }
+const _agentsCacheMap = ref(null)
+async function getAgentsLookupMap () {
+  if (_agentsCacheMap.value) return _agentsCacheMap.value
+  const token = localStorage.getItem('token')
+  let items = []
+  try {
+    if (isLeaderGroup.value) {
+      const { data } = await axios.get('/my/agents', {
+        params: { limit: 5000 },
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    } else {
+      const { data } = await axios.get('/admin/agents', {
+        params: { limit: 5000 },
+        headers: { Authorization: 'Bearer ' + token }
+      })
+      items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    }
+  } catch (e) {
+    console.error('getAgentsLookupMap error:', e)
+    items = []
+  }
+
+  const map = new Map()
+  for (const a of items) {
+    const code = String(a.code ?? a.codigo ?? '').trim()
+    if (!code) continue
+    map.set(code, {
+      nickname: a.nickname ?? a.nombre ?? a.name ?? '',
+      groupCode: a.groupCode ?? a.grupo ?? '',
+      unitName : a.unitName  ?? a.unidad ?? ''
+    })
+  }
+  _agentsCacheMap.value = map
+  return map
+}
+
+function normText (s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+}
+
+function normKey(name, dept) {
+  return `${normText(name)}|${normText(dept || '')}`;
+}
+
+async function loadDailyExportRows (params) {
+  const { data } = await axios.get('/reports/export', {
+    params,
+    headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
+  })
+  return Array.isArray(data) ? data : (data?.items || [])
+}
+
+// Etiqueta de ámbito para el rol actual (Admin=grupo, Líder=unidad)
+function labelForRole (row) {
+  return isLeaderGroup.value
+    ? (row.unidad || row.unitName || '')
+    : (row.grupo  || row.groupCode || '')
+}
+
+// Indexa nombres por municipio (id o nombre) y por ámbito (grupo/unidad)
+function buildNamesByMunicipalityAndGroup (rows, agentsMap) {
+  const byId = new Map();        // id -> Map(scopeLabelNorm -> Set(nicks))
+  const byName = new Map();      // norm(name) -> Map(scopeLabelNorm -> Set(nicks))
+  const byNameDept = new Map();  // norm(name|dept) -> Map(scopeLabelNorm -> Set(nicks))
+
+  const addTo = (map, key, scopeLabelNorm, nickname) => {
+    if (!key || !scopeLabelNorm || !nickname) return
+    const k = String(key)
+    if (!map.has(k)) map.set(k, new Map())
+    const gmap = map.get(k)
+    if (!gmap.has(scopeLabelNorm)) gmap.set(scopeLabelNorm, new Set())
+    gmap.get(scopeLabelNorm).add(String(nickname))
+  }
+
+  for (const r of rows) {
+    const muniId   = r.municipalityId ?? r.municipio_id ?? r.muni_id ?? r.municipioId ?? r.muniId ?? null
+    const muniName = r.municipalityName ?? r.municipio ?? r.ubicacion ?? r.municipio_name ?? r.muni_name ?? null
+    const muniDept = r.municipalityDept ?? r.departamento ?? r.depto ?? r.dept ?? null
+
+    // scope/nick desde export
+    let scope = isLeaderGroup.value
+      ? (r.unidad || r.unitName || '')
+      : (r.grupo  || r.groupCode || '')
+    let nick  = r.nickname ?? r.funcionario ?? r.name ?? r.agent_name ?? ''
+
+    // 🚀 completa con lookup por código cuando falte
+    const code = String(r.codigo_agente ?? r.code ?? '').trim()
+    const ag = code ? agentsMap.get(code) : null
+    if (!nick && ag?.nickname) nick = ag.nickname
+    if (!scope) {
+      scope = isLeaderGroup.value ? (ag?.unitName || '') : (ag?.groupCode || '')
+    }
+
+    const scopeLabel = normText(scope)
+    if (muniId != null) addTo(byId, String(muniId), scopeLabel, nick)
+    if (muniName) {
+      addTo(byName, normText(muniName), scopeLabel, nick)
+      addTo(byNameDept, normKey(muniName, muniDept), scopeLabel, nick)
+    }
+  }
+
+  return { byId, byName, byNameDept }
+}
+
 const municipalitiesMap = ref([])
 
 async function loadMapData () {
@@ -1007,6 +1119,22 @@ async function loadMapData () {
       entry.total += n
       entry.breakdown[key] = (entry.breakdown[key] || 0) + n
     }
+    for (const r of list) {
+      const label = isLeaderGroup.value
+        ? (r.unitName || `Unidad ${r.unitId || '—'}`)
+        : (r.groupCode || `Grupo ${r.groupId || '—'}`);
+
+      if (Array.isArray(r.nicknames) && r.nicknames.length) {
+        const m = byMuni.get(r.id);
+        if (!m) continue;
+        if (!m.namesByGroupNorm) m.namesByGroupNorm = {};
+        const k = normText(label);
+        const merged = (m.namesByGroupNorm[k] || []).concat(r.nicknames);
+        m.namesByGroupNorm[k] = [...new Set(merged)]
+          .sort((a,b)=> a.localeCompare(b,'es',{sensitivity:'base'}));
+      }
+    }
+  
 
     municipalitiesMap.value = [...byMuni.values()]
     setTimeout(drawMap, 0)
@@ -1032,16 +1160,35 @@ function drawMap () {
     if (!m.lat || !m.lon) return
     const items = Object.entries(m.breakdown).sort((a,b) => b[1] - a[1])
     const labelTitulo = isLeaderGroup.value ? 'Unidades' : 'Grupos'
-    const listHtml = items.map(([k,v]) => `<li>${k}: <b>${v}</b></li>`).join('')
+
+    // 🔹 Agregamos nicknames si existen
+    const namesByGroupNorm = m.namesByGroupNorm || {}
+    const listHtml = items.map(([k,v]) => {
+      const kn = normText(k) // 👈 normalizamos la etiqueta del breakdown
+      const names = (namesByGroupNorm[kn] || [])
+        .map(n => `<li style="margin-left:12px; list-style-type:circle;">${n}</li>`)
+        .join('')
+      return `
+        <li>
+          ${k}: <b>${v}</b>
+          ${names ? `<ul style="margin-top:2px;">${names}</ul>` : ''}
+        </li>
+      `
+    }).join('')
+
+
     const popupHtml = `
       <b>${m.name}</b><br/>
       <span style="font-size:13px">${m.dept}</span><br/>
       Total agentes: <b>${m.total}</b><br/>
       <div style="margin-top:6px">
         <span style="font-size:12px;color:#475569">${labelTitulo}:</span>
-        <ul style="margin:6px 0 0 16px; font-size:13px">${listHtml || '<li>—</li>'}</ul>
+        <ul style="margin:6px 0 0 16px; font-size:13px">
+          ${listHtml || '<li>—</li>'}
+        </ul>
       </div>
     `
+
     L.marker([m.lat, m.lon], {
       icon: L.icon({
         iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',

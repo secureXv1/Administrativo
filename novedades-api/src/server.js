@@ -1995,12 +1995,12 @@ app.get('/debug/db', async (req, res) => {
 
 app.get('/admin/agent-municipalities',
   auth,
-  requireRole('superadmin','supervision','leader_group'), // <- roles OK
+  requireRole('superadmin','supervision','leader_group'),
   async (req, res) => {
     const { date, groups, units } = req.query;
     if (!date) return res.status(400).json({ error:'Missing date' });
 
-    // 1) Construye alcance base (sin fecha)
+    // 1) Alcance base (sin fecha)
     let baseWhere = `1=1`;
     const baseArgs = [];
 
@@ -2024,26 +2024,28 @@ app.get('/admin/agent-municipalities',
       }
     }
 
-    // 2) Averigua la ÚLTIMA fecha disponible <= date dentro del alcance
+    // 2) Última fecha <= date
     const [[latest]] = await pool.query(
       `SELECT MAX(reportDate) AS lastDate
          FROM dailyreport
         WHERE ${baseWhere} AND reportDate <= ?`,
       [...baseArgs, date]
     );
+    if (!latest?.lastDate) return res.json([]);
 
-    if (!latest?.lastDate) return res.json([]); // no hay nada que pintar
-
-    // 3) Trae los reports SOLO de esa última fecha
+    // 3) Reports de esa fecha
     const [reports] = await pool.query(
       `SELECT id FROM dailyreport WHERE ${baseWhere} AND reportDate = ?`,
       [...baseArgs, latest.lastDate]
     );
     if (!reports.length) return res.json([]);
-
     const reportIds = reports.map(r => r.id);
     const qMarks = reportIds.map(() => '?').join(',');
 
+    // Por si hay muchos nombres
+    await pool.query(`SET SESSION group_concat_max_len = 65535`);
+
+    // 4) Agregación con NICKS
     const [rows] = await pool.query(`
       SELECT 
         m.id, m.name, m.dept, m.lat, m.lon, 
@@ -2051,18 +2053,41 @@ app.get('/admin/agent-municipalities',
         g.code AS groupCode,
         da.unitId,
         u.name AS unitName,
-        COUNT(da.agentId) AS agent_count
+        COUNT(da.agentId) AS agent_count,
+        GROUP_CONCAT(DISTINCT a.nickname ORDER BY a.nickname SEPARATOR '||') AS nicknames
       FROM dailyreport_agent da
       JOIN municipality m ON m.id = da.municipalityId
-      JOIN \`group\` g ON g.id = da.groupId
-      LEFT JOIN unit u ON u.id = da.unitId
+      JOIN \`group\` g     ON g.id = da.groupId
+      LEFT JOIN unit u     ON u.id = da.unitId
+      LEFT JOIN agent a    ON a.id = da.agentId
       WHERE da.reportId IN (${qMarks})
       GROUP BY m.id, da.groupId, da.unitId
     `, reportIds);
 
-    res.json(rows);
+    // 5) Normaliza respuesta para el front, DESCIFRANDO los nicknames
+    const out = rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      dept: r.dept,
+      lat: r.lat,
+      lon: r.lon,
+      groupId: r.groupId,
+      groupCode: r.groupCode,
+      unitId: r.unitId,
+      unitName: r.unitName,
+      agent_count: Number(r.agent_count || 0),
+      nicknames: typeof r.nicknames === 'string'
+        ? r.nicknames
+            .split('||')
+            .filter(Boolean)
+            .map(nick => typeof decNullable === 'function' ? decNullable(nick) : nick)
+        : []
+    }));
+
+    res.json(out);
   }
 );
+
 
 app.get('/dashboard/compliance', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
   const { date } = req.query;

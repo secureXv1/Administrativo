@@ -5,9 +5,9 @@
       <button @click="reload" class="px-2 py-1 rounded bg-white/90 text-slate-700 text-xs border hover:bg-white">
         Refrescar
       </button>
-      <button @click="fitAll" class="px-2 py-1 rounded bg-white/90 text-slate-700 text-xs border hover:bg-white">
+      <!--button @click="fitAll" class="px-2 py-1 rounded bg-white/90 text-slate-700 text-xs border hover:bg-white">
         Ajustar
-      </button>
+      </button-->
       <span v-if="loading" class="px-2 py-1 rounded bg-yellow-100 text-yellow-800 text-xs">Cargando…</span>
       <span v-else-if="error" class="px-2 py-1 rounded bg-red-100 text-red-700 text-xs">Error</span>
       <span v-else class="px-2 py-1 rounded bg-white/90 text-slate-600 text-xs border">Pts: {{ locations.length }}</span>
@@ -16,14 +16,14 @@
     <!-- mapa -->
     <div ref="mapEl" class="w-full h-[300px]"></div>
 
-    <!-- leyenda -->
+    <!-- leyenda >
     <div class="absolute bottom-2 left-2 z-[500] px-2 py-1 rounded bg-white/90 text-[11px] text-slate-700 border">
       <div class="flex items-center gap-2">
         <span class="marker-dot bg-emerald-500"></span> Activo
         <span class="marker-dot bg-amber-500 ml-3"></span> Permiso
         <span class="marker-dot bg-rose-500 ml-3"></span> Ausente
       </div>
-    </div>
+    </div-->
   </div>
 </template>
 
