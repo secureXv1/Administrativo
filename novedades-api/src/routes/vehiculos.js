@@ -718,58 +718,59 @@ router.get(
 )
 
 // PATCH /vehicles/assignments/:id/accept  { note }
+// Alias de "ack": marca aceptación del AGENTE con nota obligatoria (máx 300)
 router.patch(
   '/vehicles/assignments/:id/accept',
   requireAuth,
   requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
   async (req, res) => {
-    const { id }   = req.params
-    const noteRaw  = (req.body?.note ?? '').trim()
+    const { id }  = req.params;
+    const noteRaw = String(req.body?.note || '').trim();
 
-    if (!noteRaw) return res.status(422).json({ error: 'La nota es obligatoria.' })
-    if (noteRaw.length > 300) return res.status(422).json({ error: 'La nota no puede superar 300 caracteres.' })
+    if (!noteRaw)                return res.status(422).json({ error: 'La nota es obligatoria.' });
+    if (noteRaw.length > 300)    return res.status(422).json({ error: 'La nota no puede superar 300 caracteres.' });
 
-    // Traer la asignación
+    // Traemos la asignación con las columnas correctas
     const [[row]] = await pool.query(
-      `SELECT vehicle_id, agent_id, end_date, accept_at
+      `SELECT agent_id, end_date, agent_ack_at, agent_ack_locked
          FROM vehicle_assignments
-        WHERE id=? LIMIT 1`, [id]
-    )
-    if (!row) return res.status(404).json({ error: 'Asignación no encontrada' })
+        WHERE id=? LIMIT 1`,
+      [id]
+    );
+    if (!row) return res.status(404).json({ error: 'Asignación no encontrada' });
 
-    // Solo la puede aceptar el mismo agente y si sigue vigente
-    const isAgent = String(req.user?.role || '').toLowerCase() === 'agent'
-    const requesterAgentId = req.user?.agentId ?? req.user?.agent_id ?? null
+    // Solo la puede aceptar el mismo agente (o un rol superior si lo permites)
+    const isAgent = String(req.user?.role || '').toLowerCase() === 'agent';
+    const requesterAgentId = req.user?.agentId ?? req.user?.agent_id ?? null;
     if (isAgent) {
       if (!requesterAgentId || Number(requesterAgentId) !== Number(row.agent_id)) {
-        return res.status(403).json({ error: 'No puedes aceptar una asignación de otro agente.' })
+        return res.status(403).json({ error: 'No puedes aceptar una asignación de otro agente.' });
       }
-    } else {
-      // líderes/supervisión pueden forzar aceptación en nombre del agente si así lo quieres;
-      // si NO lo deseas, descomenta este return:
-      // return res.status(403).json({ error: 'Solo el agente asignado puede aceptar.' })
     }
-
-    if (row.end_date) return res.status(409).json({ error: 'La asignación ya está cerrada.' })
-    if (row.accept_at) return res.status(409).json({ error: 'La asignación ya fue aceptada previamente.' })
+    if (row.end_date)                   return res.status(409).json({ error: 'La asignación ya está cerrada.' });
+    if (row.agent_ack_at)               return res.status(409).json({ error: 'La asignación ya fue aceptada previamente.' });
+    if (Number(row.agent_ack_locked)===1) return res.status(409).json({ error: 'La aceptación está bloqueada.' });
 
     await pool.query(
       `UPDATE vehicle_assignments
-          SET accept_at = NOW(), accept_note = ?
+          SET agent_ack_at = NOW(),
+              agent_ack_note = ?
         WHERE id = ?`,
       [noteRaw, id]
-    )
+    );
 
-    await logEvent({
-      req,
-      userId: req.user.uid,
-      action: Actions.VEHICLE_ASSIGN_ACCEPT ?? 'VEHICLE_ASSIGN_ACCEPT',
-      details: { assignmentId: Number(id) }
-    })
+    try {
+      await logEvent({
+        req,
+        userId: req.user.uid,
+        action: Actions.VEHICLE_ASSIGN_ACCEPT ?? 'VEHICLE_ASSIGN_ACCEPT',
+        details: { assignmentId: Number(id) }
+      });
+    } catch {}
 
-    res.json({ ok: true })
+    res.json({ ok: true });
   }
-)
+);
 
 // PATCH /vehicles/assignments/:id/ack  { note }
 router.patch(

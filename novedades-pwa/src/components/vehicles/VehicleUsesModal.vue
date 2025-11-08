@@ -494,11 +494,6 @@ function selectedPartLabel() {
   return found.label
 }
 
-// Chips rápidos (se agregan al final del texto)
-const quickChips = [
-  'rayada', 'abollada', 'fisura', 'suelto', 'golpe leve', 'desgaste', 'falta tapa', 'no ajusta', 'oxidación'
-]
-
 // Placeholder dinámico
 const descPlaceholder = computed(() =>
   'Describe la novedad o selecciona una parte para auto-completar…'

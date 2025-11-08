@@ -923,13 +923,28 @@ async function loadMyOpenUses() {
 }
 
 // Normaliza un registro de uso a las columnas que mostramos
+// Normaliza un registro de uso a las columnas que mostramos
 function mapUseRow(u, vehOpt) {
   const started = u.started_at ?? u.startedAt ?? u.start_date ?? u.startDate ?? u.start ?? ''
   const odoStart = u.odometer_start ?? u.odometerStart ?? u.km_salida ?? u.kmStart ?? null
   const notes = u.notes ?? u.note ?? u.observation ?? ''
-  const v = u.vehicle || vehOpt || {}
-  const vCode = v.code ?? u.vehicle_code ?? ''
-  const vId = v.id ?? u.vehicle_id
+
+  // Backend actual devuelve vehicleId / vehicleCode (camelCase)
+  // Además soportamos vehicle_id / vehicle_code (snake_case) y objeto vehicle.
+  const vId =
+    u.vehicle?.id ??
+    u.vehicle_id ??
+    u.vehicleId ??
+    vehOpt?.id ??
+    null
+
+  const vCode =
+    u.vehicle?.code ??
+    u.vehicle_code ??
+    u.vehicleCode ??
+    vehOpt?.code ??
+    ''
+
   return {
     id: u.id,
     started_at: started,
@@ -938,6 +953,7 @@ function mapUseRow(u, vehOpt) {
     vehicle: { id: vId, code: vCode }
   }
 }
+
 
 let searchTimer = null
 function searchVehicles(){
