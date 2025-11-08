@@ -574,10 +574,25 @@
 </template>
 
 <script setup>
-
-import axios from 'axios'
-import { http } from '@/lib/http'
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import axios from 'axios'
+const api = axios.create({ baseURL: '/', timeout: 20000 })
+api.interceptors.request.use((config) => {
+  const t = localStorage.getItem('token')
+  if (t) config.headers.Authorization = 'Bearer ' + t
+  return config
+})
+api.interceptors.response.use((r)=>r,(err)=>{
+  const msg = err?.response?.data?.error || err?.response?.data?.detail || err?.message || 'Network error'
+  console.error('[API /login]', err?.config?.method?.toUpperCase(), err?.config?.url, msg)
+  return Promise.reject(err)
+})
+
+// helpers simples
+const apiGet    = (p,o)   => api.get(p,o)
+const apiPost   = (p,b,o) => api.post(p,b,o)
+const apiPatch  = (p,b,o) => api.patch(p,b,o)
+const apiDelete = (p,o)   => api.delete(p,o)
 
 // Cliente dedicado a /login
 const httpLogin = axios.create({ baseURL: '/login', timeout: 20000 })
@@ -623,24 +638,22 @@ async function preferLoginThenRoot(method, path, bodyOrOpts, maybeOpts){
     return res
   } catch (e){
     if (e?.response?.status === 404 || e?.__forceFallback) {
-      // Fallback al raíz
-      return await call(http, method, path, body, opts)
+      try {
+        const resRoot = await call(http, method, path, body, opts)
+        return resRoot
+      } catch (eroot) {
+        // 2) si raíz también dice "base URL = /login/", reintenta explícitamente en /login
+        const hint = String(eroot?.response?.data || '')
+        if (eroot?.response?.status === 404 && hint.includes('/login/')) {
+          return await call(httpLogin, method, path, body, opts)
+        }
+        throw eroot
+      }
     }
     throw e
   }
 }
 // === Helpers "login-only" (NO fallback) ===
-// ¡IMPORTANTE!: pasa rutas SIN prefijo /login, por ejemplo '/agents/me'
-const apiGetLogin    = (p, o) => httpLogin.get(p, o)
-const apiPostLogin   = (p, b, o) => httpLogin.post(p, b, o)
-const apiPatchLogin  = (p, b, o) => httpLogin.patch(p, b, o)
-const apiDeleteLogin = (p, o) => httpLogin.delete(p, o)
-
-const apiGet    = (p,o)     => preferLoginThenRoot('get',    p, o)
-const apiPost   = (p,b,o)   => preferLoginThenRoot('post',   p, b, o)
-const apiPatch  = (p,b,o)   => preferLoginThenRoot('patch',  p, b, o)
-const apiDelete = (p,o)     => preferLoginThenRoot('delete', p, o)
-
 /* ===== Sidebar / navegación ===== */
 const section = ref('novedades') // 'novedades' | 'vehiculos' | 'servicios'
 const menu = [
@@ -658,8 +671,17 @@ const titleBySection = computed(() => ({
 
 /* ===== Usuario ===== */
 const me = ref(null)
-async function loadMe(){ const { data } = await apiGet('/me'); me.value = data }
-function logout(){ localStorage.removeItem('token'); window.location.href='/login/' }
+async function loadMe(){
+  const { data } = await apiGet('/me')
+  me.value = data
+  console.debug('[AgentDashboard] /me =>', JSON.stringify(data))
+}
+
+function logout(){ 
+  localStorage.removeItem('token');
+  localStorage.removeItem('AGENT_ID');
+  window.location.href='/login/';
+ }
 
 /* ===== Vehículos (tu lógica tal cual) ===== */
 const vehicleQuery = ref('')
@@ -694,6 +716,7 @@ const acceptItem   = ref(null)
 const acceptNote   = ref('')
 const acceptErr    = ref('')
 const accepting    = ref(false)
+const agentResolveMsg = ref('') // Mensaje visible si no hay vínculo user↔agent
 
 function openAccept(row){
   acceptItem.value = row
@@ -718,7 +741,7 @@ async function submitAccept(){
   accepting.value = true
   try {
     // ⬇️ NUEVA RUTA /ack
-    await http.patch(`/vehicles/assignments/${acceptItem.value.id}/ack`, { note })
+    await apiPatch(`/vehicles/assignments/${acceptItem.value.id}/accept`, { note })
     showAccept.value = false
     await loadMyActiveAssignments()
   } catch (e) {
@@ -757,7 +780,7 @@ async function submitAckExtra(){
   sendingAckExtra.value = true
   try {
     // ⬇️ NUEVA RUTA /extra
-    await http.patch(`/vehicles/assignments/${ackExtraItem.value.id}/extra`, { note })
+    await apiPatch(`/vehicles/assignments/${ackExtraItem.value.id}/extra`, { note })
     showAckExtra.value = false
     await loadMyActiveAssignments()
   } catch (e) {
@@ -776,19 +799,19 @@ async function addNovedad(){
   const fd = new FormData()
   fd.append('description', newNovedad.value.description)
   if (newNovedad.value.file) fd.append('photo', newNovedad.value.file)
-  await http.post(`/vehicles/vehicle/${selectedVehicle.value.id}/novelties`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  await apiPost(`/vehicles/vehicle/${selectedVehicle.value.id}/novelties`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   newNovedad.value = { description: '', file: null }
   await loadStagingNovedades()
 }
 
-async function deleteNovedad(id){ await http.delete(`/vehicles/novelties/${id}`); await loadStagingNovedades() }
+async function deleteNovedad(id){ await apiDelete(`/vehicles/novelties/${id}`); await loadStagingNovedades() }
 
 async function loadStagingNovedades(){
   novedadesStaging.value = []
   if (!selectedVehicle.value) return
   loadingNovedades.value = true
   try {
-    const { data } = await http.get(`/vehicles/${selectedVehicle.value.id}/novelties/recent`)
+    const { data } = await apiGet(`/vehicles/${selectedVehicle.value.id}/novelties/recent`)
     novedadesStaging.value = data.items || []
   } finally { loadingNovedades.value = false }
 }
@@ -796,97 +819,69 @@ async function loadStagingNovedades(){
 async function loadOpenUseNovedades(){
   openUseNovedades.value = []
   if (!openUseInfo.value) return
-  const { data } = await http.get(`/vehicles/uses/${openUseInfo.value.id}/novelties`)
+  const { data } = await apiGet(`/vehicles/uses/${openUseInfo.value.id}/novelties`)
   openUseNovedades.value = data.items || []
 }
 
 async function loadMyActiveAssignments () {
   loadingAssignments.value = true
   try {
-    // 1) Asegura /me para tomar agentId
-    if (!(me.value?.agentId ?? me.value?.agent_id)) {
-      await loadMe()
-    }
+    // 👇 Asegura agentId aquí
+    await ensureAgentId()
     const agentIdVal = meAgentId.value
-    if (!agentIdVal) {
-      myAssignments.value = []
-      return
-    }
+    if (!agentIdVal) { myAssignments.value = []; return }
 
-    // Normalizador robusto
     const normalizeAssignment = (a, vehicleData = null) => {
-      const endRaw =
-        a.end_date ?? a.endDate ?? a.ended_at ?? a.endedAt ?? a.end ?? null
-
-      // true si NO hay fin (soporta null, undefined, '', '0000-00-00', 'null', 0)
+      const endRaw = a.end_date ?? a.endDate ?? a.ended_at ?? a.endedAt ?? a.end ?? null
       const isOpen = (
-        endRaw === null ||
-        endRaw === undefined ||
+        endRaw == null ||
         endRaw === '' ||
         endRaw === false ||
         endRaw === 0 ||
-        (typeof endRaw === 'string' && (
-          endRaw.trim() === '' ||
-          endRaw.trim().toLowerCase() === 'null' ||
-          endRaw.startsWith('0000-00-00')
-        ))
+        (typeof endRaw === 'string' && (endRaw.trim()==='' || endRaw.trim().toLowerCase()==='null' || endRaw.startsWith('0000-00-00')))
       )
-
       return {
         id: a.id,
         start_date: a.start_date ?? a.startDate ?? '',
         odometer_start: a.odometer_start ?? a.odometerStart ?? null,
         notes: a.notes ?? a.note ?? '',
-        // Backend actual usa accept_*; los agent_ack_* quedan para compatibilidad futura
         agent_ack_at: a.accept_at ?? a.agent_ack_at ?? null,
         agent_ack_note: a.accept_note ?? a.agent_ack_note ?? null,
         agent_ack_extra_note: a.agent_ack_extra_note ?? null,
         agent_ack_extra_at: a.agent_ack_extra_at ?? null,
-        vehicle: vehicleData || {
-          id: a.vehicle_id ?? a.vehicleId ?? null,
-          code: a.vehicle_code ?? a.code ?? '',
-        },
+        vehicle: vehicleData || { id: a.vehicle_id ?? a.vehicleId ?? null, code: a.vehicle_code ?? a.code ?? '' },
         isOpen
       }
     }
 
-    // 2) Plan A (si algún día agregas /agents/:id/assignments)
+    // Opción A: /agents/:id/assignments
     try {
-      const { data } = await http.get(`/agents/${agentIdVal}/assignments`, {
-        params: { active: 1, pageSize: 500 }
-      })
+      const { data } = await apiGet(`/agents/${agentIdVal}/assignments`, { params: { active: 1, pageSize: 500 } })
       const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
       if (list.length) {
-        myAssignments.value = list
-          .map(a => normalizeAssignment(a, a.vehicle))
-          .filter(a => a.isOpen)
+        myAssignments.value = list.map(a => normalizeAssignment(a, a.vehicle)).filter(a => a.isOpen)
           .sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''))
         return
       }
-    } catch { /* no existe → seguimos */ }
+    } catch {}
 
-    // 3) Plan B (robusto y acotado): primero pido solo vehículos con asignación vigente
-    const { data: vehsRes } = await http.get('/vehicles', {
-      params: { pageSize: 500, onlyAssigned: 1 } // ⚡ evita recorrer todo el parque
-    })
+    // Opción B: recorrer vehículos asignados (acotado)
+    const { data: vehsRes } = await apiGet('/vehicles', { params: { pageSize: 500, onlyAssigned: 1 } })
     const vehicles = Array.isArray(vehsRes?.items) ? vehsRes.items : []
     const out = []
-
-    await Promise.all(vehicles.map(async (v) => {
+    await Promise.all(vehicles.map(async v => {
       try {
-        const { data: asgRes } = await http.get(`/vehicles/${v.id}/assignments`, { params: { pageSize: 200 } })
+        const { data: asgRes } = await apiGet(`/vehicles/${v.id}/assignments`, { params: { pageSize: 200 } })
         const list = Array.isArray(asgRes?.items) ? asgRes.items : (Array.isArray(asgRes) ? asgRes : [])
         for (const a of list) {
           const aAgent = a.agent_id ?? a.agentId ?? a.agent?.id
-          // comparación tolerante de tipos
           if (String(aAgent) === String(agentIdVal)) {
             const item = normalizeAssignment(a, { id: v.id, code: v.code })
             if (item.isOpen) out.push(item)
           }
         }
-      } catch { /* ignorar errores por vehículo */ }
+      } catch {}
     }))
-
     out.sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''))
     myAssignments.value = out
   } finally {
@@ -894,46 +889,33 @@ async function loadMyActiveAssignments () {
   }
 }
 
-
 async function loadMyOpenUses() {
   loadingOpenUses.value = true
   try {
-    // Asegurar que /me esté cargado
-    if (!(me.value?.agentId ?? me.value?.agent_id)) await loadMe()
-    const agentIdVal = me.value?.agentId ?? me.value?.agent_id
+    await ensureAgentId()
+    const agentIdVal = meAgentId.value
     if (!agentIdVal) { myOpenUses.value = []; return }
 
-    // === Opción A (rápida): endpoint directo de usos abiertos por agente ===
+    // Opción A: endpoint directo
     try {
-      const { data } = await http.get('/vehicles/uses', {
-        params: { agent_id: agentIdVal, open: 1, pageSize: 500 }
-      })
+      const { data } = await apiGet('/vehicles/uses', { params: { agent_id: agentIdVal, open: 1, pageSize: 500 } })
       const items = data?.items ?? data ?? []
-      if (Array.isArray(items)) {
-        myOpenUses.value = items.map(mapUseRow)
-        return
-      }
-    } catch { /* sigue al fallback */ }
+      if (Array.isArray(items)) { myOpenUses.value = items.map(mapUseRow); return }
+    } catch {}
 
-    // === Fallback: recorrer vehículos y filtrar "open" por agente ===
-    const { data: vehs } = await http.get('/vehicles', { params: { pageSize: 500 } })
+    // Fallback por vehículo
+    const { data: vehs } = await apiGet('/vehicles', { params: { pageSize: 500 } })
     const vehicles = vehs?.items ?? []
     const out = []
-
     await Promise.all(vehicles.map(async v => {
       try {
-        // si tu API soporta "open" como query, úsalo; si no, trae todos y filtra
-        const { data: usesRes } = await http.get('/vehicles/uses', {
+        const { data: usesRes } = await apiGet('/vehicles/uses', {
           params: { vehicle_id: v.id, agent_id: agentIdVal, open: 1, pageSize: 200 }
         })
         const list = usesRes?.items ?? usesRes ?? []
-        list.forEach(u => {
-          // normaliza y empuja
-          out.push(mapUseRow(u, v))
-        })
-      } catch { /* ignorar vehículo con error */ }
+        list.forEach(u => out.push(mapUseRow(u, v)))
+      } catch {}
     }))
-
     myOpenUses.value = out
   } finally {
     loadingOpenUses.value = false
@@ -963,7 +945,7 @@ function searchVehicles(){
   searchTimer = setTimeout(async () => {
     const q = vehicleQuery.value.trim()
     if (!q){ vehicleResults.value = []; vehicleResultsVisible.value = false; return }
-    const { data } = await http.get('/vehicles', { params: { query: q, pageSize: 20 } })
+    const { data } = await apiGet('/vehicles', { params: { query: q, pageSize: 20 } })
     vehicleResults.value = data.items || []
     vehicleResultsVisible.value = true
   }, 220)
@@ -990,7 +972,7 @@ async function loadLastAssignOdometer(){
   lastOdoHint.value = null
   if (!selectedVehicle.value) return
   try {
-    const { data } = await http.get(`/vehicles/${selectedVehicle.value.id}/last-assignment-odometer`)
+    const { data } = await apiGet(`/vehicles/${selectedVehicle.value.id}/last-assignment-odometer`)
     lastOdoHint.value = data?.lastOdometer ?? null
     if (!form.value.odometer_start && lastOdoHint.value != null) {
       form.value.odometer_start = String(lastOdoHint.value)
@@ -999,32 +981,45 @@ async function loadLastAssignOdometer(){
 }
 
 async function checkOpenUse(){
-  openUseId.value = null
-  openUseInfo.value = null
+  await ensureAgentId()
+  openUseId.value = null; openUseInfo.value = null
   if (!selectedVehicle.value || !meAgentId.value) return
-  const { data } = await http.get('/vehicles/uses', {
-    params: { vehicle_id: selectedVehicle.value.id, agent_id: meAgentId.value, open: 1 }
-  })
+  const { data } = await apiGet('/vehicles/uses', { params: { vehicle_id: selectedVehicle.value.id, agent_id: meAgentId.value, open: 1 } })
   const list = data.items || []
   if (list.length){ openUseId.value = list[0].id; openUseInfo.value = list[0]; await loadOpenUseNovedades() }
   else { openUseNovedades.value = [] }
 }
 
+async function loadUsesForSelected(){
+  loadingUses.value = true
+  try {
+    await ensureAgentId()
+    if (!selectedVehicle.value || !meAgentId.value) return
+    const { data } = await apiGet('/vehicles/uses', { params: { vehicle_id: selectedVehicle.value.id, agent_id: meAgentId.value } })
+    uses.value = data.items || []
+  } finally { loadingUses.value = false }
+}
+
 async function startUse(){
   if (!selectedVehicle.value) return
   if (openUseId.value) return alert('Ya hay un uso abierto para este vehículo.')
-  if (!meAgentId.value) return alert('No se pudo determinar tu agente.')
+  await ensureAgentId()
+  if (!meAgentId.value) { agentResolveMsg.value ||= 'No se pudo determinar tu agente. Informa al administrador.'; return }
+
   starting.value = true
   try {
-    await http.post('/vehicles/uses/start', {
+    await apiPost('/vehicles/uses/start', {
       vehicle_id: selectedVehicle.value.id,
       agent_id: meAgentId.value,
       odometer_start: form.value.odometer_start || null
     })
     await Promise.all([checkOpenUse(), loadUsesForSelected(), loadStagingNovedades()])
     alert('Uso iniciado correctamente.')
-  } catch (e) { alert(e?.response?.data?.error || 'Error al iniciar uso') }
-  finally { starting.value = false }
+  } catch (e) {
+    alert(e?.response?.data?.error || 'Error al iniciar uso')
+  } finally {
+    starting.value = false
+  }
 }
 
 async function endUse(){
@@ -1034,26 +1029,11 @@ async function endUse(){
   if (od!=null && od!==''){ const n = Number(od); if(!Number.isFinite(n) || n<0) return alert('Odómetro inválido'); odNum=n }
   ending.value = true
   try {
-    await http.patch(`/vehicles/uses/${openUseId.value}/end`, { odometer_end: odNum })
+    await apiPatch(`/vehicles/uses/${openUseId.value}/end`, { odometer_end: odNum })
     await Promise.all([checkOpenUse(), loadUsesForSelected(), loadStagingNovedades()])
     alert('Uso cerrado correctamente.')
   } catch (e) { alert(e?.response?.data?.error || 'Error al cerrar uso') }
   finally { ending.value = false }
-}
-
-async function loadUsesForSelected(){
-  loadingUses.value = true
-  uses.value = []
-  try {
-    if (!selectedVehicle.value || !meAgentId.value) return
-    const { data } = await http.get('/vehicles/uses', {
-      params: {
-        vehicle_id: selectedVehicle.value.id,
-        agent_id: meAgentId.value
-      }
-    })
-    uses.value = data.items || []
-  } finally { loadingUses.value = false }
 }
 
 /* ====== Calendario + timeline (historial mensual del agente logueado) ====== */
@@ -1083,7 +1063,6 @@ const meAgentId = computed(() => {
     m.agentId ??
     m.agent_id ??
     m.agent?.id ??
-    (m.role && String(m.role).toLowerCase() === 'agent' ? m.id : null) ??
     null
   )
 })
@@ -1094,12 +1073,13 @@ async function loadHistory () {
 
   const from = monthFrom.value, to = monthTo.value
 
-  const candidates = [
-    { url: `/admin/agents/${meAgentId.value}/history`, params: { from, to } },
-    { url: `/dailyreport/me/history`,                  params: { from, to } },
-    { url: `/dailyreport/history`,                     params: { agent_id: meAgentId.value, from, to } },
-    { url: `/reports/me/history`,                      params: { from, to } },
-  ]
+  // En AgentDashboard.vue -> loadHistory()
+const candidates = [
+  { url: `/agents/${meAgentId.value}/history`, params: { from, to } }, // self
+  { url: `/admin/agents/${meAgentId.value}/history`, params: { from, to } }, // fallback si el rol tiene permisos
+]
+
+
 
   const normalize = (raw) => {
     const items = Array.isArray(raw?.items) ? raw.items : (Array.isArray(raw) ? raw : [])
@@ -1281,49 +1261,109 @@ async function onSubmitPassword () {
 }
 
 /* ===== Init ===== */
+/* ===== Init ===== */
+const AGENT_ID_CACHE_KEY = 'AGENT_ID'
+
+function extractAgentIdFromMe(obj){
+  if (!obj) return null
+  return (
+    obj.agentId ??
+    obj.agent_id ??
+    obj.agent?.id ??
+    null
+  )
+}
+
 async function ensureAgentId () {
+  agentResolveMsg.value = ''
+
+  // A) Si ya lo tenemos en memoria, listo
   if (meAgentId.value) return
 
-  // 1) /login/me primero (ya usa apiGet que prefiere /login)
-  if (!me.value) await loadMe()
-  if (meAgentId.value) return
-
-  // 2) Fallbacks "login-only" (evita caer al raíz)
-  const loginCandidates = [
-    '/agents/me',
-    '/agents/self',
-    '/agents?me=1'
-  ]
-  for (const url of loginCandidates) {
-    try {
-      // 👇 esto pega a /login/agents/me (porque httpLogin tiene baseURL '/login')
-      const { data } = await apiGetLogin(url)
-      const a = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
-      const id = a?.id ?? a?.agentId ?? a?.agent_id
-      if (id) {
-        me.value = { ...(me.value || {}), agentId: id }
-        return
-      }
-    } catch {/* sigue */}
+  // B) Cache (si ya resolvimos antes)
+  const cached = localStorage.getItem(AGENT_ID_CACHE_KEY)
+  if (cached && /^\d+$/.test(cached)) {
+    me.value = { ...(me.value||{}), agentId: Number(cached) }
+    return
   }
 
-  // 3) (opcional) último intento con raíz por si el deploy cambia
-  const rootCandidates = [
-    '/agents/me',
-    '/agents/self',
-    '/agents?me=1'
+  // C) Asegura /me
+  if (!me.value) {
+    try { await loadMe() }
+    catch (e) { agentResolveMsg.value = 'No se pudo leer /me (revisa token/sesión).'; return }
+  }
+  // ¿/me trae el agentId?
+  const fromMe = extractAgentIdFromMe(me.value)
+  if (fromMe) {
+    localStorage.setItem(AGENT_ID_CACHE_KEY, String(fromMe))
+    me.value = { ...(me.value||{}), agentId: fromMe }
+    return
+  }
+
+  // D) Construye candidatos para buscar por distintos campos
+  const userId   = me.value?.id || me.value?.user?.id || null
+  const username = me.value?.username || me.value?.user?.username || null
+  const email    = me.value?.email || me.value?.user?.email || null
+  const code     = username || null   // tu regla: username == code del agente
+
+  // E) Secuencia de intentos (el primero que responda con un ID, gana)
+  const trySteps = [
+    // Catálogo por code (ya lo tenías)
+    async () => {
+      if (!code) return null
+      const { data } = await apiGet('/catalogs/agents', { params: { code, pageSize: 1 } })
+      const item = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      return item?.id ?? item?.agentId ?? null
+    },
+    // Búsqueda por code
+    async () => {
+      if (!code) return null
+      const { data } = await apiGet('/agents/search', { params: { code, pageSize: 1 } })
+      const item = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      return item?.id ?? item?.agentId ?? null
+    },
+    // Endpoint directo si existe
+    async () => {
+      const { data } = await apiGet('/agents/self')
+      return data?.id ?? data?.agentId ?? null
+    },
+    // Buscar por user_id si tu backend lo soporta
+    async () => {
+      if (!userId) return null
+      const { data } = await apiGet('/agents', { params: { user_id: userId, pageSize: 1 } })
+      const item = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      return item?.id ?? item?.agentId ?? null
+    },
+    // Buscar por email (común en APIs)
+    async () => {
+      if (!email) return null
+      const { data } = await apiGet('/agents', { params: { email, pageSize: 1 } })
+      const item = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      return item?.id ?? item?.agentId ?? null
+    },
+    // Buscar por username (si lo modelan)
+    async () => {
+      if (!username) return null
+      const { data } = await apiGet('/agents', { params: { username, pageSize: 1 } })
+      const item = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
+      return item?.id ?? item?.agentId ?? null
+    },
   ]
-  for (const url of rootCandidates) {
+
+  for (const step of trySteps) {
     try {
-      const { data } = await apiGet(url) // este sí puede caer al raíz
-      const a = Array.isArray(data?.items) ? data.items[0] : (Array.isArray(data) ? data[0] : data)
-      const id = a?.id ?? a?.agentId ?? a?.agent_id
+      const id = await step()
       if (id) {
-        me.value = { ...(me.value || {}), agentId: id }
+        localStorage.setItem(AGENT_ID_CACHE_KEY, String(id))
+        me.value = { ...(me.value||{}), agentId: id }
         return
       }
-    } catch {/* nada */}
+    } catch { /* silencioso: seguimos probando */ }
   }
+
+  // F) Si llegamos aquí, no se pudo resolver
+  agentResolveMsg.value = 'Tu usuario no está vinculado a un agente. Verifica que username=code y que exista el agente.'
+  console.warn('[ensureAgentId] no se pudo determinar agentId')
 }
 
 onMounted(async () => {
@@ -1331,8 +1371,13 @@ onMounted(async () => {
   await ensureAgentId()
   await nextTick()
   await loadDailyHistory()
-  await loadMyActiveAssignments()
-  await loadMyOpenUses()
+  if (section.value === 'vehiculos') {
+    await loadMyActiveAssignments()
+    await loadMyOpenUses()
+  } else {
+    await loadMyActiveAssignments() // si quieres precargar
+    await loadMyOpenUses()
+  }
 })
 
 watch(() => meAgentId.value, async (id) => {

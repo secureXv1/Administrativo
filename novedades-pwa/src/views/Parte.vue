@@ -2,19 +2,21 @@
   <div class="min-h-screen bg-slate-50">
     <!-- HERO -->
     <div class="bg-gradient-to-r from-slate-800 to-slate-700">
-      <div class="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
-        <div>
+      <div class="max-w-6xl mx-auto px-4 py-6 flex flex-wrap md:flex-nowrap items-center justify-between gap-4">
+        <!-- Título -->
+        <div class="flex-shrink-0">
           <h1 class="text-white text-2xl font-semibold">Parte</h1>
         </div>
 
-        <div class="flex items-center gap-3">
+        <!-- Controles -->
+        <div class="flex flex-wrap justify-end md:justify-normal items-center gap-3 w-full md:w-auto">
           <input
             v-model="date"
             type="date"
-            class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-white"
+            class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-white w-full sm:w-auto"
           />
 
-          <!-- Ver SERVICIO (sin check) -->
+          <!-- Ver SERVICIO -->
           <label class="flex items-center gap-2 text-slate-200 text-sm">
             <input
               type="checkbox"
@@ -25,7 +27,7 @@
             SERVICIO
           </label>
 
-          <!-- Ver SIN NOVEDAD no chuleados -->
+          <!-- Ver AUSENTES -->
           <label class="flex items-center gap-2 text-slate-200 text-sm">
             <input
               type="checkbox"
@@ -36,10 +38,10 @@
             AUSENTES
           </label>
 
-          <!-- 🔄 Recarga manual, sin timers -->
+          <!-- Botón Actualizar -->
           <button
             @click="refreshAll(false)"
-            class="px-3 py-1.5 text-sm rounded-lg bg-white/90 border border-slate-200 hover:bg-white disabled:opacity-60"
+            class="px-3 py-1.5 text-sm rounded-lg bg-white/90 border border-slate-200 hover:bg-white disabled:opacity-60 w-full sm:w-auto"
             :disabled="loading"
           >
             {{ loading ? 'Actualizando…' : 'Actualizar' }}
@@ -47,6 +49,7 @@
         </div>
       </div>
     </div>
+
 
     <!-- FILTROS / KPIs -->
     <div class="max-w-6xl mx-auto px-4 py-4">

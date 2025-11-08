@@ -22,6 +22,7 @@ export default defineConfig({
     '/dashboard': 'http://localhost:8080',
     '/debug': 'http://localhost:8080',
     '/vehicles': 'http://localhost:8080',
+    '/agents': 'http://localhost:8080',
     '/uploads': 'http://localhost:8080', 
     '/api': {
         target: 'http://localhost:8080',

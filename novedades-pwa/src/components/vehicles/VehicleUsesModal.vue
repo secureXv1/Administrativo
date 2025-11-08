@@ -1,58 +1,90 @@
 <template>
-  <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl shadow-xl w-full max-w-6xl p-6">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="font-semibold text-slate-800">
+  <!-- OVERLAY -->
+  <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-6">
+    <!-- MODAL -->
+    <div
+      class="w-full max-w-[100vw] sm:max-w-3xl lg:max-w-5xl bg-white rounded-2xl shadow-xl overflow-hidden"
+      role="dialog"
+      aria-modal="true"
+    >
+      <!-- HEADER sticky -->
+      <div class="sticky top-0 z-10 bg-white/90 backdrop-blur border-b px-3 sm:px-4 py-3 flex items-center justify-between">
+        <h3 class="font-semibold text-slate-800 text-sm sm:text-base">
           Usos — {{ vehicle.code }} ({{ vehicle.sigla }})
         </h3>
         <button class="btn-secondary btn-xs" @click="$emit('close')">Cerrar</button>
       </div>
-      <!-- Banner cuando hay un uso vigente -->
-      <div v-if="hasOpenUse" class="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm border border-amber-200">
-        Ya existe un uso vigente. Cierre el uso actual para habilitar un nuevo registro.
-      </div>
-      <!-- 🔹 Bloque de novedades previas al inicio del uso -->
-      <div v-if="!hasOpenUse" class="border rounded-xl p-3 bg-slate-50 mb-6">
-        <h4 class="font-semibold text-slate-700 text-sm mb-3">
-          Agregar una nueva novedad
-        </h4>
-         <!-- Formulario para nueva novedad (parte + descripción + foto) -->
-          <div class="mt-3 grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
-            <!-- Parte -->
-            <div class="sm:col-span-3">
-              <select v-model="selectedPartKey" class="input w-full">
-                <option value="">- Selecciona una parte</option>
-                <optgroup v-if="isMoto" label="Moto">
-                  <option v-for="p in PARTS_MOTO" :key="p.key" :value="p.key">{{ p.label }}</option>
-                </optgroup>
-                <optgroup v-else label="Vehículo / Camioneta">
-                  <option v-for="p in PARTS_AUTO" :key="p.key" :value="p.key">{{ p.label }}</option>
-                </optgroup>
-              </select>
-            </div>
 
+      <!-- BODY con scroll interno -->
+      <div class="px-3 sm:px-4 py-4 overflow-y-auto max-h-[90dvh]">
+        <!-- Banner cuando hay un uso vigente -->
+        <div
+          v-if="hasOpenUse"
+          class="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm border border-amber-200"
+        >
+          Ya existe un uso vigente. Cierre el uso actual para habilitar un nuevo registro.
+        </div>
+
+        <!-- 🔹 Bloque de novedades previas al inicio del uso -->
+        <div v-if="!hasOpenUse" class="border rounded-xl p-3 bg-slate-50 mb-6">
+          <h4 class="font-semibold text-slate-700 text-sm mb-3">
+            Agregar una nueva novedad
+          </h4>
+
+          <!-- Picker visual + campos (stack en móvil) -->
+          <div class="grid grid-cols-1 gap-3 mb-3">
+            <!-- 👇 Picker compacto (auto/moto) -->
+            <VehiclePartsPicker
+              v-model="selectedPartKey"
+              :is-moto="isMoto"
+              compact
+              :scale="0.7"
+              :legend-max-height="120"
+            />
+
+            <!-- Campo 'Otro' si corresponde -->
+            <div v-if="selectedPartKey === 'OTRO'">
+              <input
+                v-model="customPartName"
+                class="input w-full"
+                placeholder="Especifica la parte (ej: tapa combustible)"
+              />
+            </div>
+          </div>
+
+          <!-- Formulario para nueva novedad (desc + foto + agregar) -->
+          <div class="mt-3 grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
             <!-- Descripción -->
-            <div class="sm:col-span-5">
+            <div class="sm:col-span-7">
               <textarea
                 v-model="newNovedad.description"
-                rows="1"
+                rows="2"
                 maxlength="200"
-                class="w-full rounded-lg border border-slate-300 bg-white text-slate-900
-                      placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none
-                      focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Escribe la novedad (ej: está rayado, fisura leve, etc.)"
+                class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                :placeholder="descPlaceholder"
               ></textarea>
               <div class="text-[11px] text-slate-400 mt-1">
                 {{ (newNovedad.description || '').length }}/200
               </div>
+
+              <!-- Chips rápidos (opcional) -->
+              <div class="flex flex-wrap gap-1.5 mt-2">
+                <button
+                  v-for="c in quickChips"
+                  :key="c"
+                  type="button"
+                  class="px-2 py-1 rounded border text-[11px] border-slate-300 hover:bg-slate-50"
+                  @click="appendChip(c)"
+                >
+                  {{ c }}
+                </button>
+              </div>
             </div>
 
             <!-- Foto -->
-            <div class="sm:col-span-2">
+            <div class="sm:col-span-3">
               <label
-                class="inline-flex items-center justify-center px-3 py-2 w-full rounded-lg border border-slate-300
-                      bg-white text-slate-800 text-sm cursor-pointer hover:bg-slate-50
-                      focus:outline-none focus:ring-2 focus:ring-blue-500"
+                class="inline-flex items-center justify-center px-3 py-2 w-full rounded-lg border border-slate-300 bg-white text-slate-800 text-sm cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 Seleccionar img
                 <input type="file" accept="image/*" class="hidden" @change="onPhoto" />
@@ -67,154 +99,164 @@
               <button class="btn-primary w-full" @click="addNovedad">Agregar</button>
             </div>
           </div>
-        <h4 class="font-semibold text-slate-700 text-sm mb-3">
-          Novedades recientes del vehículo
-        </h4>
-        <div v-if="loadingNovs" class="text-xs text-slate-500">Cargando novedades…</div>
 
-        <div v-else>
-          <div v-if="!recentNovedades.length" class="text-xs text-slate-400 mb-2">
-            No hay novedades registradas aún.
-          </div>
-          <div v-for="n in recentNovedades" :key="n.id" class="text-xs border-b py-1 flex items-center justify-between">
-            <div>
-              • {{ n.description }}
-              <a
-                v-if="n.photoUrl"
-                :href="`/${n.photoUrl}`"
-                target="_blank"
-                class="text-blue-600 underline ml-1"
-              >foto</a>
-              <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
+          <h4 class="font-semibold text-slate-700 text-sm mt-5 mb-2">
+            Novedades recientes del vehículo
+          </h4>
+          <div v-if="loadingNovs" class="text-xs text-slate-500">Cargando novedades…</div>
+
+          <div v-else>
+            <div v-if="!recentNovedades.length" class="text-xs text-slate-400 mb-2">
+              No hay novedades registradas aún.
             </div>
-            <button
-              class="text-red-600 hover:text-red-800 font-medium text-[11px]"
-              @click="deleteNovedad(n.id)"
+            <div
+              v-for="n in recentNovedades"
+              :key="n.id"
+              class="text-xs border-b py-1 flex items-center justify-between"
             >
-              Eliminar
+              <div>
+                • {{ n.description }}
+                <a
+                  v-if="n.photoUrl"
+                  :href="`/${n.photoUrl}`"
+                  target="_blank"
+                  class="text-blue-600 underline ml-1"
+                >foto</a>
+                <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
+              </div>
+              <button
+                class="text-red-600 hover:text-red-800 font-medium text-[11px]"
+                @click="deleteNovedad(n.id)"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Formulario nuevo uso -->
+        <div v-if="!hasOpenUse" class="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-4">
+          <div class="sm:col-span-2">
+            <label class="label">Agente</label>
+            <input v-model="form.agentCode" class="input" placeholder="Código de agente" list="agentsList" />
+            <datalist id="agentsList">
+              <option v-for="a in agents" :key="a.id" :value="a.code" />
+            </datalist>
+          </div>
+
+          <div>
+            <label class="label">Odómetro</label>
+            <input type="number" v-model="form.odometer_start" class="input" />
+            <p v-if="lastUseOdoHint != null" class="text-[11px] text-slate-500 mt-1">
+              Sugerido: <span class="font-medium">{{ lastUseOdoHint }}</span>
+            </p>
+          </div>
+
+          <div class="sm:col-span-3">
+            <label class="label">Actividad a realizar</label>
+            <textarea
+              v-model="form.notes"
+              rows="1"
+              maxlength="500"
+              class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Ej: Servicio, Actividad persona, etc"
+            ></textarea>
+          </div>
+
+          <div class="sm:col-span-6 flex justify-end">
+            <button class="btn-primary" @click="createUse" :disabled="submitting">
+              {{ submitting ? 'Guardando…' : 'Iniciar uso' }}
             </button>
           </div>
         </div>
+
+        <!-- Tabla de usos (scroll horizontal en móvil) -->
+        <div class="overflow-x-auto -mx-3 sm:mx-0">
+          <table class="min-w-[760px] w-full text-sm">
+            <thead>
+              <tr class="text-left text-slate-600">
+                <th class="py-2 pr-3">Agente</th>
+                <th class="py-2 pr-3">Inicio</th>
+                <th class="py-2 pr-3">Fin</th>
+                <th class="py-2 pr-3">km inicio</th>
+                <th class="py-2 pr-3">km fin</th>
+                <th class="py-2 pr-3">Novedades</th>
+                <th class="py-2 pr-3">Actividad</th>
+                <th class="py-2 pr-3">Uso</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="u in uses" :key="u.id">
+                <tr class="border-t align-top">
+                  <td class="py-2 pr-3 font-medium">{{ u.agentCode }}</td>
+                  <td class="py-2 pr-3">{{ u.started_at }}</td>
+                  <td class="py-2 pr-3">{{ u.ended_at || '—' }}</td>
+                  <td class="py-2 pr-3">{{ u.odometer_start ?? '—' }}</td>
+                  <td class="py-2 pr-3">{{ u.odometer_end ?? '—' }}</td>
+                  <td class="py-2 pr-0">
+                    <button class="btn-secondary btn-xs ml-1" @click="toggleNovedades(u.id)">
+                      {{ expandedUseId === u.id ? 'Ocultar' : 'Ver' }}
+                    </button>
+                  </td>
+                  <td class="py-2 pr-3">
+                    <span
+                      v-if="u.notes?.trim()"
+                      class="text-slate-700 block max-w-[260px] truncate cursor-pointer hover:underline"
+                      title="Ver actividad completa"
+                      @click="verNotaUso(u)"
+                    >
+                      {{ u.notes }}
+                    </span>
+                    <span v-else class="text-slate-400">—</span>
+                  </td>
+                  <td class="py-2 pr-0">
+                    <button
+                      v-if="!u.ended_at"
+                      class="px-3 py-1 rounded-md text-white text-xs font-semibold bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 transition"
+                      @click="closeUse(u)"
+                    >
+                      Finalizar uso
+                    </button>
+                  </td>
+                </tr>
+
+                <!-- Novedades inline (solo lectura) -->
+                <tr v-if="expandedUseId === u.id">
+                  <td colspan="9" class="bg-slate-50 px-3 py-3">
+                    <NovedadesBlock :tipo="'uses'" :refId="u.id" :canDelete="false" :readonly="true" />
+                  </td>
+                </tr>
+              </template>
+
+              <tr v-if="!loading && !uses.length">
+                <td colspan="9" class="py-6 text-center text-slate-500">Sin usos</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Novedades del uso -->
+        <div v-if="selectedUseId" class="mt-6 border-t pt-4">
+          <h4 class="font-semibold text-slate-700 text-sm mb-2">Novedades del uso</h4>
+          <NovedadesBlock
+            :key="`uses-${selectedUseId}`"
+            :tipo="'uses'"
+            :refId="selectedUseId"
+            canDelete
+            @close="selectedUseId = null"
+          />
+        </div>
       </div>
-      <!-- Formulario nuevo uso -->
-      <div v-if="!hasOpenUse" class="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-4">
-        <div class="sm:col-span-2">
-          <label class="label">Agente</label>
-          <input v-model="form.agentCode" class="input" placeholder="Código de agente" list="agentsList" />
-          <datalist id="agentsList">
-            <option v-for="a in agents" :key="a.id" :value="a.code" />
-          </datalist>
-        </div>
-
-        <div>
-          <label class="label">Odómetro</label>
-          <input type="number" v-model="form.odometer_start" class="input" />
-          <p v-if="lastUseOdoHint != null" class="text-[11px] text-slate-500 mt-1">
-            Sugerido: <span class="font-medium">{{ lastUseOdoHint }}</span>
-          </p>
-        </div>
-
-        <div class="sm:col-span-3">
-          <label class="label">Actividad a realizar</label>
-          <textarea
-            v-model="form.notes"
-            rows="1"
-            maxlength="500"
-            class="w-full rounded-lg border border-slate-300 bg-white text-slate-900
-                  placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none
-                  focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            placeholder="Ej: Servicio, Actividad persona, etc"
-          ></textarea>
-        </div>
-
-        <div class="sm:col-span-6 flex justify-end">
-          <button class="btn-primary" @click="createUse" :disabled="submitting">
-            {{ submitting ? 'Guardando…' : 'Iniciar uso' }}
-          </button>
-        </div>
-      </div>
-      <!-- Tabla de usos -->
-      <table class="min-w-full text-sm">
-        <thead>
-          <tr class="text-left text-slate-600">
-            <th class="py-2 pr-3">Agente</th>
-            <th class="py-2 pr-3">Inicio</th>
-            <th class="py-2 pr-3">Fin</th>
-            <th class="py-2 pr-3">km inicio</th>
-            <th class="py-2 pr-3">km fin</th>
-            <th class="py-2 pr-3">Novedades</th>
-            <th class="py-2 pr-3">Actividad</th>
-            <th class="py-2 pr-3">Uso</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <template v-for="u in uses" :key="u.id">
-            <tr class="border-t align-top">
-              <td class="py-2 pr-3 font-medium">{{ u.agentCode }}</td>
-              <td class="py-2 pr-3">{{ u.started_at }}</td>
-              <td class="py-2 pr-3">{{ u.ended_at || '—' }}</td>
-              <td class="py-2 pr-3">{{ u.odometer_start ?? '—' }}</td>
-              <td class="py-2 pr-3">{{ u.odometer_end ?? '—' }}</td>
-              <td class="py-2 pr-0">
-                <button class="btn-secondary btn-xs ml-1" @click="toggleNovedades(u.id)">
-                  {{ expandedUseId === u.id ? 'Ocultar' : 'Ver' }}
-                </button>
-              </td>
-              <td class="py-2 pr-3">
-                <span
-                  v-if="u.notes?.trim()"
-                  class="text-slate-700 block max-w-[260px] truncate cursor-pointer hover:underline"
-                  title="Ver actividad completa"
-                  @click="verNotaUso(u)"
-                >
-                  {{ u.notes }}
-                </span>
-                <span v-else class="text-slate-400">—</span>
-              </td>
-              <td class="py-2 pr-0">
-                <button
-                  v-if="!u.ended_at"
-                  class="px-3 py-1 rounded-md text-white text-xs font-semibold bg-red-600 hover:bg-red-700
-                        focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 transition"
-                  @click="closeUse(u)"
-                >
-                  Finalizar uso
-                </button>
-              </td>
-            </tr>
-
-            <!-- Novedades inline (solo lectura) -->
-            <tr v-if="expandedUseId === u.id">
-              <td colspan="9" class="bg-slate-50 px-3 py-3">
-                <NovedadesBlock :tipo="'uses'" :refId="u.id" :canDelete="false" :readonly="true" />
-              </td>
-            </tr>
-          </template>
-
-          <tr v-if="!loading && !uses.length">
-            <td colspan="6" class="py-6 text-center text-slate-500">Sin usos</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- Novedades del uso -->
-      <div v-if="selectedUseId" class="mt-6 border-t pt-4">
-        <h4 class="font-semibold text-slate-700 text-sm mb-2">Novedades del uso</h4>
-        <NovedadesBlock
-          :key="`uses-${selectedUseId}`"
-          :tipo="'uses'"
-          :refId="selectedUseId"
-          canDelete
-          @close="selectedUseId = null"
-        />
-      </div>
+      <!-- /BODY -->
     </div>
+    <!-- /MODAL -->
   </div>
+
   <!-- Modal para ver actividad/nota del uso -->
   <div
     v-if="notaUsoVisible"
-    class="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+    class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-2"
     @click.self="notaUsoVisible = false"
   >
     <div class="bg-white rounded-xl shadow-lg max-w-md w-full p-5">
@@ -229,10 +271,13 @@
   </div>
 </template>
 
+
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue'
 import { http } from '@/lib/http'
 import NovedadesBlock from './NovedadesBlock.vue'
+import VehiclePartsPicker from '@/components/vehicles/VehiclePartsPicker.vue'
+
 
 const props = defineProps({ vehicle: { type: Object, required: true } })
 const agents = ref([])

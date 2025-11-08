@@ -143,8 +143,6 @@ app.post('/auth/login', async (req, res) => {
     );
     const user = rows[0];
 
-   
-
     if (!user) {
       // No revelamos existencia del usuario
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -215,8 +213,6 @@ app.post('/auth/login', async (req, res) => {
       // ❗ Fallo normal (<5): solo actualiza contador y responde con remaining (SIN log)
       await pool.query('UPDATE `user` SET failed_login_count=? WHERE id=? LIMIT 1', [newFailed, user.id]);
       const remaining = Math.max(0, 5 - newFailed);
-      // Opcional: header con el mismo dato
-      // res.set('X-Login-Attempts-Remaining', String(remaining));
       return res.status(401).json({
         error: 'Invalid credentials',
         remaining,
@@ -239,9 +235,39 @@ app.post('/auth/login', async (req, res) => {
       });
     } catch {}
 
+    // === Resolver agentId (regla: username == code del agente). Ajusta si usas otra relación. ===
+    let agentId = null;
+    let agentGroupId = null;
+    let agentUnitId = null;
+    try {
+      const [[ag]] = await pool.query(
+        'SELECT id, groupId, unitId FROM agent WHERE code = ? LIMIT 1',
+        [user.username]
+      );
+      if (ag) {
+        agentId      = ag.id ?? null;
+        agentGroupId = ag.groupId ?? null;
+        agentUnitId  = ag.unitId ?? null;
+      }
+    } catch (e) {
+      console.warn('[login] no se pudo resolver agentId:', e.message);
+    }
+
+    // Firma del token con secreto consistente
+    const JWT_SECRET = process.env.JWT_SECRET || process.env.JWT_KEY || 'dev_secret';
+
     const token = jwt.sign(
-      { uid: user.id, username: user.username, role: user.role, groupId: user.groupId, unitId: user.unitId },
-      process.env.JWT_SECRET,
+      {
+        uid: user.id,
+        username: user.username,
+        role: user.role,
+        groupId: user.groupId,
+        unitId: user.unitId,
+        agentId,        // <- CLAVE para validar alcance en vehiculos.js
+        agentGroupId,   // opcional
+        agentUnitId     // opcional
+      },
+      JWT_SECRET,
       { expiresIn: '8h' }
     );
 
@@ -251,7 +277,6 @@ app.post('/auth/login', async (req, res) => {
     return res.status(500).json({ error: 'Server error' });
   }
 });
-
 
   function auth(req, res, next) {
     const h = req.headers.authorization || '';
@@ -275,17 +300,20 @@ app.post('/auth/login', async (req, res) => {
   }
 
   // ---------- ENDPOINTS USUARIO ----------
-  app.get('/me', auth, (req, res) => {
-    res.json({
-      uid: req.user.uid,
-      username: req.user.username,
-      role: req.user.role,
-      groupId: req.user.groupId,
-      unitId: req.user.unitId
-    });
+app.get('/me', auth, (req, res) => {
+  res.json({
+    uid: req.user.uid,
+    username: req.user.username,
+    role: req.user.role,
+    groupId: req.user.groupId,
+    unitId: req.user.unitId,
+    agentId: req.user.agentId ?? null,       // <- agregado
+    agentGroupId: req.user.agentGroupId ?? null,
+    agentUnitId: req.user.agentUnitId ?? null,
   });
+});
 
-  app.get('/me/profile', auth, async (req, res) => {
+app.get('/me/profile', auth, async (req, res) => {
     const [[user]] = await pool.query(
       `SELECT u.id, u.username, u.role, u.groupId, u.unitId, u.createdAt, g.code AS groupCode, un.name AS unitName
         FROM user u
@@ -297,6 +325,8 @@ app.post('/auth/login', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
     res.json(user);
   });
+
+  
 
 // Cambiar contraseña del usuario autenticado
   app.post('/me/change-password', auth, async (req, res) => {
@@ -3346,6 +3376,54 @@ app.get('/admin/agents/:id/history',
     res.json({ items: data });
   }
 );
+
+// GET /agents/:id/history?from=YYYY-MM-DD&to=YYYY-MM-DD
+app.get('/agents/:id/history', auth, async (req, res) => {
+  const agentId = Number(req.params.id);
+  const { from, to } = req.query;
+
+  // Permitir si es admin/supervisión/líder — o si es el propio agente:
+  const allowed = new Set(['superadmin','supervision','leader_group','leader_unit']);
+  const isSelf = Number(req.user?.agentId) === agentId;
+
+  if (!isSelf && !allowed.has(String(req.user?.role || ''))) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!from || !to) return res.status(400).json({ error: 'Missing from/to' });
+
+  try {
+    const [rows] = await pool.query(`
+      SELECT
+        DATE_FORMAT(dr.reportDate, '%Y-%m-%d') AS date,
+        da.state,
+        da.municipalityId,
+        m.dept, m.name AS municipalityName,
+        da.novelty_start, da.novelty_end,
+        da.novelty_description
+      FROM dailyreport_agent da
+      JOIN dailyreport dr ON dr.id = da.reportId
+      LEFT JOIN municipality m ON m.id = da.municipalityId
+      WHERE da.agentId = ?
+        AND dr.reportDate BETWEEN ? AND ?
+      ORDER BY dr.reportDate ASC
+    `, [agentId, from, to]);
+
+    const items = rows.map(r => ({
+      date: r.date,
+      state: r.state,
+      municipalityId: r.municipalityId,
+      municipalityName: r.municipalityId ? `${r.dept} - ${r.municipalityName}` : '',
+      novelty_start: r.novelty_start ? String(r.novelty_start).slice(0,10) : null,
+      novelty_end:   r.novelty_end   ? String(r.novelty_end).slice(0,10)   : null,
+      novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null,
+    }));
+
+    res.json({ items });
+  } catch (e) {
+    console.error('GET /agents/:id/history error:', e?.message || e);
+    res.status(500).json({ error: 'Internal error' });
+  }
+});
 
 // === Fechas conmemorativas (ANIVERSARIOS): semana domingo-sábado por MM-DD ===
 // Reusa tu lógica actual como handler
