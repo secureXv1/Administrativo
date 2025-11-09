@@ -846,8 +846,10 @@
                 class="h-20 rounded-xl p-2 flex flex-col transition-all border border-slate-200 dark:border-slate-700 hover:shadow-md hover:-translate-y-[1px]"
                 :class="[
                   cell.state ? (colorClass(cell.state)?.bg || 'bg-slate-100') : 'bg-white dark:bg-slate-400/60',
-                  cell.isToday && 'ring-2 ring-blue-500/70'
-                ]">
+                  cell.isToday && 'ring-2 ring-blue-500/70',
+                  cell.isPadding && 'opacity-60'   
+                ]"
+                >
               <div class="text-[11px] font-medium opacity-60">{{ cell.day || '' }}</div>
               <div class="mt-auto text-center text-lg leading-none" v-if="cell.state">{{ iconFor(cell.state) }}</div>
               <div v-if="cell.state" class="text-[11px] text-center truncate mt-1 opacity-85">{{ shortState(cell.state) }}</div>
@@ -1615,12 +1617,24 @@ function endOfMonth(d){ const x=new Date(d); x.setMonth(x.getMonth()+1,0); x.set
 function addMonths(d,n){ const x=new Date(d); x.setMonth(x.getMonth()+n); return x }
 function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x }
 function dowMonday0(d){ return (d.getDay()+6)%7 }
+function startOfWeekMonday(d){ const x=new Date(d); const off=(x.getDay()+6)%7; x.setDate(x.getDate()-off); x.setHours(0,0,0,0); return x }
+function endOfWeekSunday(d){ const x=new Date(d); const off=(7-((x.getDay()+6)%7))-1; x.setDate(x.getDate()+off); x.setHours(0,0,0,0); return x }
 
+
+// Rango para pedir al backend (3 meses: mes visible + 2 hacia atrás), extendido a semanas completas
+const historyFrom = computed(() => ymd(startOfWeekMonday(startOfMonth(addMonths(monthCursor.value, -2)))))
+const historyTo   = computed(()   => ymd(endOfWeekSunday(endOfMonth(monthCursor.value))))
+
+// Rango VISUAL del calendario del mes actual (1 mes + padding lun-dom)
+const calendarStartDate = computed(() => startOfWeekMonday(startOfMonth(monthCursor.value)))
+const calendarEndDate   = computed(() => endOfWeekSunday(endOfMonth(monthCursor.value)))
+
+// Etiquetas mostradas en el modal
 const monthLabel = computed(() =>
   new Intl.DateTimeFormat('es-CO',{month:'long',year:'numeric'}).format(monthCursor.value)
 )
-const monthFrom = computed(() => ymd(startOfMonth(monthCursor.value)))
-const monthTo   = computed(() => ymd(endOfMonth(monthCursor.value)))   // <-- ESTA ES LA QUE FALTABA
+const monthFrom = computed(() => ymd(calendarStartDate.value))
+const monthTo   = computed(() => ymd(calendarEndDate.value))
 
 // Colores/Iconos
 function iconFor(state){
@@ -1714,17 +1728,15 @@ function closeHistory(){
 
 async function loadHistory() {
   if (!historyModal.value.agent) return;
-  const url = `/admin/agents/${historyModal.value.agent.id}/history`; // <-- SIEMPRE este endpoint
-  const params = { from: monthFrom.value, to: monthTo.value };
   try {
-    const { data } = await axios.get(url, {
+    const { data } = await axios.get(`/admin/agents/${historyModal.value.agent.id}/history`, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
-      params
-    });
-    historyItems.value = Array.isArray(data?.items) ? data.items : [];
+      params: { from: historyFrom.value, to: historyTo.value }
+    })
+    historyItems.value = Array.isArray(data?.items) ? data.items : []
   } catch (e) {
-    console.warn('Error historial:', e?.response?.data || e);
-    historyItems.value = [];
+    console.warn('Error historial:', e?.response?.data || e)
+    historyItems.value = []
   }
 }
 
@@ -1735,23 +1747,23 @@ async function todayMonth(){ monthCursor.value = new Date(); await loadHistory()
 
 // Calendario
 const calendarCells = computed(() => {
-  const start = startOfMonth(monthCursor.value)
-  const end   = endOfMonth(monthCursor.value)
-  const pad   = dowMonday0(start)
-  const days  = end.getDate()
+  const start = calendarStartDate.value
+  const end   = calendarEndDate.value
   const map   = new Map(historyItems.value.map(h => [String(h.date), h]))
   const cells = []
-  for (let i=0;i<pad;i++) cells.push({ key:'pad-'+i, day:'', state:null, title:'' })
-  for (let d=1; d<=days; d++){
-    const dt = new Date(start); dt.setDate(d)
+
+  for (let dt = new Date(start); dt <= end; dt.setDate(dt.getDate()+1)) {
     const key = ymd(dt)
     const rec = map.get(key)
     const state = rec?.state || null
     const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — '+rec.municipalityName : ''}` : key
     const isToday = key === ymd(new Date())
-    cells.push({ key, day:d, state, title, isToday })
+
+    // ¿Este día pertenece al mes visible o es padding?
+    const isPadding = dt.getMonth() !== monthCursor.value.getMonth()
+
+    cells.push({ key, day: dt.getDate(), state, title, isToday, isPadding })
   }
-  while (cells.length % 7) cells.push({ key:'tail-'+cells.length, day:'', state:null, title:'' })
   return cells
 })
 

@@ -86,52 +86,82 @@
             <div class="p-4 space-y-4">
               <!-- Controles -->
               <div class="flex flex-wrap items-center gap-2">
-                <button class="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        @click="prevMonth">◀</button>
-                <button class="inline-flex items-center justify-center h-8 px-3 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        @click="todayMonth">Hoy</button>
-                <button class="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                        @click="nextMonth">▶</button>
-
+                <button class="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50" @click="prevPeriod">◀</button>
+                <button class="inline-flex items-center justify-center h-8 px-3 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50" @click="todayPeriod">Hoy</button>
+                <button class="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50" @click="nextPeriod">▶</button>
+              
                 <span class="ml-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs bg-slate-100 text-slate-700 border border-slate-200">
                   {{ monthLabel }}
                 </span>
-                <span class="ml-auto text-xs text-slate-500">Rango: {{ monthFrom }} → {{ monthTo }}</span>
+
+                <span class="ml-auto text-xs text-slate-500">
+                  Rango: {{ rangeFromTo().from }} → {{ rangeFromTo().to }}
+                </span>
               </div>
 
-              <div class="grid md:grid-cols-2 gap-4">
-                <!-- Calendario -->
-                <div>
-                  <div class="grid grid-cols-7 gap-2 text-xs font-medium text-slate-600 mb-1">
-                    <div class="text-center">L</div><div class="text-center">M</div><div class="text-center">X</div>
-                    <div class="text-center">J</div><div class="text-center">V</div><div class="text-center">S</div>
-                    <div class="text-center">D</div>
-                  </div>
 
-                  <div class="grid grid-cols-7 gap-2">
-                    <div v-for="cell in calendarCells" :key="cell.key" :title="cell.title"
+              <!-- KPI: Racha actual -->
+              <span
+                class="inline-flex items-center gap-2 rounded-full border border-purple-200 bg-purple-50 text-purple-800 px-3 py-1"
+                v-if="workStreak.days > 0"
+                title="La racha se reinicia cuando el estado cambia entre: SIN NOVEDAD / SERVICIO / COMISIÓN DEL SERVICIO / PERMISO ACTIVIDAD PERSONAL"
+              >
+                ⏱️ <b>Días Laborados</b>:
+                <span class="font-semibold">{{ workStreak.days }}</span> día(s)
+              </span>
+
+              <span
+                v-else
+                class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 text-slate-700 px-3 py-1"
+              >
+                ⏱️ Racha actual: 0 día(s)
+              </span>
+
+              <div class="grid md:grid-cols-2 gap-4">
+                <!-- Calendarios (1 o 3) -->
+                <div class="grid gap-4 md:grid-cols-1">
+                  <div v-for="cal in calendarsByMonth" :key="cal.label" class="rounded-xl border border-slate-200 p-3">
+                    <div class="text-sm font-semibold text-slate-800 mb-2">{{ cal.label }}</div>
+
+                    <div class="grid grid-cols-7 gap-2 text-xs font-medium text-slate-600 mb-1">
+                      <div class="text-center">L</div><div class="text-center">M</div><div class="text-center">X</div>
+                      <div class="text-center">J</div><div class="text-center">V</div><div class="text-center">S</div>
+                      <div class="text-center">D</div>
+                    </div>
+
+                    <div class="grid grid-cols-7 gap-2">
+                      <div
+                        v-for="cell in cal.cells"
+                        :key="cell.key"
+                        :title="cell.title"
                         class="h-20 rounded-xl p-2 flex flex-col transition border hover:shadow-sm hover:-translate-y-[1px]"
                         :class="[
                           cell.state ? (colorClass(cell.state)?.bg || 'bg-slate-100') : 'bg-white',
                           cell.isToday && 'ring-2 ring-blue-500/70',
                           !cell.state && 'border-slate-200',
-                          cell.state && 'border-transparent'
-                        ]">
-                      <div class="text-[11px] font-medium opacity-60">{{ cell.day || '' }}</div>
-                      <div class="mt-auto text-center text-lg leading-none" v-if="cell.state">{{ iconFor(cell.state) }}</div>
-                      <div v-if="cell.state" class="text-[11px] text-center truncate mt-1 opacity-85">{{ shortState(cell.state) }}</div>
+                          cell.state && 'border-transparent',
+                          cell.isOutside && 'opacity-60'   // 👈 atenuado fuera de mes
+                        ]"
+                      >
+                        <div class="text-[11px] font-medium" :class="cell.isOutside ? 'text-slate-400' : 'opacity-60'">
+                          {{ cell.day || '' }}
+                        </div>
+                        <div class="mt-auto text-center text-lg leading-none" v-if="cell.state">{{ iconFor(cell.state) }}</div>
+                        <div v-if="cell.state" class="text-[11px] text-center truncate mt-1 opacity-85">
+                          {{ shortState(cell.state) }}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <!-- Línea de tiempo -->
-                <div class="space-y-3 relative">
-                  <div class="absolute left-3 top-0 bottom-0 w-px bg-gradient-to-b from-slate-200 via-slate-200 to-slate-200" />
+                <!-- Línea de tiempo (rango visible) -->
+                <div class="mt-4 space-y-3 relative">
+                  <div class="text-sm font-semibold text-slate-800 mb-1">Línea de tiempo ({{ rangeFromTo().from }} → {{ rangeFromTo().to }})</div>
+                  <div class="absolute left-3 top-6 bottom-0 w-px bg-gradient-to-b from-slate-200 via-slate-200 to-slate-200" />
                   <div v-for="(s, i) in segments" :key="i" class="flex items-center gap-3 pl-4">
-                    <div class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200"
-                        :class="colorClass(s.state)?.dot || 'bg-slate-400'"></div>
-                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs"
-                        :class="colorClass(s.state)?.pill || 'bg-slate-100 text-slate-700'">
+                    <div class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200" :class="colorClass(s.state)?.dot || 'bg-slate-400'"></div>
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs" :class="colorClass(s.state)?.pill || 'bg-slate-100 text-slate-700'">
                       {{ iconFor(s.state) }}
                       <span>{{ s.state }}</span>
                       <span v-if="s.municipalityName" class="opacity-70">• {{ s.municipalityName }}</span>
@@ -1066,10 +1096,32 @@ function startOfMonth(d){ const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0)
 function endOfMonth(d){ const x=new Date(d); x.setMonth(x.getMonth()+1,0); x.setHours(0,0,0,0); return x }
 function addMonths(d,n){ const x=new Date(d); x.setMonth(x.getMonth()+n); return x }
 function dowMonday0(d){ return (d.getDay()+6)%7 }
+function rangeFromTo() {
+  // SIEMPRE 3M: desde inicio de (cursor-2) hasta fin de (cursor)
+  const start = startOfMonth(addMonths(monthCursor.value, -2))
+  const end   = endOfMonth(monthCursor.value)
+  return { from: ymdLocal(start), to: ymdLocal(end) }
+}
 
+// Navegación sensible al rango
+async function prevPeriod(){
+  monthCursor.value = addMonths(monthCursor.value, -1)
+  await loadHistory()
+}
+async function nextPeriod(){
+  monthCursor.value = addMonths(monthCursor.value, +1)
+  await loadHistory()
+}
+async function todayPeriod(){
+  monthCursor.value = new Date()
+  await loadHistory()
+}
+
+// Etiqueta de rango para el chip
 const monthLabel = computed(() =>
   new Intl.DateTimeFormat('es-CO',{month:'long',year:'numeric'}).format(monthCursor.value)
 )
+
 const monthFrom = computed(() => ymdLocal(startOfMonth(monthCursor.value)))
 const monthTo   = computed(() => ymdLocal(endOfMonth(monthCursor.value)))
 
@@ -1084,19 +1136,14 @@ const meAgentId = computed(() => {
 })
 
 async function loadHistory () {
-  if (!meAgentId.value) { await loadMe() }
+  await ensureAgentId()
   if (!meAgentId.value) { historyItems.value = []; return }
 
-  const from = monthFrom.value, to = monthTo.value
-
-  // En AgentDashboard.vue -> loadHistory()
-const candidates = [
-  { url: `/agents/${meAgentId.value}/history`, params: { from, to } }, // self
-  { url: `/admin/agents/${meAgentId.value}/history`, params: { from, to } }, // fallback si el rol tiene permisos
-]
-
-
-
+  const { from, to } = rangeFromTo()
+  const candidates = [
+    { url: `/agents/${meAgentId.value}/history`, params: { from, to } },
+    { url: `/admin/agents/${meAgentId.value}/history`, params: { from, to } },
+  ]
   const normalize = (raw) => {
     const items = Array.isArray(raw?.items) ? raw.items : (Array.isArray(raw) ? raw : [])
     return items.map(r => ({
@@ -1105,13 +1152,8 @@ const candidates = [
       municipalityName: String(r.municipalityName ?? r.municipio ?? r.municipality ?? r.city ?? '') || ''
     })).filter(x => x.date)
   }
-
   for (const c of candidates) {
-    try {
-      const { data } = await apiGet(c.url, { params: c.params })
-      historyItems.value = normalize(data)
-      break
-    } catch {}
+    try { const { data } = await apiGet(c.url, { params: c.params }); historyItems.value = normalize(data); break } catch {}
   }
 }
 
@@ -1182,7 +1224,68 @@ const calendarCells = computed(() => {
   return cells
 })
 
-// Timeline (segmentos comprimidos consecutivos)
+// Calendarios por mes (array de 1 o 3 entradas)
+const calendarsByMonth = computed(() => {
+  const map = new Map(historyItems.value.map(h => [String(h.date), h]))
+
+  function buildCells(mDate){
+    const start    = startOfMonth(mDate)
+    const end      = endOfMonth(mDate)
+    const pad      = dowMonday0(start)        // lunes=0
+    const days     = end.getDate()
+    const cells    = []
+
+    // --- días del mes ANTERIOR para completar primera fila ---
+    const prevRef  = addMonths(start, -1)
+    const prevLast = endOfMonth(prevRef).getDate()
+    for (let i = pad; i > 0; i--){
+      const d   = prevLast - i + 1
+      const dt  = new Date(prevRef); dt.setDate(d)
+      const key = ymdLocal(dt)
+      const rec = map.get(key)
+      const state = rec?.state || null
+      const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — '+rec.municipalityName : ''}` : key
+      const isToday = key === ymdLocal(new Date())
+      cells.push({ key:`prev-${key}-${+mDate}`, day:d, state, title, isToday, isOutside:true })
+    }
+
+    // --- días del MES ACTUAL ---
+    for (let d=1; d<=days; d++){
+      const dt  = new Date(start); dt.setDate(d)
+      const key = ymdLocal(dt)
+      const rec = map.get(key)
+      const state = rec?.state || null
+      const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — '+rec.municipalityName : ''}` : key
+      const isToday = key === ymdLocal(new Date())
+      cells.push({ key:`cur-${key}-${+mDate}`, day:d, state, title, isToday, isOutside:false })
+    }
+
+    // --- días del mes SIGUIENTE para completar última fila ---
+    const rest = (7 - (cells.length % 7)) % 7
+    if (rest){
+      const nextRef = addMonths(start, +1)
+      for (let d=1; d<=rest; d++){
+        const dt  = new Date(nextRef); dt.setDate(d)
+        const key = ymdLocal(dt)
+        const rec = map.get(key)
+        const state = rec?.state || null
+        const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — '+rec.municipalityName : ''}` : key
+        const isToday = key === ymdLocal(new Date())
+        cells.push({ key:`next-${key}-${+mDate}`, day:d, state, title, isToday, isOutside:true })
+      }
+    }
+    return cells
+  }
+
+  // 👇 SIEMPRE 1 mes (el del cursor)
+  const m = new Date(monthCursor.value)
+  return [{
+    label: new Intl.DateTimeFormat('es-CO',{month:'long', year:'numeric'}).format(m),
+    cells: buildCells(m)
+  }]
+})
+
+// Timeline (ya lo tenías). Solo se alimenta del rango vigente.
 const segments = computed(() => {
   const days = [...historyItems.value].sort((a,b)=> String(a.date).localeCompare(String(b.date)))
   const out = []
@@ -1220,6 +1323,143 @@ const pwdStrengthClass = computed(() => {
   if (strengthScore.value === 3) return 'text-amber-700'
   return 'text-rose-700'
 })
+
+// === DÍAS LABORADOS (YTD) ===
+const WORK_STATES = ['SERVICIO', 'COMISIÓN DEL SERVICIO']
+
+const workYTD = ref({
+  total: 0,
+  byState: {},   // { 'SERVICIO': n, 'COMISIÓN DEL SERVICIO': m }
+  from: '',
+  to: ''
+})
+
+const currentYear = new Date().getFullYear()
+function ymd(d){ return d.toISOString().slice(0,10) }
+
+function normalizeHistoryPayload(raw){
+  const items = Array.isArray(raw?.items) ? raw.items : (Array.isArray(raw) ? raw : [])
+  return items.map(r => ({
+    date: String(r.date ?? r.reportDate ?? r.day ?? r.fecha ?? '').slice(0,10),
+    state: String(r.state ?? r.status ?? r.estado ?? r.novelty_state ?? r.novedad ?? 'SIN NOVEDAD').trim() || 'SIN NOVEDAD'
+  })).filter(x => x.date)
+}
+
+async function loadWorkdaysYTD () {
+  await ensureAgentId()
+  if (!meAgentId.value) { workYTD.value = { total:0, byState:{}, from:'', to:'' }; return }
+
+  const from = `${currentYear}-01-01`
+  const to   = ymd(new Date())
+
+  // Intenta self, luego admin (por si el rol lo permite)
+  const candidates = [
+    { url: `/agents/${meAgentId.value}/history`, params: { from, to } },
+    { url: `/admin/agents/${meAgentId.value}/history`, params: { from, to } },
+  ]
+  let rows = []
+  for (const c of candidates) {
+    try {
+      const { data } = await apiGet(c.url, { params: c.params })
+      rows = normalizeHistoryPayload(data)
+      break
+    } catch {/* sigue al siguiente */}
+  }
+
+  const byState = {}
+  let total = 0
+  for (const r of rows){
+    const s = String(r.state || '').toUpperCase()
+    if (WORK_STATES.includes(s)){
+      total += 1
+      byState[s] = (byState[s] || 0) + 1
+    }
+  }
+  workYTD.value = { total, byState, from, to }
+}
+
+// === Racha actual (se reinicia al cambiar entre los 4 estados) ===
+const TRACK_STATES = [
+  'SIN NOVEDAD',
+  'SERVICIO',
+  'COMISIÓN DEL SERVICIO',
+  'PERMISO ACTIVIDAD PERSONAL'
+]
+
+const historyYTD = ref([]) // crudo YTD para streak
+const workStreak = ref({ days: 0, state: null, from: null, to: null })
+
+function normalizeHistoryYTD(raw){
+  const items = Array.isArray(raw?.items) ? raw.items : (Array.isArray(raw) ? raw : [])
+  return items.map(r => ({
+    date: String(r.date ?? r.reportDate ?? r.day ?? r.fecha ?? '').slice(0,10),
+    state: String(r.state ?? r.status ?? r.estado ?? r.novelty_state ?? r.novedad ?? 'SIN NOVEDAD').trim() || 'SIN NOVEDAD'
+  })).filter(x => x.date)
+}
+
+async function loadHistoryYTDForStreak(){
+  await ensureAgentId()
+  if (!meAgentId.value) { historyYTD.value = []; workStreak.value = { days:0, state:null, from:null, to:null }; return }
+
+  const from = `${new Date().getFullYear()}-01-01`
+  const to   = ymdLocal(new Date())
+
+  const candidates = [
+    { url: `/agents/${meAgentId.value}/history`, params: { from, to } },
+    { url: `/admin/agents/${meAgentId.value}/history`, params: { from, to } },
+  ]
+  let rows = []
+  for (const c of candidates) {
+    try {
+      const { data } = await apiGet(c.url, { params: c.params })
+      rows = normalizeHistoryYTD(data)
+      break
+    } catch {}
+  }
+  historyYTD.value = rows
+  computeWorkStreak()
+}
+
+function computeWorkStreak(){
+  // Mapa fecha->estado; si un día no viene, tomamos 'SIN NOVEDAD'
+  const map = new Map(historyYTD.value.map(x => [x.date, (x.state || 'SIN NOVEDAD').toUpperCase()]))
+  const today = new Date()
+  const fmt = (d)=> ymdLocal(d)
+
+  const todayState = (map.get(fmt(today)) || 'SIN NOVEDAD').toUpperCase()
+  if (!TRACK_STATES.includes(todayState)){
+    workStreak.value = { days:0, state:null, from:null, to:fmt(today) }
+    return
+  }
+
+  let days = 0
+  let cursor = new Date(today)
+  const target = todayState
+  const from = new Date(today)
+
+  while (true){
+    const key = fmt(cursor)
+    const st  = (map.get(key) || 'SIN NOVEDAD').toUpperCase()
+    if (st !== target) break
+    days += 1
+    from.setDate(from.getDate() - 1)
+    cursor.setDate(cursor.getDate() - 1)
+
+    // por seguridad, corta si nos vamos antes del 1 de enero
+    const jan1 = new Date(today.getFullYear(), 0, 1)
+    if (cursor < jan1) break
+  }
+
+  // 'from' quedó un día antes del primer día válido de la racha; corrige +1
+  from.setDate(from.getDate() + 1)
+
+  workStreak.value = {
+    days,
+    state: target,
+    from: fmt(from),
+    to: fmt(today)
+  }
+}
 
 function checkStrength () {
   const s = formPwd.value.new1 || ''
@@ -1386,18 +1626,26 @@ onMounted(async () => {
   await loadMe()
   await ensureAgentId()
   await nextTick()
-  await loadDailyHistory()
+  await Promise.all([
+    loadDailyHistory(),
+    loadWorkdaysYTD(),
+    loadHistoryYTDForStreak()     // ⬅️ nuevo
+  ])
   if (section.value === 'vehiculos') {
     await loadMyActiveAssignments()
     await loadMyOpenUses()
   } else {
-    await loadMyActiveAssignments() // si quieres precargar
+    await loadMyActiveAssignments()
     await loadMyOpenUses()
   }
 })
 
 watch(() => meAgentId.value, async (id) => {
   if (!id) return
+  await Promise.all([
+    loadWorkdaysYTD(),
+    loadHistoryYTDForStreak()     // ⬅️ recalcula cuando resolvemos el agentId
+  ])
   if (!myOpenUses.value.length && !loadingOpenUses.value) await loadMyOpenUses()
   if (!myAssignments.value.length && !loadingAssignments.value) await loadMyActiveAssignments()
 })
@@ -1408,5 +1656,7 @@ watch(section, async (s) => {
   if (!myOpenUses.value.length && !loadingOpenUses.value) await loadMyOpenUses()
   if (!myAssignments.value.length && !loadingAssignments.value) await loadMyActiveAssignments()
 })
+watch(monthCursor, () => { loadHistory() })
+
 
 </script>

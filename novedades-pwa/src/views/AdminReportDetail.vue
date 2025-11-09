@@ -364,9 +364,10 @@
           <div class="grid grid-cols-7 gap-2">
             <div v-for="cell in calendarCells" :key="cell.key" :title="cell.title"
                 class="h-20 rounded-xl p-2 flex flex-col transition-all border border-slate-200 dark:border-slate-700 hover:shadow-md hover:-translate-y-[1px]"
-                :class="[
+                  :class="[
                   cell.state ? (colorClass(cell.state)?.bg || 'bg-slate-100') : 'bg-white dark:bg-slate-400/60',
-                  cell.isToday && 'ring-2 ring-blue-500/70'
+                  cell.isToday && 'ring-2 ring-blue-500/70',
+                  cell.isPadding && 'opacity-60'
                 ]">
               <div class="text-[11px] font-medium opacity-60">{{ cell.day || '' }}</div>
               <div class="mt-auto text-center text-lg leading-none" v-if="cell.state">{{ iconFor(cell.state) }}</div>
@@ -672,17 +673,32 @@ watch(
     const newDate = String(q.date || todayStr())
     const newUnit = String(q.unitId || '')
     const changed = (newDate !== filterDate.value) || (newUnit !== filterUnitId.value)
-    if (changed) {
-      filterDate.value = newDate
-      filterUnitId.value = newUnit
-      await loadUnitsIndex(newDate)
+    if (!changed) return
 
-      if (newUnit) {
-        // nos aseguramos de estar en el detalle correcto
-        await gotoReportForUnit(newDate, newUnit)
-      } else if (isGroupMode.value && groupIdQ.value) {
-        await loadGroupReports(newDate, groupIdQ.value)
-      }
+    filterDate.value = newDate
+    filterUnitId.value = newUnit
+
+    await loadUnitsIndex(newDate)
+
+    if (newUnit) {
+      await gotoReportForUnit(newDate, newUnit)
+    } else if (isGroupMode.value && groupIdQ.value) {
+      await loadGroupReports(newDate, groupIdQ.value)
+    } else {
+      await loadAllReports(newDate)
+    }
+  }
+)
+
+watch(
+  () => route.query.groupId,
+  (newG) => {
+    // Esto sincroniza si navegas con el browser o pegas un link
+    if (newG && String(selectedGroupId.value) !== String(newG)) {
+      selectedGroupId.value = String(newG)
+    }
+    if (!newG && selectedGroupId.value !== 'all') {
+      selectedGroupId.value = 'all'
     }
   }
 )
@@ -1247,29 +1263,6 @@ watch(filterUnitId, async (newUnit, oldUnit) => {
   }
 })
 
-watch(
-  () => route.query,
-  async (q) => {
-    const newDate = String(q.date || todayStr())
-    const newUnit = String(q.unitId || '')
-    const changed = (newDate !== filterDate.value) || (newUnit !== filterUnitId.value)
-    if (changed) {
-      filterDate.value = newDate
-      filterUnitId.value = newUnit
-      await loadUnitsIndex(newDate)
-
-      if (newUnit) {
-        await gotoReportForUnit(newDate, newUnit)
-      } else if (isGroupMode.value && groupIdQ.value) {
-        await loadGroupReports(newDate, groupIdQ.value)
-      } else {
-        // ✅ SIN groupId y SIN unitId -> MODO TODOS
-        await loadAllReports(newDate)
-      }
-    }
-  }
-)
-
 watch(selectedGroupId, async (newG, oldG) => {
   if (newG !== oldG) {
     await router.replace({
@@ -1293,20 +1286,6 @@ watch(selectedGroupId, async (newG, oldG) => {
   }
 })
 
-
-watch(
-  () => route.query.groupId,
-  (newG) => {
-    // Esto sincroniza si navegas con el browser o pegas un link
-    if (newG && String(selectedGroupId.value) !== String(newG)) {
-      selectedGroupId.value = String(newG)
-    }
-    if (!newG && selectedGroupId.value !== 'all') {
-      selectedGroupId.value = 'all'
-    }
-  }
-)
-
 // ==== HISTORIAL (Detalle) ============================================
 const historyModal = ref({ open: false, agent: null })
 const viewTab = ref('calendar')
@@ -1320,9 +1299,36 @@ function addMonths(d,n){ const x = new Date(d); x.setMonth(x.getMonth()+n); retu
 function monthNameES(d){ return new Intl.DateTimeFormat('es-CO',{month:'long',year:'numeric'}).format(d) }
 function dowMonday0(d){ return (d.getDay()+6)%7 } // lunes=0
 
-const monthFrom  = computed(() => ymd(startOfMonth(monthCursor.value)))
-const monthTo    = computed(() => ymd(endOfMonth(monthCursor.value)))
+function startOfWeekMonday(d) {
+  const x = new Date(d); x.setHours(0,0,0,0)
+  const dow = (x.getDay() + 6) % 7 // lunes=0
+  x.setDate(x.getDate() - dow)
+  return x
+}
+function endOfWeekSunday(d) {
+  const x = new Date(d); x.setHours(0,0,0,0)
+  const dow = (x.getDay() + 6) % 7 // lunes=0
+  x.setDate(x.getDate() + (6 - dow))
+  return x
+}
+
+// Trae 3 meses hacia atrás hasta el mes del cursor,
+// pero extendiendo a semanas completas (lun-dom) en ambos extremos.
+const historyFrom = computed(() =>
+  ymd(startOfWeekMonday(startOfMonth(addMonths(monthCursor.value, -2))))
+)
+const historyTo = computed(() =>
+  ymd(endOfWeekSunday(endOfMonth(monthCursor.value)))
+)
+
+// CALENDARIO (1 mes actual con padding lun-dom)
+const calendarStartDate = computed(() => startOfWeekMonday(startOfMonth(monthCursor.value)))
+const calendarEndDate   = computed(() => endOfWeekSunday(endOfMonth(monthCursor.value)))
+
+// Etiquetas visibles en el modal
 const monthLabel = computed(() => monthNameES(monthCursor.value))
+const monthFrom  = computed(() => ymd(calendarStartDate.value))
+const monthTo    = computed(() => ymd(calendarEndDate.value))
 
 function prevMonth(){ monthCursor.value = addMonths(monthCursor.value, -1); loadHistory() }
 function nextMonth(){ monthCursor.value = addMonths(monthCursor.value, +1); loadHistory() }
@@ -1380,7 +1386,7 @@ async function loadHistory(){
   if (!historyModal.value.agent) return
   try{
     const { data } = await axios.get(`/admin/agents/${historyModal.value.agent.id}/history`, {
-      params: { from: monthFrom.value, to: monthTo.value },
+      params: { from: historyFrom.value, to: historyTo.value },
       headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
     })
     historyItems.value = Array.isArray(data?.items) ? data.items : []
@@ -1391,26 +1397,36 @@ async function loadHistory(){
 }
 
 const calendarCells = computed(() => {
-  const start = startOfMonth(monthCursor.value)
-  const end = endOfMonth(monthCursor.value)
-  const firstPad = dowMonday0(start)
-  const days = end.getDate()
+  const start = calendarStartDate.value
+  const end   = calendarEndDate.value
+
   const map = new Map(historyItems.value.map(h => [String(h.date), h]))
   const cells = []
 
-  for (let i=0;i<firstPad;i++) cells.push({ key:'pad-'+i, day:'', state:null, title:'' })
-  for (let d=1; d<=days; d++){
-    const dt = new Date(start); dt.setDate(d)
+  // límites duros del MES actual (para marcar padding)
+  const hardStart = startOfMonth(monthCursor.value)
+  const hardEnd   = endOfMonth(monthCursor.value)
+
+  for (let dt = new Date(start); dt <= end; dt.setDate(dt.getDate() + 1)) {
     const key = ymd(dt)
     const rec = map.get(key)
     const state = rec?.state || null
-    const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — '+rec.municipalityName : ''}` : key
+    const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — ' + rec.municipalityName : ''}` : key
     const isToday = key === ymd(new Date())
-    cells.push({ key, day:d, state, title, isToday })
+    const isPadding = (dt < hardStart) || (dt > hardEnd)
+
+    cells.push({
+      key,
+      day: dt.getDate(),
+      state,
+      title,
+      isToday,
+      isPadding
+    })
   }
-  while (cells.length % 7) cells.push({ key:'tail-'+cells.length, day:'', state:null, title:'' })
   return cells
 })
+
 
 // Timeline: agrupa por estado; si es COMISIÓN DEL SERVICIO, también por municipio
 const segments = computed(() => {
