@@ -13,7 +13,7 @@
     </div>
 
     <!-- LAYOUT: Sidebar + Contenido -->
-    <div class="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 md:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] gap-7 -mt-10 sm:-mt-12 md:-mt-12 relative z-10">
+    <div class="max-w-[1500px] mx-auto px-6 py-6 grid grid-cols-1 md:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] gap-7 -mt-10 sm:-mt-12 md:-mt-12 relative z-10">
       <!-- ===== Sidebar (idéntico estilo al del agente) ===== -->
       <aside class="order-1 md:order-1 md:col-[1] space-y-4 md:sticky md:top-6">
         <!-- Tarjeta usuario -->
