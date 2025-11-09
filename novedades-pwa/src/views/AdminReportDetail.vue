@@ -493,6 +493,7 @@ const estadosValidos = [
   'EXCUSA DEL SERVICIO',
   'LICENCIA PATERNIDAD',
   'PERMISO',
+  'PERMISO ACTIVIDAD PERSONAL',
   'COMISIÓN EN EL EXTERIOR',
   'COMISIÓN DE ESTUDIO', 
   'SUSPENDIDO',
@@ -812,7 +813,7 @@ async function loadGroupReports(date, groupId){
 
 // --- Función para contar días laborados ---
 function contarDiasLaborados(historial) {
-  const estadosValidos = ['SIN NOVEDAD', 'SERVICIO', 'COMISIÓN DEL SERVICIO']
+  const estadosValidos = ['SIN NOVEDAD', 'SERVICIO', 'COMISIÓN DEL SERVICIO' ,'PERMISO ACTIVIDAD PERSONAL']
   let count = 0
   for (let i = historial.length - 1; i >= 0; i--) {
     const st = String(historial[i]?.state || '').toUpperCase()
@@ -823,14 +824,15 @@ function contarDiasLaborados(historial) {
 }
 
 async function setDiasLaboradosTodos() {
+  const hasta = (filterDate.value || todayStr())
   for (const agente of agentes.value) {
     try {
       const { data } = await axios.get(`/admin/agents/${agente.agentId || agente.id}/history`, {
         headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
-        params: { from: '2020-01-01', to: todayStr() }  // amplio rango
+        params: { from: '2020-01-01', to: hasta }
       })
       const historial = Array.isArray(data?.items) ? data.items : []
-      agente.diasLaborados = contarDiasLaborados(historial)
+      agente.diasLaborados = contarDiasLaborados(historial, hasta)
     } catch {
       agente.diasLaborados = 0
     }
@@ -945,13 +947,13 @@ const form     = ref({
 const needsFechas      = computed(() => [
   'SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR',
+  'LICENCIA PATERNIDAD','PERMISO','PERMISO ACTIVIDAD PERSONAL', 'COMISIÓN EN EL EXTERIOR',
   'COMISIÓN DE ESTUDIO', 'SUSPENDIDO'              
 ].includes(form.value.state))
 const needsDescripcion = computed(() => [
   'SERVICIO','VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR',
+  'LICENCIA PATERNIDAD','PERMISO','PERMISO ACTIVIDAD PERSONAL','COMISIÓN EN EL EXTERIOR',
   'COMISIÓN DE ESTUDIO',              
   'COMISIÓN DEL SERVICIO', 'SUSPENDIDO','HOSPITALIZADO'           
 ].includes(form.value.state))
@@ -1332,7 +1334,7 @@ function iconFor(state){
     'SIN NOVEDAD':'✅','SERVICIO':'🧭','COMISIÓN DEL SERVICIO':'📌',
     'FRANCO FRANCO':'🛌','VACACIONES':'🏖️','LICENCIA DE MATERNIDAD':'👶',
     'LICENCIA DE LUTO':'🕊️','LICENCIA REMUNERADA':'📝','LICENCIA NO REMUNERADA':'📝',
-    'EXCUSA DEL SERVICIO':'📝','LICENCIA PATERNIDAD':'🍼','PERMISO':'⏳',
+    'EXCUSA DEL SERVICIO':'📝','LICENCIA PATERNIDAD':'🍼','PERMISO':'⏳', 'PERMISO ACTIVIDAD PERSONAL':'⏳',
     'COMISIÓN EN EL EXTERIOR':'✈️','COMISIÓN DE ESTUDIO':'🎓',
     'SUSPENDIDO':'⛔','HOSPITALIZADO':'🏥'
   }

@@ -98,8 +98,8 @@ export const VALID_STATES = new Set([
   'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
   'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO',
- 
+  'LICENCIA PATERNIDAD','PERMISO','PERMISO ACTIVIDAD PERSONAL',
+  'COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO',
   'SUSPENDIDO','HOSPITALIZADO'
 ]);
 
@@ -1226,7 +1226,7 @@ app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmi
         if (
           r.novelty_start &&
           (!r.novelty_end || new Date(r.novelty_end) >= today) &&
-          ['VACACIONES','EXCUSA','PERMISO','COMISIÓN EN EL EXTERIOR','SUSPENDIDO','HOSPITALIZADO'].includes(r.state)
+          ['VACACIONES','EXCUSA','PERMISO', ,'PERMISO ACTIVIDAD PERSONAL', 'COMISIÓN EN EL EXTERIOR','SUSPENDIDO','HOSPITALIZADO'].includes(r.state)
         ) {
           prevNovedades[r.agentId] = {
             novelty_start: r.novelty_start,
@@ -2669,7 +2669,7 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
       'SIN NOVEDAD',
       'SERVICIO',
       'COMISIÓN DEL SERVICIO',
-      'COMISIÓN EN EL EXTERIOR'
+      'PERMISO ACTIVIDAD PERSONAL'
     ];
     const validStates = validStatesRaw.map(normalizeState);
 
