@@ -18,7 +18,7 @@
                 <svg class="w-6 h-6 text-slate-500" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M6 20c0-3.314 2.686-6 6-6s6 2.686 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
               </div>
               <div class="min-w-0">
-                <div class="text-slate-900 font-medium truncate">{{ me?.name || 'Agente' }}</div>
+                <div class="text-slate-900 font-medium truncate">{{ me?.username }}</div>
                 <div class="text-xs text-slate-500 truncate">{{ me?.email || '—' }}</div>
               </div>
             </div>
@@ -48,34 +48,7 @@
 
         <!-- CONTENT -->
         <section class="md:col-span-9 space-y-6">
-          <!-- Encabezado local + breadcrumb -->
-          <div class="bg-white rounded-2xl shadow p-4 flex items-center justify-between">
-            <div>
-              <div class="text-xs text-slate-500">Inicio / <span class="capitalize">{{ section }}</span></div>
-              <h2 class="text-slate-900 font-semibold text-lg mt-0.5">
-                {{ titleBySection }}
-              </h2>
-            </div>
-            <div class="flex items-center gap-2">
-              <button
-                v-if="section==='vehiculos'"
-                class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm"
-                @click="loadMyActiveAssignments"
-                :disabled="loadingAssignments"
-              >
-                {{ loadingAssignments ? 'Actualizando…' : 'Actualizar' }}
-              </button>
-              <button
-                v-if="section==='novedades'"
-                class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm"
-                @click="loadDailyHistory"
-                :disabled="dailyHistoryLoading"
-              >
-                {{ dailyHistoryLoading ? 'Cargando…' : 'Actualizar' }}
-              </button>
-            </div>
-          </div>
-
+          
           <!-- ================= MIS NOVEDADES (historial solo visual) ================= -->
           <!-- Calendario + Línea de tiempo -->
           <div v-show="section==='novedades'" class="bg-white rounded-2xl shadow">
@@ -181,283 +154,189 @@
               </div>
             </div>
           </div>
-          <!-- ================= VEHÍCULOS (tu flujo tal cual) ================= -->
+          <!-- ================= VEHÍCULOS (tabs: asignaciones / usos) ================= -->
           <div v-show="section==='vehiculos'" class="space-y-6">
-            <!-- Mis asignaciones vigentes -->
             <section class="bg-white rounded-2xl shadow">
-              <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 rounded-t-2xl">
-                <h3 class="font-semibold text-slate-900">Mis asignaciones vigentes</h3>
+              <!-- Tabs header -->
+             <div class="px-4 pt-4">
+                <div class="flex justify-between items-center">
+                  <!-- Botones de pestañas -->
+                  <div class="inline-flex rounded-xl border border-slate-200 bg-slate-50 p-1">
+                    <button
+                      class="px-3 py-1.5 rounded-lg text-sm"
+                      :class="vehTab==='asignaciones' ? 'bg-white shadow text-slate-900' : 'text-slate-600 hover:text-slate-800'"
+                      @click="vehTab='asignaciones'"
+                    >
+                      Asignaciones
+                    </button>
+                    <button
+                      class="px-3 py-1.5 rounded-lg text-sm"
+                      :class="vehTab==='usos' ? 'bg-white shadow text-slate-900' : 'text-slate-600 hover:text-slate-800'"
+                      @click="vehTab='usos'"
+                    >
+                      Usos
+                    </button>
+                  </div>
+
+                  <!-- Botón Nuevo uso -->
+                  <div v-if="vehTab==='usos'">
+                    <button
+                      class="px-3 py-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 text-sm"
+                      @click="openNewUseFlow"
+                    >
+                      Nuevo uso
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div class="p-4">
-                <div v-if="loadingAssignments" class="text-sm text-slate-500">Cargando asignaciones…</div>
-                <div v-else-if="!myAssignments.length" class="text-sm text-slate-500">No tienes asignaciones vigentes.</div>
+
+              <!-- Toolbar -->
+              <div class="px-4 pb-3 pt-2 flex items-center justify-between">
+                
+                <div class="flex items-center gap-2">
+                  
+                </div>
+              </div>
+
+              <!-- TAB: Asignaciones -->
+              <div v-show="vehTab==='asignaciones'" class="p-4">
+                <div v-if="loadingAssignmentsAll" class="text-sm text-slate-500">Cargando asignaciones…</div>
+                <div v-else-if="!assignmentsAll.length" class="text-sm text-slate-500">No hay asignaciones registradas.</div>
                 <div v-else class="overflow-x-auto rounded-xl border border-slate-200">
                   <table class="min-w-full text-sm">
                     <thead class="bg-slate-800 text-white">
                       <tr>
                         <th class="text-left py-2 px-3 font-semibold">Vehículo</th>
                         <th class="text-left py-2 px-3 font-semibold">Inicio</th>
+                        <th class="text-left py-2 px-3 font-semibold">Fin</th>
                         <th class="text-left py-2 px-3 font-semibold">Km inicio</th>
                         <th class="text-left py-2 px-3 font-semibold">Nota</th>
-                        <th class="text-left py-2 px-3 font-semibold">Aceptación</th> <!-- NUEVO -->
-                        <th class="text-left py-2 px-3 font-semibold"></th>           <!-- Acciones -->
+                        <th class="text-left py-2 px-3 font-semibold">Aceptación</th>
                       </tr>
                     </thead>
                     <tbody class="bg-white">
-                      <tr v-for="row in myAssignments" :key="row.id" class="border-t">
+                      <tr v-for="row in assignmentsAll" :key="row.id" class="border-t"
+                          :class="!row.end_date ? 'bg-amber-50/60' : ''">
                         <td class="py-2 px-3 font-medium">{{ row.vehicle.code }}</td>
                         <td class="py-2 px-3">{{ row.start_date }}</td>
+                        <td class="py-2 px-3">{{ row.end_date || '—' }}</td>
                         <td class="py-2 px-3">{{ row.odometer_start ?? '—' }}</td>
                         <td class="py-2 px-3">{{ row.notes || '—' }}</td>
-
                         <td class="py-2 px-3">
                           <div v-if="row.agent_ack_at">
-                            <span class="text-emerald-700 text-xs font-medium">Aceptada</span>
-                            <div class="text-xs text-slate-600">
-                              {{ row.agent_ack_note || '—' }}
-                            </div>
+                            <span class="text-emerald-700 text-xs font-medium"> {{ row.agent_ack_note || '—' }} </span>
                           </div>
                           <div v-else>
                             <span class="text-amber-600 text-xs font-medium">Pendiente</span>
                           </div>
                         </td>
-
-                        <td class="py-2 px-3">
-                          <button
-                            v-if="!row.agent_ack_at"
-                            class="px-3 py-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 text-sm"
-                            @click="openAccept(row)"
-                          >
-                            Aceptar
-                          </button>
-                          <button
-                            v-else-if="row.agent_ack_at && !row.agent_ack_extra_at"
-                            class="px-3 py-1.5 rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 text-sm"
-                            @click="openAckExtraModal(row)"
-                          >
-                            Nota extra
-                          </button>
-                        </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               </div>
-            </section>
-            <!-- ================= MIS USOS VIGENTES (nuevo bloque) ================= -->
-            <section class="bg-white rounded-2xl shadow">
-              <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 rounded-t-2xl flex items-center justify-between">
-                <h3 class="font-semibold text-slate-900">Mis usos vigentes</h3>
-                <button
-                  class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 text-sm"
-                  @click="loadMyOpenUses" :disabled="loadingOpenUses"
-                >
-                  {{ loadingOpenUses ? 'Actualizando…' : 'Actualizar' }}
-                </button>
-              </div>
-              <div class="p-4">
-                <div v-if="loadingOpenUses" class="text-sm text-slate-500">Cargando usos…</div>
-                <div v-else-if="!myOpenUses.length" class="text-sm text-slate-500">No tienes usos abiertos.</div>
+
+              <!-- TAB: Usos -->
+              <div v-show="vehTab==='usos'" class="p-4">
+                <div v-if="loadingUsesAll" class="text-sm text-slate-500">Cargando usos…</div>
+                <div v-else-if="!usesAll.length" class="text-sm text-slate-500">No hay usos registrados.</div>
                 <div v-else class="overflow-x-auto rounded-xl border border-slate-200">
                   <table class="min-w-full text-sm">
                     <thead class="bg-slate-800 text-white">
                       <tr>
                         <th class="text-left py-2 px-3 font-semibold">Vehículo</th>
                         <th class="text-left py-2 px-3 font-semibold">Inicio</th>
-                        <th class="text-left py-2 px-3 font-semibold">Km salida</th>
-                        <th class="text-left py-2 px-3 font-semibold">Nota</th>
-                      </tr>
-                    </thead>
-                    <tbody class="bg-white">
-                      <tr v-for="u in myOpenUses" :key="u.id" class="border-t">
-                        <td class="py-2 px-3 font-medium">
-                          {{ u.vehicle?.code }}
-                        </td>
-                        <td class="py-2 px-3">{{ u.started_at }}</td>
-                        <td class="py-2 px-3">{{ u.odometer_start ?? '—' }}</td>
-                        <td class="py-2 px-3">{{ u.notes?.trim() || '—' }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </section>
-
-
-            <!-- Buscar vehículo e iniciar/cerrar uso -->
-            <section class="bg-white rounded-2xl shadow">
-              <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 rounded-t-2xl">
-                <h3 class="font-semibold text-slate-900">Iniciar / cerrar uso</h3>
-              </div>
-              <div class="p-4">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div class="md:col-span-2">
-                    <label class="text-xs font-medium text-slate-600 mb-1 block">Buscar vehículo (código o sigla)</label>
-                    <div class="relative">
-                      <input
-                        v-model="vehicleQuery"
-                        @input="searchVehicles"
-                        class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="Escribe código del vehículo (ej: 06-004)"
-                        autocomplete="off"
-                      />
-                      <div
-                        v-if="vehicleResultsVisible"
-                        class="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow max-h-64 overflow-auto"
-                        @mouseleave="hideDropdownSoon"
-                      >
-                        <button
-                          v-for="v in vehicleResults"
-                          :key="v.id"
-                          class="w-full text-left px-3 py-2 hover:bg-slate-50"
-                          @click="pickVehicle(v)"
-                        >
-                          <div class="font-medium text-sm">{{ v.code }}</div>
-                          <div class="text-[11px] text-slate-500">Grupo: {{ v.groupName || '—' }} · Unidad: {{ v.unitName || '—' }}</div>
-                        </button>
-                        <div v-if="!vehicleResults.length" class="px-3 py-2 text-sm text-slate-500">Sin resultados…</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="md:col-span-1">
-                    <label class="text-xs font-medium text-slate-600 mb-1 block">Seleccionado</label>
-                    <div class="h-[42px] px-3 rounded-lg border flex items-center text-sm bg-slate-50">
-                      <span v-if="selectedVehicle">{{ selectedVehicle.code }}</span>
-                      <span v-else class="text-slate-400">Ninguno</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-if="selectedVehicle" class="mt-4 border-t pt-3">
-                  <div class="flex flex-col md:flex-row md:items-end gap-3">
-                    <div class="flex-1">
-                      <label class="text-xs font-medium text-slate-600 mb-1 block">Odómetro inicial</label>
-                      <input
-                        type="number"
-                        v-model="form.odometer_start"
-                        class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        :placeholder="lastOdoHint != null ? `Sugerido: ${lastOdoHint}` : 'Odómetro inicial'"
-                        :disabled="!!openUseId"
-                      />
-                      <p v-if="lastOdoHint != null" class="text-[11px] text-slate-500 mt-1">
-                        Último odómetro final registrado: <span class="font-medium">{{ lastOdoHint }}</span>
-                      </p>
-                    </div>
-                    <div class="flex gap-2">
-                      <button
-                        class="px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
-                        @click="startUse"
-                        :disabled="starting || !!openUseId"
-                        v-if="!openUseId"
-                      >
-                        {{ starting ? 'Iniciando…' : 'Iniciar uso' }}
-                      </button>
-                      <button
-                        class="px-3 py-2 rounded-md text-white font-semibold bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 transition"
-                        @click="endUse"
-                        :disabled="ending || !openUseId"
-                        v-else
-                      >
-                        {{ ending ? 'Cerrando…' : 'Cerrar uso' }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Novedades del uso abierto -->
-                  <div v-if="openUseInfo" class="mt-3 text-sm text-slate-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <div class="font-medium mb-1">Tienes un uso abierto para este vehículo.</div>
-                    <div>Inicio: <strong>{{ openUseInfo.started_at }}</strong></div>
-                    <div>Odómetro salida: <strong>{{ openUseInfo.odometer_start ?? '—' }}</strong></div>
-
-                    <div v-if="openUseNovedades.length" class="mt-2">
-                      <b>Novedades de este uso:</b>
-                      <ul class="list-disc pl-6 text-xs mt-1">
-                        <li v-for="n in openUseNovedades" :key="n.id">
-                          {{ n.description }}
-                          <a v-if="n.photoUrl" :href="`/${n.photoUrl}`" target="_blank" class="text-blue-600 underline ml-1">foto</a>
-                          <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Novedades previas (sin uso abierto) -->
-                <div v-if="selectedVehicle && !openUseId" class="mt-6 bg-slate-50 rounded-xl p-3 border">
-                  <div class="flex items-center justify-between mb-2">
-                    <h3 class="font-medium">Novedades recientes</h3>
-                    <button
-                      class="px-2 py-1 text-xs rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
-                      @click="loadStagingNovedades"
-                    >Actualizar</button>
-                  </div>
-                  <div v-if="loadingNovedades" class="text-xs text-slate-400">Cargando novedades…</div>
-                  <div v-else>
-                    <div v-if="!novedadesStaging.length" class="text-xs text-slate-400">No hay novedades registradas aún.</div>
-                    <div v-for="n in novedadesStaging" :key="n.id" class="text-xs border-b py-1 flex items-center justify-between">
-                      <div>
-                        • {{ n.description }}
-                        <a v-if="n.photoUrl" :href="`/${n.photoUrl}`" target="_blank" class="text-blue-600 underline ml-1">foto</a>
-                        <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
-                      </div>
-                      <button class="text-red-600 hover:text-red-800 font-medium text-[11px]" @click="deleteNovedad(n.id)">
-                        Eliminar
-                      </button>
-                    </div>
-                    <div class="mt-2 flex gap-2">
-                      <input v-model="newNovedad.description"
-                             class="flex-1 rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                             placeholder="Descripción de novedad" maxlength="500" />
-                      <input type="file" @change="onPhoto" accept="image/*"
-                             class="rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-32" />
-                      <button class="px-3 py-1.5 text-xs rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
-                              @click="addNovedad">
-                        Agregar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- Historial de usos -->
-            <section v-if="selectedVehicle" class="bg-white rounded-2xl shadow">
-              <div class="px-4 py-3 border-b border-slate-200 bg-slate-50 rounded-t-2xl">
-                <h3 class="font-semibold text-slate-900">Mis usos de este vehículo</h3>
-              </div>
-              <div class="p-4">
-                <div class="overflow-x-auto rounded-xl border border-slate-200">
-                  <table class="min-w-full text-sm">
-                    <thead class="bg-slate-800 text-white">
-                      <tr>
-                        <th class="text-left py-2 px-3 font-semibold">#</th>
-                        <th class="text-left py-2 px-3 font-semibold">Inicio</th>
                         <th class="text-left py-2 px-3 font-semibold">Fin</th>
                         <th class="text-left py-2 px-3 font-semibold">Km salida</th>
                         <th class="text-left py-2 px-3 font-semibold">Km entrada</th>
                         <th class="text-left py-2 px-3 font-semibold">Notas</th>
+                        <th class="text-left py-2 px-3 font-semibold"></th>
                       </tr>
                     </thead>
                     <tbody class="bg-white">
-                      <tr v-for="u in uses" :key="u.id" class="border-t">
-                        <td class="py-2 px-3">#{{ u.id }}</td>
+                      <tr v-for="u in usesAll" :key="u.id" class="border-t"
+                          :class="!u.ended_at ? 'bg-amber-50/60' : ''">
+                        <td class="py-2 px-3 font-medium">{{ u.vehicle?.code || '—' }}</td>
                         <td class="py-2 px-3">{{ u.started_at }}</td>
                         <td class="py-2 px-3">{{ u.ended_at || '—' }}</td>
                         <td class="py-2 px-3">{{ u.odometer_start ?? '—' }}</td>
                         <td class="py-2 px-3">{{ u.odometer_end ?? '—' }}</td>
-                        <td class="py-2 px-3">{{ u.notes || '—' }}</td>
-                      </tr>
-                      <tr v-if="!loadingUses && !uses.length">
-                        <td colspan="6" class="py-6 text-center text-slate-500">Sin usos</td>
+                        <td class="py-2 px-3">{{ (u.notes || '').trim() || '—' }}</td>
+                        <td class="py-2 px-3 text-right">
+                          <button
+                            v-if="!u.ended_at"
+                            class="px-3 py-1.5 rounded-md text-white bg-red-600 hover:bg-red-700 text-xs"
+                            @click="endUseFromRow(u)"
+                          >
+                            Cerrar
+                          </button>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-                <div v-if="loadingUses" class="text-sm text-slate-500 mt-2">Cargando…</div>
               </div>
+
             </section>
           </div>
+          <!-- Modal: nuevo uso (reutiliza tu componente) -->
+          <VehicleUsesModal
+            v-if="showUsesModal"
+            :agent-id="meAgentId"
+            :vehicle="selectedVehicle || {}" 
+            @close="showUsesModal=false"
+            @created="onUseCreated"
+          />
+
+          <!-- Modal: seleccionar vehículo para nuevo uso -->
+          <div v-if="showVehiclePicker" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">
+            <div class="bg-white rounded-2xl p-5 w-[96vw] max-w-lg relative">
+              <button class="absolute top-2 right-2 text-xl text-slate-500" @click="closeVehiclePicker">&times;</button>
+              <h3 class="font-semibold text-lg mb-3">Selecciona el vehículo</h3>
+
+              <div class="relative">
+                <input
+                  ref="pickerInputRef"
+                  v-model.trim="pickerQuery"
+                  @input="pickerSearch"
+                  @keydown.enter.prevent="pickerEnter"
+                  @blur="pickerHideSoon"
+                  type="text"
+                  placeholder="Escribe placa o código…"
+                  class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+                <!-- resultados -->
+                <div
+                  v-if="pickerVisible && pickerResults.length"
+                  class="absolute z-10 mt-1 w-full max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white shadow"
+                >
+                  <button
+                    v-for="v in pickerResults"
+                    :key="v.id"
+                    class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                    @mousedown.prevent="pickVehicleForNewUse(v)"
+                  >
+                    <div class="font-medium">{{ v.code }}</div>
+                    <div class="text-xs text-slate-500">
+                      {{ (v.type || v.tipo || '').toString().toUpperCase() }} · {{ v.state || v.estado || '—' }}
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div class="flex justify-end gap-2 pt-4">
+                <button class="px-3 py-1.5 rounded-md border border-slate-300 text-slate-700" @click="closeVehiclePicker">Cancelar</button>
+                <button
+                  class="px-3 py-1.5 rounded-md bg-blue-600 text-white disabled:opacity-50"
+                  :disabled="!pickerSelected"
+                  @click="confirmPicker"
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          </div>
+
 
           <!-- ================= SERVICIOS ================= -->
           <div v-show="section==='servicios'" class="space-y-6">
@@ -606,6 +485,11 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import axios from 'axios'
+import { defineAsyncComponent } from 'vue'
+
+const VehicleUsesModal = defineAsyncComponent(() =>
+  import('@/components/vehicles/VehicleUsesModal.vue')
+)
 const api = axios.create({ baseURL: '/', timeout: 20000 })
 api.interceptors.request.use((config) => {
   const t = localStorage.getItem('token')
@@ -714,6 +598,24 @@ function logout(){
  }
 
 /* ===== Vehículos (tu lógica tal cual) ===== */
+
+// Tabs vehículos
+const vehTab = ref('asignaciones') // 'asignaciones' | 'usos'
+
+// Historiales
+const assignmentsAll = ref([])
+const loadingAssignmentsAll = ref(false)
+const usesAll = ref([])
+const loadingUsesAll = ref(false)
+
+// Modal de nuevo uso
+const showUsesModal = ref(false)
+function openNewUseModal(){ showUsesModal.value = true }
+async function onUseCreated(){
+  showUsesModal.value = false
+  await Promise.all([ loadUsesAll(), loadMyOpenUses() ])
+}
+
 const vehicleQuery = ref('')
 const vehicleResults = ref([])
 const vehicleResultsVisible = ref(false)
@@ -748,6 +650,77 @@ const acceptErr    = ref('')
 const accepting    = ref(false)
 const agentResolveMsg = ref('') // Mensaje visible si no hay vínculo user↔agent
 
+// —— Flujo "Nuevo uso" con selector de vehículo ——
+const showVehiclePicker = ref(false)
+const pickerQuery = ref('')
+const pickerResults = ref([])
+const pickerVisible = ref(false)
+const pickerSelected = ref(null)
+const pickerInputRef = ref(null)
+
+function openNewUseFlow(){
+  // si ya hay uno seleccionado, abre directo el modal de uso
+  if (selectedVehicle.value) {
+    showUsesModal.value = true
+    return
+  }
+  // si no, abre el picker
+  showVehiclePicker.value = true
+  pickerQuery.value = ''
+  pickerResults.value = []
+  pickerVisible.value = false
+  pickerSelected.value = null
+  nextTick(()=> pickerInputRef.value?.focus?.())
+}
+
+function closeVehiclePicker(){
+  showVehiclePicker.value = false
+  pickerQuery.value = ''
+  pickerResults.value = []
+  pickerVisible.value = false
+  pickerSelected.value = null
+}
+
+let pickerTimer = null
+async function pickerSearch(){
+  if (pickerTimer) clearTimeout(pickerTimer)
+  pickerTimer = setTimeout(async () => {
+    const q = pickerQuery.value.trim()
+    if (!q){ pickerResults.value = []; pickerVisible.value = false; return }
+    const { data } = await apiGet('/vehicles', { params: { query: q, pageSize: 20 } })
+    pickerResults.value = Array.isArray(data?.items) ? data.items : []
+    pickerVisible.value = true
+  }, 220)
+}
+
+function pickerHideSoon(){ setTimeout(()=> pickerVisible.value = false, 150) }
+
+function pickVehicleForNewUse(v){
+  pickerSelected.value = v
+  // muestra seleccionado en el input
+  pickerQuery.value = v.code
+  pickerVisible.value = false
+}
+
+function pickerEnter(){
+  // si hay resultados, toma el primero
+  if (!pickerSelected.value && pickerResults.value.length){
+    pickVehicleForNewUse(pickerResults.value[0])
+  }
+  confirmPicker()
+}
+
+async function confirmPicker(){
+  if (!pickerSelected.value) return
+  // fija el vehículo global de la vista
+  selectedVehicle.value = pickerSelected.value
+  // precarga info relacionada (odómetro, usos abiertos, etc.)
+  await afterSelectVehicle()
+  // cierra el picker y abre el modal de uso
+  closeVehiclePicker()
+  showUsesModal.value = true
+}
+
 function openAccept(row){
   acceptItem.value = row
   acceptNote.value = ''
@@ -780,6 +753,124 @@ async function submitAccept(){
     accepting.value = false
   }
 }
+function isOpenValue(v){
+  return (
+    v == null ||
+    v === '' ||
+    v === false ||
+    v === 0 ||
+    (typeof v === 'string' && (v.trim()==='' || v.trim().toLowerCase()==='null' || v.startsWith('0000-00-00')))
+  )
+}
+function sortOpenFirstThenStartDesc(a, b){
+  const aOpen = isOpenValue(a.end_date ?? a.ended_at)
+  const bOpen = isOpenValue(b.end_date ?? b.ended_at)
+  if (aOpen !== bOpen) return aOpen ? -1 : 1
+  const aStart = (a.start_date ?? a.started_at ?? '').toString()
+  const bStart = (b.start_date ?? b.started_at ?? '').toString()
+  return bStart.localeCompare(aStart)
+}
+
+function normalizeAssignmentRow(a){
+  return {
+    id: a.id,
+    start_date: a.start_date ?? a.startDate ?? '',
+    end_date: a.end_date ?? a.endDate ?? null,
+    odometer_start: a.odometer_start ?? a.odometerStart ?? null,
+    notes: a.notes ?? a.note ?? '',
+    agent_ack_at: a.accept_at ?? a.agent_ack_at ?? null,
+    agent_ack_note: a.accept_note ?? a.agent_ack_note ?? null,
+    vehicle: {
+      id: a.vehicle?.id ?? a.vehicle_id ?? a.vehicleId ?? null,
+      code: a.vehicle?.code ?? a.vehicle_code ?? a.vehicleCode ?? a.code ?? ''
+    }
+  }
+}
+
+function normalizeUseRow(u){
+  return {
+    id: u.id,
+    started_at: u.started_at ?? u.startedAt ?? u.start_date ?? '',
+    ended_at: u.ended_at ?? u.endedAt ?? u.end_date ?? null,
+    odometer_start: u.odometer_start ?? u.odometerStart ?? null,
+    odometer_end: u.odometer_end ?? u.odometerEnd ?? null,
+    notes: u.notes ?? u.note ?? '',
+    vehicle: {
+      id: u.vehicle?.id ?? u.vehicle_id ?? u.vehicleId ?? null,
+      code: u.vehicle?.code ?? u.vehicle_code ?? u.vehicleCode ?? ''
+    }
+  }
+}
+
+async function loadAssignmentsAll () {
+  loadingAssignmentsAll.value = true
+  try {
+    await ensureAgentId()
+    const agentIdVal = meAgentId.value
+    if (!agentIdVal) { assignmentsAll.value = []; return }
+
+    // Preferible: endpoint directo de asignaciones del agente (todas)
+    let list = []
+    try {
+      const { data } = await apiGet(`/agents/${agentIdVal}/assignments`, { params: { pageSize: 1000 } })
+      list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    } catch {
+      // Fallback: recorrer vehículos asignados
+      const { data: vehsRes } = await apiGet('/vehicles', { params: { pageSize: 500, onlyAssigned: 1 } })
+      const vehicles = Array.isArray(vehsRes?.items) ? vehsRes.items : []
+      const acc = []
+      await Promise.all(vehicles.map(async v => {
+        try {
+          const { data: asgRes } = await apiGet(`/vehicles/${v.id}/assignments`, { params: { pageSize: 500 } })
+          const items = Array.isArray(asgRes?.items) ? asgRes.items : (Array.isArray(asgRes) ? asgRes : [])
+          for (const a of items){
+            const aAgent = a.agent_id ?? a.agentId ?? a.agent?.id
+            if (String(aAgent) === String(agentIdVal)) acc.push({ ...a, vehicle: { id: v.id, code: v.code } })
+          }
+        } catch {}
+      }))
+      list = acc
+    }
+
+    assignmentsAll.value = list.map(normalizeAssignmentRow).sort(sortOpenFirstThenStartDesc)
+  } finally {
+    loadingAssignmentsAll.value = false
+  }
+}
+
+async function loadUsesAll () {
+  loadingUsesAll.value = true
+  try {
+    await ensureAgentId()
+    const agentIdVal = meAgentId.value
+    if (!agentIdVal) { usesAll.value = []; return }
+
+    const { data } = await apiGet('/vehicles/uses', { params: { agent_id: agentIdVal, pageSize: 2000 } })
+    const items = data?.items ?? data ?? []
+    usesAll.value = items.map(normalizeUseRow).sort(sortOpenFirstThenStartDesc)
+  } finally {
+    loadingUsesAll.value = false
+  }
+}
+
+async function endUseFromRow(u){
+  if (!u?.id) return
+  const od = prompt(`Odómetro final para ${u.vehicle?.code || 'vehículo'} (opcional):`, '')
+  let odNum = null
+  if (od!=null && od!==''){
+    const n = Number(od)
+    if(!Number.isFinite(n) || n<0) return alert('Odómetro inválido')
+    odNum = n
+  }
+  try {
+    await apiPatch(`/vehicles/uses/${u.id}/end`, { odometer_end: odNum })
+    await Promise.all([ loadUsesAll(), loadMyOpenUses() ])
+    alert('Uso cerrado correctamente.')
+  } catch (e) {
+    alert(e?.response?.data?.error || 'Error al cerrar uso')
+  }
+}
+
 
 const showAckExtra   = ref(false)
 const ackExtraItem   = ref(null)
@@ -1638,6 +1729,10 @@ onMounted(async () => {
     await loadMyActiveAssignments()
     await loadMyOpenUses()
   }
+  await Promise.all([
+    loadAssignmentsAll(),
+    loadUsesAll()
+  ])
 })
 
 watch(() => meAgentId.value, async (id) => {
@@ -1650,12 +1745,42 @@ watch(() => meAgentId.value, async (id) => {
   if (!myAssignments.value.length && !loadingAssignments.value) await loadMyActiveAssignments()
 })
 
+// Cuando entro a la sección "vehiculos" preparo todo
 watch(section, async (s) => {
   if (s !== 'vehiculos') return
-  if (!meAgentId.value) await ensureAgentId()
-  if (!myOpenUses.value.length && !loadingOpenUses.value) await loadMyOpenUses()
-  if (!myAssignments.value.length && !loadingAssignments.value) await loadMyActiveAssignments()
+
+  await ensureAgentId()
+  // Historial completo de asignaciones/usos (tabs)
+  if (!assignmentsAll.value.length && !loadingAssignmentsAll.value) {
+    await loadAssignmentsAll()
+  }
+  if (!usesAll.value.length && !loadingUsesAll.value) {
+    await loadUsesAll()
+  }
+
+  // Bloques “vigentes” que ya tenías
+  if (!myOpenUses.value.length && !loadingOpenUses.value) {
+    await loadMyOpenUses()
+  }
+  if (!myAssignments.value.length && !loadingAssignments.value) {
+    await loadMyActiveAssignments()
+  }
 })
+
+watch(vehTab, async (t) => {
+  if (section.value !== 'vehiculos') return
+  if (t === 'asignaciones') {
+    if (!assignmentsAll.value.length && !loadingAssignmentsAll.value) {
+      await loadAssignmentsAll()
+    }
+  } else if (t === 'usos') {
+    if (!usesAll.value.length && !loadingUsesAll.value) {
+      await loadUsesAll()
+    }
+  }
+})
+
+
 watch(monthCursor, () => { loadHistory() })
 
 

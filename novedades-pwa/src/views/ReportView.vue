@@ -53,14 +53,14 @@
               </svg>
             </button>
           </nav>
+
+          <!-- Banner de fechas -->
+        <FechasBanner top-offset="top-14" color="amber" />
       </aside>
 
       <!-- ===== CONTENIDO ===== -->
       <main class="order-2 md:order-2 md:col-[2] space-y-6">
 
-        <!-- Banner de fechas -->
-        <FechasBanner top-offset="top-14" color="amber" />
-        
         <!-- Tarjeta principal -->
          
         <section v-show="section==='captura'" class="bg-white rounded-2xl shadow border border-slate-200 overflow-hidden">
