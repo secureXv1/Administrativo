@@ -34,13 +34,19 @@
 
             <!-- Picker visual + campos (stack en móvil) -->
             <div class="grid grid-cols-1 gap-3 mb-3">
-              <!-- 👇 Picker compacto (auto/moto) -->
+              <!-- 👇 Picker compacto (auto/moto) >
               <VehiclePartsPicker
                 v-model="selectedPartKey"
                 :is-moto="isMoto"
                 compact
                 :scale="0.7"
                 :legend-max-height="120"
+              /-->
+              <VehiclePartsPickerPro
+                v-model="selectedPartKey"
+                :topSrc="topSrc"
+                :leftSrc="leftSrc"
+                :rightSrc="rightSrc"
               />
 
               <!-- Campo 'Otro' si corresponde -->
@@ -276,6 +282,8 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { http } from '@/lib/http'
 import NovedadesBlock from './NovedadesBlock.vue'
 import VehiclePartsPicker from '@/components/vehicles/VehiclePartsPicker.vue'
+import VehiclePartsPickerPro from './VehiclePartsPickerPro.vue'
+
 
 const props = defineProps({
   agentId: { type: [Number, String], required: false, default: null },
@@ -293,6 +301,9 @@ const preferredAgent = computed(() => {
 
 const emit = defineEmits(['close', 'created'])
 
+const topSrc   = new URL('@/assets/pickup_top.png', import.meta.url).href
+const leftSrc  = new URL('@/assets/pickup_left.png', import.meta.url).href
+const rightSrc = new URL('@/assets/pickup_right.png', import.meta.url).href
 const agents = ref([])
 const uses = ref([])
 const loading = ref(false)
