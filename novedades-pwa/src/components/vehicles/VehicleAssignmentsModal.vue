@@ -206,7 +206,9 @@ async function loadLastOdometer() {
 }
 
 async function loadAgents() {
-  const { data } = await http.get('/catalogs/agents', { params: { limit: 20000 } })
+  const { data } = await http.get('/vehicles/catalogs/agents', {
+    params: { limit: 20000 }
+  })
   agents.value = data.items || data || []
 }
 

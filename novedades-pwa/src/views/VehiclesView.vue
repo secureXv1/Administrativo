@@ -974,8 +974,8 @@ async function submitEditVehicle() {
 async function cargarCatalogos() {
   try {
     const [{ data: g }, { data: u }] = await Promise.all([
-      http.get('/catalogs/groups'),
-      http.get('/catalogs/units')
+      http.get('/vehicles/catalogs/groups'),
+      http.get('/vehicles/catalogs/units')
     ])
     grupos.value = g.items || []
     unidades.value = u.items || []

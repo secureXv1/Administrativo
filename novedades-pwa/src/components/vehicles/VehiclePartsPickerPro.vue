@@ -158,7 +158,12 @@ const currentView = computed(() => {
 const PARTS = {
   top: [
     { key:'CAP', label:'Capó' },
-    { key:'VID', label:'Parabrisas' },
+    { key:'VID', label:'Parabrisas delantero' },
+    { key:'VIT', label:'Parabrisas trasero' },
+    { key:'VDI', label:'Vidrio delantero izq.' },
+    { key:'VTI', label:'Vidrio trasero izq.' },
+    { key:'VDD', label:'Vidrio delanterio der.' },
+    { key:'VTD', label:'Vidrio trasero der.' },
     { key:'CABINA', label:'Techo' },
     { key:'PLATON', label:'Platón' },
     { key:'CARGA', label:'Área de carga' },
@@ -178,6 +183,10 @@ const PARTS = {
     { key:'EMD', label:'Espejo der.' },
     { key:'PDD', label:'Puerta delantera der.' },
     { key:'PTD', label:'Puerta trasera der.' },
+    { key:'GDI', label:'Guardabarro delantero izq.' },
+    { key:'GTI', label:'Guardabarro trasero izq.' },
+    { key:'GDD', label:'Guardabarro delantero der.' },
+    { key:'GTD', label:'Guardabarro trasero der.' },
   ],
   //left: [
     //{ key:'LTI_L', label:'Llanta delantera' },
@@ -196,6 +205,7 @@ const HS = {
     { key:'CAP', type:'rect', x:90, y:30, w:70, h:130, r:20 },
     // parabrisas (poly aproximado)
     { key:'VID', type:'poly', points:'625,25 780, 25, 795,70 610,70' },
+    { key:'VIT', type:'poly', points:'625,310 770, 310, 785,350 610,350' },
     // cabina
     { key:'CABINA', type:'rect', x:220, y:40, w:140, h:110, r:18 },
     // platón
@@ -222,6 +232,16 @@ const HS = {
     //Espejos
     { key:'EMI', type:'rect', x:805, y:55, w:30, h:30, r:3 },
     { key:'EMD', type:'rect', x:570, y:55, w:30, h:30, r:3 },
+    //Guardabarros
+    { key:'GDI', type:'rect', x:100, y:250, w:90, h:30, r:9 },
+    { key:'GTI', type:'rect', x:390, y:250, w:140, h:30, r:9 },
+    { key:'GDD', type:'rect', x:420, y:420, w:90, h:30, r:9 },
+    { key:'GTD', type:'rect', x:80, y:420, w:140, h:30, r:9 },
+    //Vidrios
+    { key:'VDI', type:'rect', x:235, y:200, w:50, h:40, r:9 },
+    { key:'VTI', type:'rect', x:305, y:200, w:50, h:40, r:9 },
+    { key:'VDD', type:'rect', x:325, y:370, w:50, h:40, r:9 },
+    { key:'VTD', type:'rect', x:250, y:370, w:50, h:40, r:9 },
   ],
   //left: [
     //{ key:'LTI_L', type:'circle', cx:155, cy:240, r:60 },

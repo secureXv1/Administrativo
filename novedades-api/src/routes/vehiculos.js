@@ -101,7 +101,7 @@ async function vehicleHasOpenUse(vehicleId) {
 
 // GET /vehicles?query=&due_within=&page=1&pageSize=100&groupId=&unitId=&category=&estado=&onlyAssigned=1&hasOpenUse=1
 router.get(
-  '/vehicles',
+  '/',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -242,7 +242,7 @@ router.get(
 
 // POST /vehicles  (crear)
 router.post(
-  '/vehicles',
+  '/',
   requireAuth,
   requireRole('superadmin','supervision'),
   async (req, res) => {
@@ -333,7 +333,7 @@ router.post(
 
 // PUT /vehicles/:id  (editar)
 router.put(
-  '/vehicles/:id',
+  '/:id',
   requireAuth,
   requireRole('superadmin','supervision'),
   async (req, res) => {
@@ -431,7 +431,7 @@ router.put(
 
 // DELETE /vehicles/:id
 router.delete(
-  '/vehicles/:id',
+  '/:id',
   requireAuth,
   requireRole('superadmin'),
   async (req, res) => {
@@ -477,7 +477,7 @@ router.delete(
 
 // POST /vehicles/:id/state-change
 router.post(
-  '/vehicles/:id/state-change',
+  '/:id/state-change',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -556,7 +556,7 @@ router.post(
 
 // GET /vehicles/:id/status-history?limit=50
 router.get(
-  '/vehicles/:id/status-history',
+  '/:id/status-history',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -587,7 +587,7 @@ router.get(
 
 // GET /vehicles/:id/maintenances
 router.get(
-  '/vehicles/:id/maintenances',
+  '/:id/maintenances',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -625,7 +625,7 @@ router.get('/catalogs/units', requireAuth, async (_req, res) => {
 
 // GET /vehicles/:id/assignments
 router.get(
-  '/vehicles/:id/assignments',
+  '/:id/assignments',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -720,7 +720,7 @@ router.get(
 // PATCH /vehicles/assignments/:id/accept  { note }
 // Alias de "ack": marca aceptación del AGENTE con nota obligatoria (máx 300)
 router.patch(
-  '/vehicles/assignments/:id/accept',
+  '/assignments/:id/accept',
   requireAuth,
   requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
   async (req, res) => {
@@ -774,7 +774,7 @@ router.patch(
 
 // PATCH /vehicles/assignments/:id/ack  { note }
 router.patch(
-  '/vehicles/assignments/:id/ack',
+  '/assignments/:id/ack',
   requireAuth,
   requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
   async (req, res) => {
@@ -823,7 +823,7 @@ router.patch(
 
 // PATCH /vehicles/assignments/:id/extra  { note }
 router.patch(
-  '/vehicles/assignments/:id/extra',
+  '/assignments/:id/extra',
   requireAuth,
   requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
   async (req, res) => {
@@ -872,7 +872,7 @@ router.patch(
 
 // POST /vehicles/:id/assignments { agent_id, odometer_start?, notes? }
 router.post(
-  '/vehicles/:id/assignments',
+  '/:id/assignments',
   requireAuth,
   requireRole('superadmin','supervision'),
   async (req, res) => {
@@ -935,7 +935,7 @@ router.post(
 
 // PATCH /vehicles/:vehicleId/assignments/:assignmentId
 router.patch(
-  '/vehicles/:vehicleId/assignments/:assignmentId',
+  '/:vehicleId/assignments/:assignmentId',
   requireAuth,
   requireRole('superadmin','supervision'),
   async (req, res) => {
@@ -966,7 +966,7 @@ router.patch(
 
 // GET /vehicles/:id/last-assignment-odometer — último km FINAL de una asignación CERRADA
 router.get(
-  '/vehicles/:id/last-assignment-odometer',
+  '/:id/last-assignment-odometer',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -1016,7 +1016,7 @@ router.get(
 
 // GET /vehicles/uses?vehicle_id=&agent_id=&open=1
 router.get(
-  '/vehicles/uses',
+  '/uses',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -1045,7 +1045,7 @@ router.get(
 
 // POST /vehicles/uses/start
 router.post(
-  '/vehicles/uses/start',
+  '/uses/start',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -1083,7 +1083,7 @@ router.post(
 
 // PATCH /vehicles/uses/:id/end
 router.patch(
-  '/vehicles/uses/:id/end',
+  '/uses/:id/end',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -1119,7 +1119,7 @@ router.patch(
 
 // GET /vehicles/:id/last-use-odometer
 router.get(
-  '/vehicles/:id/last-use-odometer',
+  '/:id/last-use-odometer',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -1151,7 +1151,7 @@ router.get(
 
 // GET /vehicles/:tipo/:id/novelties (tipo: uses | vehicle)
 router.get(
-  '/vehicles/:tipo/:id/novelties',
+  '/:tipo/:id/novelties',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -1183,7 +1183,7 @@ router.get(
 
 // POST /vehicles/:tipo/:id/novelties (solo tipo=vehicle)
 router.post(
-  '/vehicles/:tipo/:id/novelties',
+  '/:tipo/:id/novelties',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   upload.single('photo'),
@@ -1234,7 +1234,7 @@ router.post(
 
 // GET /vehicles/:id/novelties/recent
 router.get(
-  '/vehicles/:id/novelties/recent',
+  '/:id/novelties/recent',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
@@ -1290,7 +1290,7 @@ router.get(
 
 // DELETE /vehicles/novelties/:id
 router.delete(
-  '/vehicles/novelties/:id',
+  '/novelties/:id',
   requireAuth,
   requireRole('superadmin','supervision'),
   async (req, res) => {
@@ -1311,7 +1311,7 @@ router.delete(
 
 // GET /vehicles/due?within=30
 router.get(
-  '/vehicles/due',
+  '/due',
   requireAuth,
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
