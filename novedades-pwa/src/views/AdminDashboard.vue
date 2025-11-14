@@ -307,7 +307,7 @@
               </tr>
             </template>
 
-            <!-- === Vista LÍDER DE GRUPO: como la tienes (unidad a unidad) === -->
+            <!-- === Vista LÍDER DE GRUPO: (unidad a unidad) === -->
             <template v-else>
               <tr v-for="r in rowsDisplayLeader" :key="r._key" class="hover:bg-slate-50">
                 <td>
@@ -1555,6 +1555,7 @@ async function descargarExcel () {
           let nv = v.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
           if (nv.toUpperCase() === 'COMISION DEL SERVICIO') nv = 'COMISION SERVICIO'
           else if (nv.toUpperCase() === 'COMISION DE ESTUDIO') nv = 'COMISION ESTUDIO'
+          else if (nv.toUpperCase() === 'PERMISO ACTIVIDAD PERSONAL') nv = 'PERMISO'
           out[k] = nv
         } else if (v == null || (typeof v === 'string' && v.trim() === '')) out[k] = 'N/A'
         else out[k] = v
