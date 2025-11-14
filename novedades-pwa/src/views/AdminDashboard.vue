@@ -1654,38 +1654,48 @@ const novAmbitoCards = computed(() => {
 async function loadNovDetails() {
   const params = buildCommonParams()
 
-  // 1) Por tipo (global) - ya lo tenías
+  // 1) Por tipo (global)
   const { data: tipos } = await axios.get('/dashboard/novelties-by-type', {
     params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
-  novTiposRows.value = (tipos?.items || [])
-    .filter(r => String(r.novedad || '').trim().toUpperCase() !== 'SIN NOVEDAD')
-    .map(r => ({
-      novedad: r.novedad,
-      OF: Number(r.OF || r.OF_count || 0),
-      ME: Number(r.ME || r.SO || r.SO_count || 0),
-      PT: Number(r.PT || r.PT_count || 0),
-      total: (Number(r.OF || r.OF_count || 0)
-            + Number(r.ME || r.SO || r.SO_count || 0)
-            + Number(r.PT || r.PT_count || 0))
-    }))
 
-  // 2) Por ámbito (totales)
+  const baseTipos = (tipos?.items || [])
+    .filter(r => String(r.novedad || '').trim().toUpperCase() !== 'SIN NOVEDAD')
+    .map(r => {
+      const OF = Number(r.OF || r.OF_count || 0)
+      const ME = Number(r.ME || r.SO || r.SO_count || 0)
+      const PT = Number(r.PT || r.PT_count || 0)
+      return {
+        novedad: r.novedad,
+        OF,
+        ME,
+        PT,
+        total: OF + ME + PT
+      }
+    })
+
+  // 🔹 Agrupamos PERMISO + PERMISO ACTIVIDAD PERSONAL
+  novTiposRows.value = groupNovTipos(baseTipos)
+
+  // 2) Por ámbito (totales) -> aquí no hace falta agrupar por tipo, ya son totales por ámbito
   const scopeUrl = isAdminView.value ? '/dashboard/novelties-by-group' : '/dashboard/novelties-by-unit'
   const { data: amb } = await axios.get(scopeUrl, {
     params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
-  novAmbitoRows.value = (amb?.items || []).map(r => ({
-    label: r.label || r.groupCode || r.unitName,
-    OF: Number(r.OF || r.OF_count || 0),
-    ME: Number(r.ME || r.SO || r.SO_count || 0),
-    PT: Number(r.PT || r.PT_count || 0),
-    total: (Number(r.OF || r.OF_count || 0)
-          + Number(r.ME || r.SO || r.SO_count || 0)
-          + Number(r.PT || r.PT_count || 0))
-  }))
+  novAmbitoRows.value = (amb?.items || []).map(r => {
+    const OF = Number(r.OF || r.OF_count || 0)
+    const ME = Number(r.ME || r.SO || r.SO_count || 0)
+    const PT = Number(r.PT || r.PT_count || 0)
+    return {
+      label: r.label || r.groupCode || r.unitName,
+      OF,
+      ME,
+      PT,
+      total: OF + ME + PT
+    }
+  })
 
-  // 3) Por ámbito con detalle por novedad (NUeVO)
+  // 3) Por ámbito con detalle por novedad (cards)
   const bdUrl = isAdminView.value
     ? '/dashboard/novelties-by-group-breakdown'
     : '/dashboard/novelties-by-unit-breakdown'
@@ -1693,11 +1703,15 @@ async function loadNovDetails() {
   const { data: det } = await axios.get(bdUrl, {
     params, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') }
   })
-  // Espera items: [{ label/groupCode/unitName, novedad, OF, ME/SO, PT }]
-  novAmbitoDetRows.value = (det?.items || []).filter(
+
+  const baseDet = (det?.items || []).filter(
     r => String(r.novedad || '').trim().toUpperCase() !== 'SIN NOVEDAD'
   )
+
+  // 🔹 Agrupamos también aquí PERMISO + PERMISO ACTIVIDAD PERSONAL
+  novAmbitoDetRows.value = groupAmbitoDetRows(baseDet)
 }
+
 
 function findGroupIdByCode(code) {
   if (!code) return null;
@@ -1837,11 +1851,21 @@ async function loadNovAgents() {
     const rows = Array.isArray(data) ? data : (data?.items || [])
 
     const sel = normStr(novSelected.value)
+    const PERMISO_GROUP = ['PERMISO', 'PERMISO ACTIVIDAD PERSONAL']
 
     // 2) Filtra por novedad (y excluye SIN NOVEDAD)
     const filtered = rows.filter(r => {
       const nov = normStr(r.novedad || r.novelty || '')
-      return nov && nov !== 'SIN NOVEDAD' && nov === sel
+      if (!nov || nov === 'SIN NOVEDAD') return false
+
+      // 👉 Si la novedad seleccionada es PERMISO,
+      //    incluir también PERMISO ACTIVIDAD PERSONAL
+      if (sel === 'PERMISO') {
+        return PERMISO_GROUP.includes(nov)
+      }
+
+      // para el resto, coincidencia exacta
+      return nov === sel
     })
 
     // 3) Lookup de agentes por código para enriquecer (nickname / category / grupo / unidad)
@@ -1859,7 +1883,7 @@ async function loadNovAgents() {
         unitName : row.unidad || ''
       }
 
-      // SO -> ME como pedías
+      // SO -> ME
       const cat = (base.category === 'SO' ? 'ME' : base.category) || '—'
 
       return {
@@ -1991,6 +2015,74 @@ function fmtTriadWithSum(val) {
 function goToParte() {
   router.push('/parte')
 }
+
+// === Agrupar PERMISO + PERMISO ACTIVIDAD PERSONAL ===
+const PERMISO_GROUP = ['PERMISO', 'PERMISO ACTIVIDAD PERSONAL']
+
+function normalizeNovType(label) {
+  const txt = String(label || '').toUpperCase().trim()
+  return PERMISO_GROUP.includes(txt) ? 'PERMISO' : label
+}
+
+// agrupa filas por novedad (para la tabla "Por novedad")
+function groupNovTipos(rows) {
+  const map = new Map()
+
+  for (const r of rows || []) {
+    const key = normalizeNovType(r.novedad)
+    if (!key) continue
+
+    const acc = map.get(key) || {
+      novedad: key,
+      OF: 0,
+      ME: 0,
+      PT: 0,
+      total: 0,
+    }
+
+    acc.OF    += Number(r.OF    || 0)
+    acc.ME    += Number(r.ME    || 0)
+    acc.PT    += Number(r.PT    || 0)
+    acc.total += Number(r.total || 0)
+
+    map.set(key, acc)
+  }
+
+  return Array.from(map.values())
+}
+
+// agrupa items dentro de cada card de ámbito
+function groupAmbitoCards(cards) {
+  return (cards || []).map(card => {
+    const byType = new Map()
+
+    for (const it of card.items || []) {
+      const key = normalizeNovType(it.novedad)
+      if (!key) continue
+
+      const acc = byType.get(key) || {
+        novedad: key,
+        OF: 0,
+        ME: 0,
+        PT: 0,
+        total: 0,
+      }
+
+      acc.OF    += Number(it.OF    || 0)
+      acc.ME    += Number(it.ME    || 0)
+      acc.PT    += Number(it.PT    || 0)
+      acc.total += Number(it.total || 0)
+
+      byType.set(key, acc)
+    }
+
+    return {
+      ...card,
+      items: Array.from(byType.values()),
+    }
+  })
+}
+
 
 // ===== Init
 function handleClickOutside(e){
