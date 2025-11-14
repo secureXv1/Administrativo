@@ -121,7 +121,7 @@ async function main() {
   app.use(express.json());
 
   // ...otros routers
-  app.use(vehiclesRouter);
+  app.use('/vehicles', vehiclesRouter);
 
   function isStrongPassword(pw) {
   // >=8, al menos 1 minúscula, 1 mayúscula, 1 dígito y 1 especial

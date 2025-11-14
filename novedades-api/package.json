@@ -13,6 +13,7 @@
     "express": "latest",
     "helmet": "latest",
     "jsonwebtoken": "latest",
+    "multer": "^2.0.2",
     "mysql2": "^3.14.3",
     "node-cron": "latest",
     "web-push": "latest"
