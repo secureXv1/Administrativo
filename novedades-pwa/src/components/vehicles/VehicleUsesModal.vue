@@ -1,5 +1,5 @@
 <template>
-  <div> <!-- 👈 root único -->
+  <div>
     <!-- OVERLAY -->
     <div class="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-6">
       <!-- MODAL -->
@@ -32,30 +32,145 @@
               Agregar una nueva novedad
             </h4>
 
-            <!-- Picker visual + campos (stack en móvil) -->
+            <!-- Picker visual + categorías internas/sistemas -->
             <div class="grid grid-cols-1 gap-3 mb-3">
-              <!-- 👇 Picker compacto (auto/moto) >
-              <VehiclePartsPicker
-                v-model="selectedPartKey"
-                :is-moto="isMoto"
-                compact
-                :scale="0.7"
-                :legend-max-height="120"
-              /-->
+              <!-- Picker visual -->
               <VehiclePartsPickerPro
                 v-model="selectedPartKey"
                 :topSrc="topSrc"
                 :leftSrc="leftSrc"
                 :rightSrc="rightSrc"
+                :highlight-keys="partKeysConNovedades"
               />
 
-              <!-- Campo 'Otro' si corresponde -->
+              <!-- Campo 'Otro' cuando es OTRO físico -->
               <div v-if="selectedPartKey === 'OTRO'">
                 <input
                   v-model="customPartName"
                   class="input w-full"
                   placeholder="Especifica la parte (ej: tapa combustible)"
                 />
+              </div>
+
+              <!-- Categorías internas / sistemas -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1 text-xs">
+                <!-- Interior -->
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="font-semibold text-slate-700">Interior</span>
+                    <button
+                      type="button"
+                      class="text-[11px] text-slate-500 hover:underline"
+                      @click="clearInternalSelection"
+                      v-if="selectedInternalKey && isInternalSelection('INTERIOR')"
+                    >
+                      Quitar selección
+                    </button>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    <button
+                      v-for="sec in INTERNAL_SECTIONS"
+                      :key="sec.key"
+                      type="button"
+                      :class="[
+                        'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
+                        selectedInternalKey === sec.key
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : internalCounts[sec.key] > 0
+                            ? 'border-red-500 text-red-700 bg-red-50'
+                            : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
+                      ]"
+                      @click="selectInternal(sec.key)"
+                    >
+                      {{ sec.label }}
+                      <span
+                        v-if="internalCounts[sec.key] > 0"
+                        class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                      >
+                        {{ internalCounts[sec.key] }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Sistemas -->
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="font-semibold text-slate-700">Sistemas</span>
+                    <button
+                      type="button"
+                      class="text-[11px] text-slate-500 hover:underline"
+                      @click="clearInternalSelection"
+                      v-if="selectedInternalKey && isInternalSelection('SISTEMA')"
+                    >
+                      Quitar selección
+                    </button>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    <button
+                      v-for="sec in SYSTEM_SECTIONS"
+                      :key="sec.key"
+                      type="button"
+                      :class="[
+                        'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
+                        selectedInternalKey === sec.key
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : internalCounts[sec.key] > 0
+                            ? 'border-red-500 text-red-700 bg-red-50'
+                            : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
+                      ]"
+                      @click="selectInternal(sec.key)"
+                    >
+                      {{ sec.label }}
+                      <span
+                        v-if="internalCounts[sec.key] > 0"
+                        class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                      >
+                        {{ internalCounts[sec.key] }}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <!-- Etiqueta unificada de selección (parte o sistema/interior) -->
+              <div v-if="scopeLabel" class="mt-2 text-xs text-slate-600">
+                <span class="text-slate-500">Seleccionado:</span>
+                <span class="ml-1 font-semibold">{{ scopeLabel }}</span>
+              </div>
+              <!-- Novedades de la parte / categoría seleccionada -->
+              <div
+                v-if="scopeLabel && novsSelectedScope.length"
+                class="mt-2 rounded-lg border border-slate-200 bg-white p-2 text-xs"
+              >
+                <div class="flex items-center justify-between mb-1">
+                  <span class="font-semibold text-slate-700">
+                    Novedades de: {{ scopeLabel }}
+                  </span>
+                  <button
+                    type="button"
+                    class="text-[11px] text-blue-600 hover:underline"
+                    @click="showAllForScope = !showAllForScope"
+                  >
+                    {{ showAllForScope ? 'Ver menos' : 'Ver todas' }}
+                  </button>
+                </div>
+                <ul class="space-y-1 max-h-32 overflow-y-auto">
+                  <li
+                    v-for="n in (showAllForScope ? novsSelectedScope : novsSelectedScope.slice(0,3))"
+                    :key="n.id"
+                    class="flex items-center justify-between gap-2"
+                  >
+                    <span class="truncate">• {{ n.description }}</span>
+                    <a
+                      v-if="n.photoUrl"
+                      :href="`/${n.photoUrl}`"
+                      target="_blank"
+                      class="text-[11px] text-blue-600 underline shrink-0"
+                    >
+                      foto
+                    </a>
+                  </li>
+                </ul>
               </div>
             </div>
 
@@ -94,36 +209,54 @@
               </div>
             </div>
 
-            <h4 class="font-semibold text-slate-700 text-sm mt-5 mb-2">
-              Novedades recientes del vehículo
+            <h4 class="font-semibold text-slate-700 text-sm mt-5 mb-2 flex items-center justify-between">
+              <span>Novedades recientes del vehículo</span>
+
+              <button
+                v-if="!loadingNovs && recentNovedades.length"
+                type="button"
+                class="text-[11px] text-blue-600 hover:underline"
+                @click="showRecentList = !showRecentList"
+              >
+                {{ showRecentList ? 'Ocultar listado' : `Ver listado (${recentNovedades.length})` }}
+              </button>
             </h4>
+
             <div v-if="loadingNovs" class="text-xs text-slate-500">Cargando novedades…</div>
 
             <div v-else>
               <div v-if="!recentNovedades.length" class="text-xs text-slate-400 mb-2">
                 No hay novedades registradas aún.
               </div>
+
               <div
-                v-for="n in recentNovedades"
-                :key="n.id"
-                class="text-xs border-b py-1 flex items-center justify-between"
+                v-else-if="showRecentList"
+                class="border rounded-lg bg-white p-2 max-h-40 overflow-y-auto space-y-1"
               >
-                <div>
-                  • {{ n.description }}
-                  <a
-                    v-if="n.photoUrl"
-                    :href="`/${n.photoUrl}`"
-                    target="_blank"
-                    class="text-blue-600 underline ml-1"
-                  >foto</a>
-                  <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
-                </div>
-                <button
-                  class="text-red-600 hover:text-red-800 font-medium text-[11px]"
-                  @click="deleteNovedad(n.id)"
+                <div
+                  v-for="n in recentNovedades"
+                  :key="n.id"
+                  class="text-xs flex items-center justify-between border-b last:border-b-0 py-1"
                 >
-                  Eliminar
-                </button>
+                  <div class="min-w-0">
+                    • <span class="truncate inline-block max-w-[220px] align-middle">{{ n.description }}</span>
+                    <a
+                      v-if="n.photoUrl"
+                      :href="`/${n.photoUrl}`"
+                      target="_blank"
+                      class="text-blue-600 underline ml-1"
+                    >
+                      foto
+                    </a>
+                    <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
+                  </div>
+                  <button
+                    class="text-red-600 hover:text-red-800 font-medium text-[11px] shrink-0 ml-2"
+                    @click="deleteNovedad(n.id)"
+                  >
+                    Eliminar
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -163,7 +296,7 @@
                 rows="1"
                 maxlength="500"
                 class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder="Ej: Servicio, Actividad persona, etc"
+                placeholder="Ej: Servicio, Actividad personal, etc"
               ></textarea>
             </div>
 
@@ -240,7 +373,7 @@
             </table>
           </div>
 
-          <!-- Novedades del uso -->
+          <!-- Novedades del uso (detalle total, si lo quieres mantener) -->
           <div v-if="selectedUseId" class="mt-6 border-t pt-4">
             <h4 class="font-semibold text-slate-700 text-sm mb-2">Novedades del uso</h4>
             <NovedadesBlock
@@ -252,9 +385,7 @@
             />
           </div>
         </div>
-        <!-- /BODY -->
       </div>
-      <!-- /MODAL -->
     </div>
 
     <!-- Modal para ver actividad/nota del uso -->
@@ -276,43 +407,41 @@
   </div>
 </template>
 
-
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue'
 import { http } from '@/lib/http'
 import NovedadesBlock from './NovedadesBlock.vue'
 import VehiclePartsPickerPro from './VehiclePartsPickerPro.vue'
 
-
 const props = defineProps({
   agentId: { type: [Number, String], required: false, default: null },
-  vehicle: { type: Object, required: true }, // { id, code, ... }
+  vehicle: { type: Object, required: true },
 })
 
-// 🔒 Modo bloqueado si viene agentId
-const isAgentLocked = computed(() => props.agentId != null)
+const emit = defineEmits(['close', 'created'])
 
-// Agente elegido por prop (una vez cargado el catálogo)
+// 🔒 Modo bloqueado si viene agentId
+const agents = ref([])
+const isAgentLocked = computed(() => props.agentId != null)
 const preferredAgent = computed(() => {
   if (!props.agentId) return null
   return agents.value.find(a => String(a.id) === String(props.agentId)) || null
 })
 
-const emit = defineEmits(['close', 'created'])
-
 const topSrc   = new URL('@/assets/pickup_top.png', import.meta.url).href
 const leftSrc  = new URL('@/assets/pickup_left.png', import.meta.url).href
 const rightSrc = new URL('@/assets/pickup_right.png', import.meta.url).href
-const agents = ref([])
+
 const uses = ref([])
 const loading = ref(false)
 const submitting = ref(false)
 const selectedUseId = ref(null)
 
-// 🆕 novedades recientes
+// novedades
 const recentNovedades = ref([])
 const loadingNovs = ref(false)
 const newNovedad = ref({ description: '', file: null })
+const showRecentList = ref(false)
 const expandedUseId = ref(null)
 const hasOpenUse = computed(() => uses.value.some(u => !u.ended_at))
 
@@ -326,7 +455,6 @@ const form = ref({
   notes: ''
 })
 
-// Si el modal viene desde AgentDashboard con agentId, precarga el code y bloquea cambios
 watch([preferredAgent, agents], () => {
   if (preferredAgent.value) {
     form.value.agentCode = preferredAgent.value.code || ''
@@ -335,7 +463,6 @@ watch([preferredAgent, agents], () => {
 
 const notaUsoVisible = ref(false)
 const notaUsoActual = ref(null)
-
 function verNotaUso(u) {
   if (!u?.notes?.trim()) return
   notaUsoActual.value = u
@@ -359,12 +486,15 @@ async function loadUses() {
   }
 }
 
-// 🔹 cargar últimas novedades del vehículo
+// 🔹 cargar últimas novedades del vehículo (sube un poco el límite para agrupar por parte)
 async function loadNovedades() {
   loadingNovs.value = true
   try {
-  const { data } = await http.get(`/vehicles/${props.vehicle.id}/novelties/recent`, { params: { limit: 5, t: Date.now() } })
-  recentNovedades.value = data.items || data || []
+    const { data } = await http.get(
+      `/vehicles/${props.vehicle.id}/novelties/recent`,
+      { params: { limit: 50, t: Date.now() } }
+    )
+    recentNovedades.value = data.items || data || []
   } finally {
     loadingNovs.value = false
   }
@@ -374,22 +504,171 @@ async function loadNovedades() {
 function onPhoto(e) {
   newNovedad.value.file = e.target.files?.[0] || null
 }
+
+// --- Catálogos de partes físicas ---
+const isMoto = computed(() => String(props.vehicle?.category || '') === 'MT')
+
+const PARTS_AUTO = [
+  // Zonas grandes
+  { key: 'CAP',    label: 'Capó' },
+  { key: 'CABINA', label: 'Techo' },
+  { key: 'PLATON', label: 'Platón' },
+  { key: 'CARGA',  label: 'Área de carga' },
+
+  // Parabrisas / vidrios
+  { key: 'VID', label: 'Parabrisas delantero' },
+  { key: 'VIT', label: 'Parabrisas trasero' },
+  { key: 'VDI', label: 'Vidrio delantero izq.' },
+  { key: 'VTI', label: 'Vidrio trasero izq.' },
+  { key: 'VDD', label: 'Vidrio delantero der.' },
+  { key: 'VTD', label: 'Vidrio trasero der.' },
+
+  // Puertas
+  { key: 'PDI', label: 'Puerta delantera izq.' },
+  { key: 'PTI', label: 'Puerta trasera izq.' },
+  { key: 'PDD', label: 'Puerta delantera der.' },
+  { key: 'PTD', label: 'Puerta trasera der.' },
+
+  // Guardabarros
+  { key: 'GDI', label: 'Guardabarro delantero izq.' },
+  { key: 'GTI', label: 'Guardabarro trasero izq.' },
+  { key: 'GDD', label: 'Guardabarro delantero der.' },
+  { key: 'GTD', label: 'Guardabarro trasero der.' },
+
+  // Llantas
+  { key: 'LTI', label: 'Llanta delantera izq.' },
+  { key: 'LTD', label: 'Llanta delantera der.' },
+  { key: 'LLI', label: 'Llanta trasera izq.' },
+  { key: 'LLD', label: 'Llanta trasera der.' },
+
+  // Luces
+  { key: 'LFD',   label: 'Luz delantera izq.' },
+  { key: 'LFA',   label: 'Luz delantera der.' },
+  { key: 'LTD_T', label: 'Luz trasera izq.' },
+  { key: 'LTA_T', label: 'Luz trasera der.' },
+
+  // Parachoques
+  { key: 'PAD_R', label: 'Parachoques delantero' },
+  { key: 'PAR_L', label: 'Parachoques trasero' },
+
+  // Espejos
+  { key: 'EMI', label: 'Espejo izq.' },
+  { key: 'EMD', label: 'Espejo der.' },
+
+  // Costados (por si ya tienes novedades antiguas con estos textos)
+  { key: 'CRD',  label: 'Costado derecho' },
+  { key: 'CRI',  label: 'Costado izquierdo' },
+
+  // Otro
+  { key: 'OTRO', label: 'Otro (especificar)' },
+]
+
+const PARTS_MOTO = [
+  { key: 'TANQUE', label: 'Tanque' },
+  { key: 'CUP',    label: 'Cúpula / faro' },
+  { key: 'MAN_D',  label: 'Manubrio derecho' },
+  { key: 'MAN_I',  label: 'Manubrio izquierdo' },
+  { key: 'POSA',   label: 'Posapiés' },
+  { key: 'GUAR',   label: 'Guardabarros' },
+  { key: 'LL_DEL', label: 'Llanta delantera' },
+  { key: 'LL_TRA', label: 'Llanta trasera' },
+  { key: 'ESPE',   label: 'Espejo' },
+  { key: 'CUBRE',  label: 'Cubrecarter' },
+  { key: 'OTRO',   label: 'Otro (especificar)' },
+]
+
+// --- Catálogos internos / sistemas ---
+const INTERNAL_SECTIONS = [
+  { key: 'COJ',  label: 'Cojinería / asientos' },
+  { key: 'TAP',  label: 'Tapetes' },
+  { key: 'RAD',  label: 'Radio / multimedia' },
+  { key: 'TEC',  label: 'Techo interior' },
+  { key: 'PAN',  label: 'Panel de puertas' },
+  { key: 'TAB',  label: 'Tablero / consola' },
+]
+
+const SYSTEM_SECTIONS = [
+  { key: 'FRN',  label: 'Frenos' },
+  { key: 'MTR',  label: 'Motor' },
+  { key: 'DIR',  label: 'Dirección' },
+  { key: 'SUS',  label: 'Suspensión' },
+  { key: 'ELC',  label: 'Sistema eléctrico' },
+  { key: 'TRN',  label: 'Transmisión' },
+]
+
+// Selección actual
+const selectedPartKey = ref('')
+const customPartName = ref('')
+const selectedInternalKey = ref('')
+
+function clearInternalSelection() {
+  selectedInternalKey.value = ''
+}
+
+// para saber si la selección pertenece a interior o sistemas (para el botón "Quitar selección")
+function isInternalSelection(tipo) {
+  if (!selectedInternalKey.value) return false
+  if (tipo === 'INTERIOR') {
+    return INTERNAL_SECTIONS.some(s => s.key === selectedInternalKey.value)
+  }
+  if (tipo === 'SISTEMA') {
+    return SYSTEM_SECTIONS.some(s => s.key === selectedInternalKey.value)
+  }
+  return false
+}
+
+function selectInternal(key) {
+  selectedInternalKey.value = key
+  // si seleccionas una categoría interna, desmarca la parte física
+  selectedPartKey.value = ''
+}
+
+function labelForPartKey(key) {
+  const list = isMoto.value ? PARTS_MOTO : PARTS_AUTO
+  return list.find(x => x.key === key)?.label || ''
+}
+
+function selectedPartLabel() {
+  const list = isMoto.value ? PARTS_MOTO : PARTS_AUTO
+  const found = list.find(x => x.key === selectedPartKey.value)
+  if (!found) return ''
+  if (found.key === 'OTRO') {
+    return customPartName.value.trim() || 'Parte no especificada'
+  }
+  return found.label
+}
+
+function labelForInternalKey(key) {
+  const all = [...INTERNAL_SECTIONS, ...SYSTEM_SECTIONS]
+  return all.find(s => s.key === key)?.label || ''
+}
+
+// Label unificado que se usará al guardar la novedad
+const scopeLabel = computed(() => {
+  if (selectedInternalKey.value) {
+    return labelForInternalKey(selectedInternalKey.value)
+  }
+  if (selectedPartKey.value) {
+    return selectedPartLabel()
+  }
+  return ''
+})
+
 async function addNovedad() {
-  const partLabel = selectedPartLabel().trim()
+  const partLabel = scopeLabel.value.trim()
   const desc = (newNovedad.value.description || '').trim()
 
-  // Validaciones: al menos una parte y una descripción, o permite foto sola si quieres
+  // Validaciones
   if (!partLabel && !desc && !newNovedad.value.file) {
-    return alert('Selecciona una parte y/o escribe una descripción, o adjunta una foto.')
+    return alert('Selecciona una parte/categoría y/o escribe una descripción, o adjunta una foto.')
   }
   if (!partLabel && desc && !newNovedad.value.file) {
-    return alert('Selecciona la parte del vehículo.')
+    return alert('Selecciona la parte o sistema del vehículo.')
   }
   if (partLabel && !desc && !newNovedad.value.file) {
     return alert('Escribe una descripción para la parte seleccionada o adjunta una foto.')
   }
 
-  // Construye "Parte: descripción"
   const finalText = partLabel
     ? (desc ? `${partLabel}: ${desc}` : `${partLabel}`)
     : desc
@@ -402,8 +681,8 @@ async function addNovedad() {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 
-  // Limpieza post-agregado: resetea descripción y foto; conserva la "parte" para agilizar varias del mismo componente
   newNovedad.value = { description: '', file: null }
+  // mantenemos la selección de parte/categoría para registrar varias
   await loadNovedades()
 }
 
@@ -414,6 +693,50 @@ async function deleteNovedad(id) {
   await loadNovedades()
 }
 
+// --- Agrupación / conteos por categoría interna/sistema ---
+const internalCounts = computed(() => {
+  const counts = {}
+  const allSections = [...INTERNAL_SECTIONS, ...SYSTEM_SECTIONS]
+  for (const sec of allSections) {
+    const label = sec.label
+    counts[sec.key] = recentNovedades.value.filter(n =>
+      (n.description || '').startsWith(label)
+    ).length
+  }
+  return counts
+})
+
+// --- Highlight para partes físicas (croquis) ---
+const partKeysConNovedades = computed(() => {
+  const keys = new Set()
+  const list = isMoto.value ? PARTS_MOTO : PARTS_AUTO
+  for (const part of list) {
+    const label = part.label
+    if (!label) continue
+    const tiene = recentNovedades.value.some(n =>
+      (n.description || '').startsWith(label)
+    )
+    if (tiene) keys.add(part.key)
+  }
+  return Array.from(keys)
+})
+
+// --- Novedades de la parte / categoría seleccionada ---
+const novsSelectedScope = computed(() => {
+  const label = scopeLabel.value
+  if (!label) return []
+  return recentNovedades.value.filter(n =>
+    (n.description || '').startsWith(label)
+  )
+})
+const showAllForScope = ref(false)
+
+// Placeholder dinámico
+const descPlaceholder = computed(() =>
+  'Describe la novedad para la parte o sistema seleccionados…'
+)
+
+// --- Crear / cerrar usos ---
 async function createUse() {
   submitting.value = true
   try {
@@ -466,7 +789,6 @@ async function loadLastUseOdometer() {
   try {
     const { data } = await http.get(`/vehicles/${props.vehicle.id}/last-use-odometer`)
     lastUseOdoHint.value = data?.lastOdometer ?? null
-    // si el form está vacío, prellenar
     if (!form.value.odometer_start && lastUseOdoHint.value != null) {
       form.value.odometer_start = String(lastUseOdoHint.value)
     }
@@ -475,67 +797,10 @@ async function loadLastUseOdometer() {
   }
 }
 
-// Tipo según categoría
-const isMoto = computed(() => String(props.vehicle?.category || '') === 'MT')
-
-// Catálogo de partes (solo etiquetas; sin textos automáticos)
-const PARTS_AUTO = [
-  { key: 'PDD',  label: 'Puerta delantera derecha' },
-  { key: 'PDI',  label: 'Puerta delantera izquierda' },
-  { key: 'PTD',  label: 'Puerta trasera derecha' },
-  { key: 'PTI',  label: 'Puerta trasera izquierda' },
-  { key: 'PAD',  label: 'Parachoques delantero' },
-  { key: 'PAR',  label: 'Parachoques trasero' },
-  { key: 'CRD',  label: 'Costado derecho' },
-  { key: 'CRI',  label: 'Costado izquierdo' },
-  { key: 'CAP',  label: 'Capó' },
-  { key: 'TECHO',label: 'Techo' },
-  { key: 'VID',  label: 'Parabrisas / vidrios' },
-  { key: 'LLD',  label: 'Llanta delantera derecha' },
-  { key: 'LLI',  label: 'Llanta delantera izquierda' },
-  { key: 'LTD',  label: 'Llanta trasera derecha' },
-  { key: 'LTI',  label: 'Llanta trasera izquierda' },
-  { key: 'FAR',  label: 'Faros' },
-  { key: 'OTRO', label: 'Otro (especificar)' },
-]
-
-const PARTS_MOTO = [
-  { key: 'TANQUE', label: 'Tanque' },
-  { key: 'CUP',    label: 'Cúpula / faro' },
-  { key: 'MAN_D',  label: 'Manubrio derecho' },
-  { key: 'MAN_I',  label: 'Manubrio izquierdo' },
-  { key: 'POSA',   label: 'Posapiés' },
-  { key: 'GUAR',   label: 'Guardabarros' },
-  { key: 'LL_DEL', label: 'Llanta delantera' },
-  { key: 'LL_TRA', label: 'Llanta trasera' },
-  { key: 'ESPE',   label: 'Espejo' },
-  { key: 'CUBRE',  label: 'Cubrecarter' },
-  { key: 'OTRO',   label: 'Otro (especificar)' },
-]
-
-// Selección de parte
-const selectedPartKey = ref('')
-const customPartName = ref('') // 🆕 campo cuando se elige "Otro"
-
-function selectedPartLabel() {
-  const list = isMoto.value ? PARTS_MOTO : PARTS_AUTO
-  const found = list.find(x => x.key === selectedPartKey.value)
-  if (!found) return ''
-  if (found.key === 'OTRO') {
-    return customPartName.value.trim() || 'Parte no especificada'
-  }
-  return found.label
-}
-
-// Placeholder dinámico
-const descPlaceholder = computed(() =>
-  'Describe la novedad o selecciona una parte para auto-completar…'
-)
-
 onMounted(() => {
   loadUses()
   loadAgents()
-  loadNovedades() // 
+  loadNovedades()
   loadLastUseOdometer()
 })
 
@@ -544,4 +809,12 @@ watch(() => props.vehicle?.id, () => {
   loadNovedades()
   loadLastUseOdometer()
 })
+
+watch(selectedPartKey, (val) => {
+  // Si seleccionas una parte en el croquis, desmarca cualquier categoría interna/sistema
+  if (val) {
+    selectedInternalKey.value = ''
+  }
+})
+
 </script>

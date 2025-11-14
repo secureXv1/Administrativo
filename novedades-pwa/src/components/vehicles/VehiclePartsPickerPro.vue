@@ -1,4 +1,3 @@
-<!-- VehiclePartsPickerPro.vue -->
 <template>
   <div
     class="grid gap-3"
@@ -40,7 +39,6 @@
           <!-- Overlay de hotspots -->
           <g>
             <template v-for="h in currentHotspots" :key="h.key">
-              <!-- Soporta rect / circle / poly -->
               <rect v-if="h.type==='rect'"
                 v-bind="rectAttrs(h)"
               />
@@ -64,51 +62,6 @@
         </div>
       </div>
     </div>
-
-    <!-- LEYENDA -->
-    <div :class="['rounded-2xl border border-slate-200 bg-white shadow-sm', compact ? 'p-2' : 'p-3']">
-      
-      <!--div class="grid grid-cols-1 gap-2 pr-1 overflow-auto" :style="{ maxHeight: legendMaxHeight + 'px' }">
-        <button
-          v-for="p in partsListForView"
-          :key="p.key"
-          type="button"
-          :class="[
-            'w-full text-left rounded-lg border transition focus:outline-none focus:ring-2',
-            compact ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm',
-            modelValue === p.key
-              ? 'border-blue-500 bg-blue-50 text-blue-700 ring-blue-200'
-              : 'border-slate-300 hover:bg-slate-50 ring-transparent'
-          ]"
-          @click="select(p.key)"
-        >
-          {{ p.label }}
-        </button>
-
-        <button
-          v-if="enableOtro"
-          type="button"
-          :class="[
-            'w-full text-left rounded-lg border transition focus:outline-none focus:ring-2',
-            compact ? 'px-2 py-1.5 text-xs' : 'px-3 py-2 text-sm',
-            modelValue === 'OTRO'
-              ? 'border-blue-500 bg-blue-50 text-blue-700 ring-blue-200'
-              : 'border-slate-300 hover:bg-slate-50 ring-transparent'
-          ]"
-          @click="select('OTRO')"
-        >
-          OTRO (especificar)
-        </button>
-      </div-->
-
-      <div v-if="modelValue" :class="['mt-3', compact ? 'text-xs' : 'text-sm']">
-        <span class="text-slate-500">Seleccionado:</span>
-        <span class="ml-2 font-medium">
-          <template v-if="modelValue === 'OTRO'">OTRO: {{ otroText || '(sin detalle)' }}</template>
-          <template v-else>{{ keyToLabel(modelValue) }}</template>
-        </span>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -123,10 +76,12 @@ const props = defineProps({
   enableOtro: { type: Boolean, default: true },
   initialOtroText: { type: String, default: '' },
 
-  /** Reemplaza estas rutas por tus assets reales */
   topSrc:  { type: String, default: '/assets/pickup_top.png' },
-  //leftSrc: { type: String, default: '/assets/pickup_left.png' },
-  //rightSrc:{ type: String, default: '/assets/pickup_right.png' },
+  leftSrc: { type: String, default: '/assets/pickup_left.png' },
+  rightSrc:{ type: String, default: '/assets/pickup_right.png' },
+
+  // 🆕 partes que tienen novedades (se pintan en rojo)
+  highlightKeys: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['update:modelValue', 'otro-change'])
@@ -134,16 +89,12 @@ const emit = defineEmits(['update:modelValue', 'otro-change'])
 /** VISTAS DISPONIBLES */
 const views = [
   { key:'top',    label:'Superior' },
-  //{ key:'left',   label:'Lateral izq.' },
-  //{ key:'right',  label:'Lateral der.' },
 ]
 const view = ref('top')
 
-/** DIMENSIONES DE TRABAJO (ajústalas a cada imagen) */
+/** DIMENSIONES DE TRABAJO */
 const VIEWBOXES = {
   top:   { width: 900, height: 520, viewBox: '0 0 900 520' },
-  //left:  { width: 900, height: 300, viewBox: '0 0 900 300' },
-  //right: { width: 900, height: 300, viewBox: '0 0 900 300' },
 }
 
 /** IMÁGENES POR VISTA */
@@ -154,7 +105,7 @@ const currentView = computed(() => {
   return { ...meta, src }
 })
 
-/** PARTES Y HOTSPOTS (ejemplo) */
+/** PARTES Y HOTSPOTS */
 const PARTS = {
   top: [
     { key:'CAP', label:'Capó' },
@@ -188,69 +139,41 @@ const PARTS = {
     { key:'GDD', label:'Guardabarro delantero der.' },
     { key:'GTD', label:'Guardabarro trasero der.' },
   ],
-  //left: [
-    //{ key:'LTI_L', label:'Llanta delantera' },
-    //{ key:'LLI_L', label:'Llanta trasera' },
-  //],
-  //right: [
-    //{ key:'LTD_R', label:'Llanta delantera' },
-    //{ key:'LLD_R', label:'Llanta trasera' },  
-  //],
 }
 
-/** Hotspots por vista (coordenadas en el mismo sistema del viewBox) */
 const HS = {
   top: [
-    // capó (rect)
     { key:'CAP', type:'rect', x:90, y:30, w:70, h:130, r:20 },
-    // parabrisas (poly aproximado)
-    { key:'VID', type:'poly', points:'625,25 780, 25, 795,70 610,70' },
-    { key:'VIT', type:'poly', points:'625,310 770, 310, 785,350 610,350' },
-    // cabina
+    { key:'VID', type:'poly', points:'625,25 780,25 795,70 610,70' },
+    { key:'VIT', type:'poly', points:'625,310 770,310 785,350 610,350' },
     { key:'CABINA', type:'rect', x:220, y:40, w:140, h:110, r:18 },
-    // platón
     { key:'PLATON', type:'rect', x:610, y:360, w:180, h:70, r:12 },
     { key:'CARGA', type:'rect', x:380, y:30, w:140, h:135, r:8 },
-    // llantas
     { key:'LTI', type:'circle', cx:143, cy:320, r:33 },
     { key:'LTD', type:'circle', cx:465, cy:485, r:33 },
     { key:'LLI', type:'circle', cx:430, cy:320, r:33 },
     { key:'LLD', type:'circle', cx:175, cy:485, r:34 },
-    // luces
     { key:'LFD', type:'rect', x:770, y:95, w:50, h:30, r:3 },
     { key:'LFA', type:'rect', x:590, y:95, w:50, h:30, r:3 },
     { key:'LTD_T', type:'rect', x:580, y:375, w:25, h:55, r:3 },
     { key:'LTA_T', type:'rect', x:795, y:375, w:25, h:55, r:3 },
-    // Parachoques
     { key:'PAR_L', type:'rect', x:580, y:435, w:240, h:28, r:6 },
     { key:'PAD_R', type:'rect', x:585, y:140, w:235, h:50, r:6 },
-    //Puertas
     { key:'PDI', type:'rect', x:200, y:245, w:90, h:70, r:6 },
     { key:'PTI', type:'rect', x:295, y:245, w:80, h:70, r:6 },
     { key:'PDD', type:'rect', x:320, y:410, w:90, h:70, r:6 },
     { key:'PTD', type:'rect', x:230, y:410, w:80, h:70, r:6 },
-    //Espejos
     { key:'EMI', type:'rect', x:805, y:55, w:30, h:30, r:3 },
     { key:'EMD', type:'rect', x:570, y:55, w:30, h:30, r:3 },
-    //Guardabarros
     { key:'GDI', type:'rect', x:100, y:250, w:90, h:30, r:9 },
     { key:'GTI', type:'rect', x:390, y:250, w:140, h:30, r:9 },
     { key:'GDD', type:'rect', x:420, y:420, w:90, h:30, r:9 },
     { key:'GTD', type:'rect', x:80, y:420, w:140, h:30, r:9 },
-    //Vidrios
     { key:'VDI', type:'rect', x:235, y:200, w:50, h:40, r:9 },
     { key:'VTI', type:'rect', x:305, y:200, w:50, h:40, r:9 },
     { key:'VDD', type:'rect', x:325, y:370, w:50, h:40, r:9 },
     { key:'VTD', type:'rect', x:250, y:370, w:50, h:40, r:9 },
   ],
-  //left: [
-    //{ key:'LTI_L', type:'circle', cx:155, cy:240, r:60 },
-    //{ key:'LLI_L', type:'circle', cx:683, cy:240, r:60 },
-  //],
-  //right: [
-    //{ key:'LTD_R', type:'circle', cx:280, cy:220, r:38 },
-    //{ key:'LLD_R', type:'circle', cx:630, cy:220, r:38 },
-  //],
 }
 
 /** estado local */
@@ -263,6 +186,7 @@ const tooltip = ref({ x: 0, y: 0 })
 /** Derivados */
 const partsListForView = computed(() => PARTS[view.value])
 const currentHotspots = computed(() => HS[view.value])
+const highlightSet = computed(() => new Set(props.highlightKeys || []))
 
 /** Select + etiquetas */
 function select(key){
@@ -270,7 +194,7 @@ function select(key){
   if (key === 'OTRO') emit('otro-change', otroText.value)
 }
 function keyToLabel(key){
-  const list = PARTS[view.value]
+  const list = partsListForView.value || []
   if (key === 'OTRO') return 'OTRO (especificar)'
   return list.find(p => p.key === key)?.label || 'Parte'
 }
@@ -286,10 +210,23 @@ function clearTip(){ hoverLabel.value = '' }
 /** Atributos comunes */
 function baseHS(key){
   const active = key === modelValue.value
+  const hasIssue = highlightSet.value.has(key)
+
+  let stroke, fill
+  if (hasIssue) {
+    // rojo cuando tiene novedades
+    stroke = active ? '#b91c1c' : '#'
+    fill   = active ? 'rgba(185,28,28,0.28)' : 'rgba(248,113,113,0.24)'
+  } else {
+    // azul para selección normal
+    stroke = active ? '#2563eb' : 'transparent'
+    fill   = active ? 'rgba(37,99,235,0.20)' : 'rgba(59,130,246,0.10)'
+  }
+
   return {
-    stroke: active ? '#2563eb' : 'transparent',
+    stroke,
     'stroke-width': 2,
-    fill: active ? 'rgba(37,99,235,0.12)' : 'rgba(59,130,246,0.10)',
+    fill,
     style: 'cursor:pointer; transition:all .12s ease',
     onMouseenter: e => setTip(key, e),
     onMousemove: e => setTip(key, e),
@@ -309,7 +246,6 @@ const modelValue = computed({
 </script>
 
 <style scoped>
-/* Mejora de renderizado y foco del overlay */
 :deep(svg) {
   shape-rendering: geometricPrecision;
   text-rendering: optimizeLegibility;
