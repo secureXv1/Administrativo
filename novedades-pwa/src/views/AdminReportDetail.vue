@@ -127,7 +127,7 @@
                   <td>
                     <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border"
                           :class="badgeClass(a.state)">
-                      {{ a.state }}
+                      {{ displayState(a.state) }}
                     </span>
                   </td>
                   <td>{{ a.municipality || 'N/A' }}</td>
@@ -777,6 +777,12 @@ async function loadSingleReport(id){
     headerOk.value = false
     agentes.value = []
   }
+}
+
+function displayState(state) {
+  const s = String(state || '').toUpperCase()
+  if (s === 'PERMISO ACTIVIDAD PERSONAL') return 'PERMISO'
+  return state
 }
 
 async function loadGroupReports(date, groupId){
