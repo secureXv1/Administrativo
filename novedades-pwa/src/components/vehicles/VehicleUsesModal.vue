@@ -281,7 +281,6 @@
 import { ref, onMounted, watch, computed } from 'vue'
 import { http } from '@/lib/http'
 import NovedadesBlock from './NovedadesBlock.vue'
-import VehiclePartsPicker from '@/components/vehicles/VehiclePartsPicker.vue'
 import VehiclePartsPickerPro from './VehiclePartsPickerPro.vue'
 
 
@@ -344,7 +343,7 @@ function verNotaUso(u) {
 }
 
 async function loadAgents() {
-  const { data } = await http.get('/catalogs/agents')
+  const { data } = await http.get('/vehicles/catalogs/agents')
   agents.value = data.items || data || []
 }
 
@@ -429,7 +428,7 @@ async function createUse() {
 
     await http.post('/vehicles/uses/start', {
       vehicle_id: props.vehicle.id,
-      gent_id: agentIdToUse,
+      agent_id: agentIdToUse,
       odometer_start: form.value.odometer_start || null,
       notes: (form.value.notes || '').trim() || null
     })
