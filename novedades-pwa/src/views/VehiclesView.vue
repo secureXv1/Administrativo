@@ -88,6 +88,7 @@
               <option value="SERVICIO">SERVICIO</option>
               <option value="EN TALLER">EN TALLER</option>
               <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
+              <option value="PENDIENTE BAJA">PENDIENTE BAJA</option>
             </select>
           </div>
 
@@ -331,6 +332,7 @@
             <option value="SERVICIO">SERVICIO</option>
             <option value="EN TALLER">EN TALLER</option>
             <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
+            <option value="PENDIENTE BAJA">PENDIENTE BAJA</option>
           </select>
         </div>
 
@@ -420,6 +422,7 @@
             <option value="SERVICIO">SERVICIO</option>
             <option value="EN TALLER">EN TALLER</option>
             <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
+            <option value="PENDIENTE BAJA">PENDIENTE BAJA</option>
           </select>
         </div>
 
@@ -496,6 +499,7 @@
           <option value="SERVICIO">SERVICIO</option>
           <option value="EN TALLER">EN TALLER</option>
           <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
+          <option value="PENDIENTE BAJA">PENDIENTE BAJA</option>
         </select>
       </div>
       <div>
@@ -571,17 +575,24 @@ const stateError = ref('');
 function canShowChangedOilCheckbox() {
   const prev = currentVehicle.value?.estado;
   const next = stateForm.value.new_status;
-  return prev === 'EN TALLER' && (next === 'SERVICIO' || next === 'MANTENIMIENTO N.C');
+  return prev === 'EN TALLER' && (next === 'SERVICIO' || next === 'MANTENIMIENTO N.C' || next === 'PENDIENTE BAJA');
 }
 
 function estadoClass(estado) {
   switch (estado) {
-    case 'SERVICIO': return 'bg-green-100 text-green-700 px-2 py-0.5 rounded';
-    case 'EN TALLER': return 'bg-red-100 text-red-700 px-2 py-0.5 rounded';
-    case 'MANTENIMIENTO N.C': return 'bg-amber-100 text-amber-700 px-2 py-0.5 rounded';
-    default: return 'bg-slate-100 text-slate-600 px-2 py-0.5 rounded';
+    case 'SERVICIO':
+      return 'bg-green-100 text-green-700 px-2 py-0.5 rounded';
+    case 'EN TALLER':
+      return 'bg-red-100 text-red-700 px-2 py-0.5 rounded';
+    case 'MANTENIMIENTO N.C':
+      return 'bg-amber-100 text-amber-700 px-2 py-0.5 rounded';
+    case 'PENDIENTE BAJA':
+      return 'bg-slate-300 text-gray px-2 py-0.5 rounded'; // 🔵 NUEVO estilo
+    default:
+      return 'bg-slate-100 text-slate-600 px-2 py-0.5 rounded';
   }
 }
+
 
 function daysTo(dateStr) {
   if (!dateStr) return null

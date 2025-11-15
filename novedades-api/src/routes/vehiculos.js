@@ -274,7 +274,7 @@ router.post(
         return res.status(422).json({ error:'Campos requeridos: code, estado, soatDate, tecnoDate, category, groupId, unitId.' });
 
       // estado válido
-      const ESTADOS = ['SERVICIO','EN TALLER','MANTENIMIENTO N.C'];
+      const ESTADOS = ['SERVICIO','EN TALLER','MANTENIMIENTO N.C','PENDIENTE BAJA'];
       if (!ESTADOS.includes(String(estado)))
         return res.status(422).json({ error:'Estado inválido. Use: SERVICIO, EN TALLER o MANTENIMIENTO N.C.' });
 
@@ -369,7 +369,7 @@ router.put(
         args.push(String(code).trim().toUpperCase());
       }
       if (estado !== undefined) {
-        const ESTADOS = ['SERVICIO','EN TALLER','MANTENIMIENTO N.C'];
+        const ESTADOS = ['SERVICIO','EN TALLER','MANTENIMIENTO N.C','PENDIENTE BAJA'];
         if (!ESTADOS.includes(String(estado)))
           return res.status(422).json({ error:'Estado inválido. Use: SERVICIO, EN TALLER o MANTENIMIENTO N.C.' });
         sets.push('estado=?'); args.push(estado);
@@ -493,75 +493,81 @@ router.post(
     const { id } = req.params;
     const { new_status, odometer, note, changed_oil } = req.body; // changed_oil: boolean opcional
 
-    // 1) Vehículo actual
-    const [[veh]] = await pool.query(
-      'SELECT estado, odometer FROM vehicles WHERE id=? LIMIT 1',
-      [id]
-    );
-    if (!veh) return res.status(404).json({ error: 'Vehículo no encontrado' });
-
-    const prev_status = veh.estado;
-    const kmActual = Number(veh.odometer ?? 0);
-    const kmNuevo  = Number(odometer ?? 0);
-    const nota     = String(note || '').trim();
-
-    // 2) Validaciones
-    if (!nota) {
-      return res.status(422).json({ error: 'La nota es obligatoria.' });
-    }
-    if (Number.isNaN(kmNuevo) || kmNuevo < kmActual) {
-      return res.status(422).json({ error: `El kilometraje no puede ser menor al actual (${kmActual}).` });
-    }
-    if (!['SERVICIO','EN TALLER','MANTENIMIENTO N.C'].includes(new_status)) {
-      return res.status(422).json({ error: 'Estado inválido.' });
-    }
-
-    // 3) Actualizar vehículo (estado + odómetro) y opcional aceite
-    const sets = ['estado=?','odometer=?'];
-    const args = [new_status, kmNuevo];
-
-    // Si quieres soportar "cambié aceite" solo en transiciones desde EN TALLER:
-    const fromTaller = (prev_status === 'EN TALLER') &&
-                       (new_status === 'SERVICIO' || new_status === 'MANTENIMIENTO N.C');
-
-    // a) Versión RECOMENDADA (con columna changed_oil en vehicles_status)
-    let changedOilFlag = !!changed_oil && fromTaller;
-    if (changedOilFlag) {
-      sets.push('oil_last_km=?');
-      args.push(kmNuevo);
-    }
-
-    args.push(id);
-    await pool.query(`UPDATE vehicles SET ${sets.join(', ')} WHERE id=?`, args);
-
-    // 4) Insertar histórico en vehicles_status
-    // a) Con columna changed_oil
     try {
+      // 1) Vehículo actual
+      const [[veh]] = await pool.query(
+        'SELECT estado, odometer FROM vehicles WHERE id=? LIMIT 1',
+        [id]
+      );
+      if (!veh) {
+        return res.status(404).json({ error: 'Vehículo no encontrado' });
+      }
+
+      const prev_status = veh.estado;
+      const kmActual = Number(veh.odometer ?? 0);
+      const kmNuevo  = Number(odometer ?? 0);
+      const nota     = String(note || '').trim();
+
+      // 2) Validaciones
+      if (!nota) {
+        return res.status(422).json({ error: 'La nota es obligatoria.' });
+      }
+      if (Number.isNaN(kmNuevo) || kmNuevo < kmActual) {
+        return res.status(422).json({
+          error: `El kilometraje no puede ser menor al actual (${kmActual}).`
+        });
+      }
+      if (!['SERVICIO','EN TALLER','MANTENIMIENTO N.C','PENDIENTE BAJA'].includes(new_status)) {
+        return res.status(422).json({ error: 'Estado inválido.' });
+      }
+
+      // 3) Armar SET del UPDATE
+      const sets = ['estado=?','odometer=?'];
+      const args = [new_status, kmNuevo];
+
+      // Si quieres soportar "cambié aceite" solo en transiciones desde EN TALLER:
+      const fromTaller =
+        prev_status === 'EN TALLER' &&
+        ['SERVICIO','MANTENIMIENTO N.C','PENDIENTE BAJA'].includes(new_status);
+
+      let changedOilFlag = !!changed_oil && fromTaller;
+      if (changedOilFlag) {
+        sets.push('oil_last_km=?');
+        args.push(kmNuevo);
+      }
+
+      args.push(id);
+
+      // 4) UPDATE vehículo
+      await pool.query(`UPDATE vehicles SET ${sets.join(', ')} WHERE id=?`, args);
+
+      // 5) Insertar histórico en vehicles_status
+      // a) Versión CON columna changed_oil en la tabla
       await pool.query(
         `INSERT INTO vehicles_status
-         (vehicle_id, prev_status, new_status, odometer, note, changed_by, changed_oil)
+           (vehicle_id, prev_status, new_status, odometer, note, changed_by, changed_oil)
          VALUES (?,?,?,?,?,?,?)`,
         [id, prev_status, new_status, kmNuevo, nota, req.user.uid ?? null, changedOilFlag ? 1 : 0]
       );
-    } catch(e) {
-      // b) MODO SIN MIGRAR (si NO tienes changed_oil):
-      // Descomenta este bloque y comenta el INSERT anterior.
+
+      // b) Si NO tienes columna changed_oil, usa este bloque en lugar del anterior:
       /*
       const notaConTag = (changedOilFlag ? '[ACEITE] ' : '') + nota;
       await pool.query(
-        `INSERT INTO vehicles_status
-         (vehicle_id, prev_status, new_status, odometer, note, changed_by)
-         VALUES (?,?,?,?,?,?)`,
+        \`INSERT INTO vehicles_status
+           (vehicle_id, prev_status, new_status, odometer, note, changed_by)
+         VALUES (?,?,?,?,?,?)\`,
         [id, prev_status, new_status, kmNuevo, notaConTag, req.user.uid ?? null]
       );
       */
-      throw e;
-    }
 
-    res.json({ ok: true });
+      res.json({ ok: true });
+    } catch (e) {
+      console.error('[POST /vehicles/:id/state-change] error', e);
+      res.status(500).json({ error: 'No se pudo guardar el cambio de estado.' });
+    }
   }
 );
-
 
 // GET /vehicles/:id/status-history?limit=50
 router.get(
