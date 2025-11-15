@@ -279,7 +279,7 @@ router.post(
         return res.status(422).json({ error:'Estado inválido. Use: SERVICIO, EN TALLER o MANTENIMIENTO N.C.' });
 
       // category válida (ahora con CM)
-      const CATS = ['VH','MT','CM'];
+      const CATS = ['VH','MT','CM','LP','CP'];
       if (!CATS.includes(String(category)))
         return res.status(422).json({ error:'Categoría inválida. Use: VH, MT o CM.' });
 
@@ -378,7 +378,7 @@ router.put(
       if (tecnoDate !== undefined) { sets.push('tecno_date=?'); args.push(tecnoDate); }
 
       if (category !== undefined) {
-        const CATS = ['VH','MT','CM'];
+        const CATS = ['VH','MT','CM','LP','CP'];
         if (!CATS.includes(String(category)))
           return res.status(422).json({ error:'Categoría inválida. Use: VH, MT o CM.' });
         sets.push('category=?'); args.push(category);

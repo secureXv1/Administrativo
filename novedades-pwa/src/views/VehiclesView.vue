@@ -78,6 +78,8 @@
               <option value="CM">Camioneta</option>
               <option value="VH">Vehículo</option>
               <option value="MT">Moto</option>
+              <option value="LP">Panel</option>
+              <option value="CP">Campero</option>
             </select>
           </div>
 
@@ -369,6 +371,8 @@
             <option value="CM">Camioneta</option>
             <option value="VH">Vehículo</option>
             <option value="MT">Moto</option>
+            <option value="LP">Panel</option>
+            <option value="CP">Campero</option>
           </select>
         </div>
 
@@ -458,6 +462,8 @@
             <option value="CM">Camioneta</option>
             <option value="VH">Vehículo</option>
             <option value="MT">Moto</option>
+            <option value="LP">Panel</option>
+            <option value="CP">Campero</option>
           </select>
         </div>
 
