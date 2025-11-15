@@ -324,20 +324,30 @@
                                     Nota extra: {{ row.agent_ack_extra_note }}
                                   </div>
                                 </div>
+
+                                <!-- Sin aceptación todavía -->
                                 <div v-else>
-                                  <span
-                                    class="inline-flex items-center gap-1 text-xs text-amber-700"
-                                  >
-                                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                                    Pendiente de aceptación
-                                  </span>
+                                  <!-- Solo pendiente si la asignación sigue abierta -->
+                                  <template v-if="!row.end_date">
+                                    <span class="inline-flex items-center gap-1 text-xs text-amber-700">
+                                      <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                      Pendiente de aceptación
+                                    </span>
+                                  </template>
+                                  <!-- Si ya fue cerrada sin aceptar, mostramos estado informativo -->
+                                  <template v-else>
+                                    <span class="inline-flex items-center gap-1 text-xs text-slate-500">
+                                      <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                                      Asignación cerrada sin aceptación
+                                    </span>
+                                  </template>
                                 </div>
 
                                 <!-- Acciones -->
                                 <div class="flex flex-wrap gap-2 mt-1">
-                                  <!-- Botón aceptar (si aún no ha aceptado) -->
+                                  <!-- Botón aceptar SOLO si no ha aceptado y la asignación sigue abierta -->
                                   <button
-                                    v-if="!row.agent_ack_at"
+                                    v-if="!row.agent_ack_at && !row.end_date"
                                     type="button"
                                     class="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
                                     @click="openAccept(row)"
@@ -505,6 +515,7 @@
 
                       <div class="mt-2 text-[11px]">
                         <div class="font-medium text-slate-700 mb-1">Aceptación</div>
+
                         <template v-if="row.agent_ack_at">
                           <div class="text-slate-500">
                             Aceptada el {{ row.agent_ack_at }}
@@ -522,20 +533,33 @@
                             Nota extra: {{ row.agent_ack_extra_note }}
                           </div>
                         </template>
+
                         <template v-else>
-                          <div class="flex items-center gap-1 text-amber-700">
-                            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
-                            Pendiente de aceptación
-                          </div>
-                          <button
-                            type="button"
-                            class="mt-1 px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px]"
-                            @click="openAccept(row)"
-                          >
-                            Aceptar y registrar nota
-                          </button>
+                          <!-- Si la asignación sigue abierta -->
+                          <template v-if="!row.end_date">
+                            <div class="flex items-center gap-1 text-amber-700">
+                              <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                              Pendiente de aceptación
+                            </div>
+                            <button
+                              type="button"
+                              class="mt-1 px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px]"
+                              @click="openAccept(row)"
+                            >
+                              Aceptar y registrar nota
+                            </button>
+                          </template>
+
+                          <!-- Si ya está cerrada sin aceptar -->
+                          <template v-else>
+                            <div class="flex items-center gap-1 text-slate-500">
+                              <span class="w-2 h-2 rounded-full bg-slate-400"></span>
+                              Asignación cerrada sin aceptación
+                            </div>
+                          </template>
                         </template>
                       </div>
+
 
                       <!-- Usos en el período (móvil) -->
                       <div
