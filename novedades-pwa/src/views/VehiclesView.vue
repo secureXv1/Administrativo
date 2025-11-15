@@ -118,7 +118,7 @@
           <thead>
             <tr class="text-left text-slate-600">
               <th class="py-2 pr-3">Placa</th>
-              <th class="py-2 pr-3">Estado</th>
+              <th class="py-2 pr-3 w-[1%] whitespace-nowrap">Estado</th>
               <th class="py-2 pr-3">SOAT</th>
               <th class="py-2 pr-3">Tecno</th>
               <th class="py-2 pr-3">Km</th>
@@ -134,7 +134,7 @@
           <tbody>
             <tr v-for="v in vehicles" :key="v.id" class="border-t">
               <td class="py-2 pr-3 font-medium">{{ v.code }}</td>
-              <td class="py-2 pr-3">
+              <td class="py-2 pr-3 w-[1%] whitespace-nowrap">
                 <span :class="estadoClass(v.estado)">{{ v.estado }}</span>
               </td>
               <td class="py-2 pr-3">
@@ -180,7 +180,14 @@
                 <div class="flex flex-wrap gap-2">
                   <!-- Asignaciones -->
                   <button class="icon-btn" title="Asignaciones" @click="openAssignments(v)">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <svg
+                      class="w-5 h-5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      viewBox="0 0 24 24"
+                      :class="v.agentCode ? 'text-sky-600' : 'text-slate-400'"
+                    >
                       <path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" />
                       <circle cx="9" cy="7" r="4" />
                       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
@@ -290,13 +297,13 @@
     <VehicleAssignmentsModal
       v-if="showAssign"
       :vehicle="currentVehicle"
-      @close="showAssign=false"
+      @close="onCloseAssign"
     />
 
     <VehicleUsesModal
       v-if="showUses"
       :vehicle="currentVehicle"
-      @close="showUses = false"
+      @close="onCloseUses"
       @iniciar-uso="onIniciarUso"
       @end="cerrarUso"
     />
@@ -1014,6 +1021,31 @@ function onControlDone() {
   if (activeTab.value === 'due') loadDue()
   else loadVehicles()
 }
+function onCloseAssign () {
+  // cerrar modal
+  showAssign.value = false
+
+  // 🔄 refrescar listado de vehículos (placa, asignado, hasOpenUse, etc.)
+  loadVehicles()
+
+  // (opcional) si estás en la pestaña de vencimientos, también recárgalos
+  if (activeTab.value === 'due') {
+    loadDue()
+  }
+}
+
+function onCloseUses () {
+  // cerrar modal
+  showUses.value = false
+
+  // 🔄 recargar listado para reflejar usos abiertos/cerrados
+  loadVehicles()
+
+  // si quisieras que la tarjeta de vencimientos tenga siempre kms frescos,
+  // también podrías recargar due:
+  // if (activeTab.value === 'due') loadDue()
+}
+
 function onIniciarUso(vehicle) {
   currentVehicle.value = vehicle
   showUses.value = false

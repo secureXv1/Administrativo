@@ -646,10 +646,9 @@
             v-if="showUsesModal"
             :agent-id="meAgentId"
             :vehicle="selectedVehicle || {}" 
-            @close="showUsesModal=false"
+            @close="onUsesModalClose"
             @created="onUseCreated"
           />
-
           <!-- Modal: seleccionar vehículo para nuevo uso -->
           <div v-if="showVehiclePicker" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">
             <div class="bg-white rounded-2xl p-5 w-[96vw] max-w-lg relative">
@@ -1013,6 +1012,25 @@ async function onUseCreated(payload){
     loadMyOpenUses()
   ])
 }
+function onUsesModalClose () {
+  // cerrar modal
+  showUsesModal.value = false
+
+  // limpiar selección de vehículo para que el siguiente "Nuevo uso"
+  // vuelva a mostrar el selector
+  selectedVehicle.value = null
+
+  // limpiar estado del picker de vehículo
+  pickerSelected.value = null
+  pickerQuery.value = ''
+  pickerResults.value = []
+  pickerVisible.value = false
+
+  // (opcional) limpiar también el buscador viejo si no lo estás usando:
+  vehicleQuery.value = ''
+  vehicleResults.value = []
+  vehicleResultsVisible.value = false
+}
 
 
 const vehicleQuery = ref('')
@@ -1168,16 +1186,28 @@ async function submitAccept(){
 
   accepting.value = true
   try {
-    // ⬇️ NUEVA RUTA /ack
+    // ⬇️ RUTA /accept
     await apiPatch(`/vehicles/assignments/${acceptItem.value.id}/accept`, { note })
+
     showAccept.value = false
-    await loadMyActiveAssignments()
+    acceptItem.value = null
+    acceptNote.value = ''
+
+    // 👈 AQUÍ ES DONDE FALTABA REFRESCAR TODO
+    await Promise.all([
+      loadMyActiveAssignments(), // panel de asignaciones vigentes del agente
+      loadAssignmentsAll()       // tabla grande de "Asignaciones" en la pestaña vehículos
+    ])
   } catch (e) {
-    acceptErr.value = e?.response?.data?.error || e?.message || 'No se pudo aceptar la asignación.'
+    acceptErr.value =
+      e?.response?.data?.error ||
+      e?.message ||
+      'No se pudo aceptar la asignación.'
   } finally {
     accepting.value = false
   }
 }
+
 function isOpenValue(v){
   return (
     v == null ||

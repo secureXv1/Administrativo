@@ -223,47 +223,117 @@ async function loadAssignments() {
 }
 
 async function createAssignment() {
+  // 1) Validar agente
+  const ag = agents.value.find(a => a.code === form.value.agentCode)
+  if (!ag) {
+    alert('Agente no válido')
+    return
+  }
+
+  // 2) Validar odómetro inicial (obligatorio, ≥0)
+  const odoStr = String(form.value.odometer_start ?? '').trim()
+  if (!odoStr) {
+    alert('Debes ingresar el kilometraje inicial.')
+    return
+  }
+
+  const odoNum = Number(odoStr)
+  if (!Number.isFinite(odoNum) || odoNum < 0) {
+    alert('Kilometraje inicial inválido.')
+    return
+  }
+
+  // 3) No menor al último odómetro final registrado (si existe)
+  const lastKm =
+    lastAssignOdoHint.value != null
+      ? Number(lastAssignOdoHint.value)
+      : null
+
+  if (lastKm != null && Number.isFinite(lastKm) && odoNum < lastKm) {
+    alert(
+      `⚠️ El odómetro inicial (${odoNum}) no puede ser menor ` +
+      `al último registrado (${lastKm}).`
+    )
+    return
+  }
+
   submitting.value = true
   try {
-    const ag = agents.value.find(a => a.code === form.value.agentCode)
-    if (!ag) return alert('Agente no válido')
-
-    const odoNum = Number(form.value.odometer_start || 0)
-    const lastKm = Number(lastAssignOdoHint.value || 0)
-    if (odoNum < lastKm) {
-      alert(`⚠️ El odómetro inicial (${odoNum}) no puede ser menor al último registrado (${lastKm}).`)
-      return
-    }
-
     await http.post(`/vehicles/${props.vehicle.id}/assignments`, {
       agent_id: ag.id,
-      odometer_start: odoNum || null,
+      odometer_start: odoNum,
       notes: (form.value.notes || '').trim() || null
     })
 
-    form.value = { agentCode: '', start_date: '', odometer_start: '', notes: '' }
+    // Limpiar formulario
+    form.value = {
+      agentCode: '',
+      start_date: '',
+      odometer_start: '',
+      notes: ''
+    }
+
+    // Recargar asignaciones y sugerencia de odómetro
     await loadAssignments()
+    await loadLastAssignOdometer()
     emit('changed')
   } finally {
     submitting.value = false
   }
 }
 
-
 async function closeAssignment(a) {
-  const odo = window.prompt('Odómetro final (número entero)', a.odometer_end ?? lastAssignOdoHint.value ?? '')
-  if (odo == null) return
-  const odoNum = odo === '' ? null : Number(odo)
-  if (odoNum != null && (!Number.isFinite(odoNum) || odoNum < 0)) {
-    alert('Odómetro inválido'); return
+  // valor por defecto para el prompt:
+  const base =
+    a.odometer_end ??
+    a.odometer_start ??
+    lastAssignOdoHint.value ??
+    ''
+
+  const odoStr = window.prompt(
+    'Odómetro final (obligatorio, número entero)',
+    base === null ? '' : String(base)
+  )
+
+  // Si cancela el prompt, no hacemos nada
+  if (odoStr == null) return
+
+  const odoTrim = String(odoStr).trim()
+  if (!odoTrim) {
+    alert('Debes ingresar el kilometraje final.')
+    return
+  }
+
+  const odoNum = Number(odoTrim)
+  if (!Number.isFinite(odoNum) || odoNum < 0) {
+    alert('Odómetro inválido.')
+    return
+  }
+
+  const startKm =
+    a.odometer_start != null
+      ? Number(a.odometer_start)
+      : null
+
+  if (startKm != null && Number.isFinite(startKm) && odoNum < startKm) {
+    alert(
+      `El odómetro final (${odoNum}) no puede ser menor ` +
+      `al odómetro inicial (${startKm}).`
+    )
+    return
   }
 
   await http.patch(`/vehicles/${props.vehicle.id}/assignments/${a.id}`, {
     odometer_end: odoNum
   })
+
+  // Recarga asignaciones y último odómetro para que la próxima asignación
+  // ya tenga la sugerencia correcta
   await loadAssignments()
+  await loadLastAssignOdometer()
   emit('changed')
 }
+
 
 function verNota(a) {
   if (!a.notes?.trim()) return
