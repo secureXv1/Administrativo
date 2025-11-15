@@ -18,16 +18,46 @@
 
         <!-- BODY con scroll interno -->
         <div class="px-3 sm:px-4 py-4 overflow-y-auto max-h-[90dvh]">
-          <!-- Banner cuando hay un uso vigente -->
+          <!-- Banner: documentos vencidos -->
           <div
-            v-if="hasOpenUse"
+            v-if="hasExpiredDocs"
+            class="mb-4 p-3 rounded-lg bg-rose-50 text-rose-800 text-sm border border-rose-200"
+          >
+            Este vehículo tiene {{ expiredDocsLabel }} vencido.
+            No es posible iniciar nuevos usos ni registrar novedades
+            hasta que se actualicen los documentos.
+          </div>
+
+          <!-- Banner: agente con otro uso -->
+          <div
+            v-if="lockForAgentOpenUse && !hasExpiredDocs"
+            class="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm border border-amber-200 flex items-start gap-2"
+          >
+            <span class="mt-0.5 text-lg leading-none">⚠️</span>
+            <div>
+              <div class="font-semibold mb-0.5">
+                El agente ya tiene un uso vigente
+              </div>
+              <p class="text-xs sm:text-[13px]">
+                Este agente tiene un uso abierto (en este u otro vehículo).
+                Cierra el uso anterior para habilitar nuevos registros.
+              </p>
+            </div>
+          </div>
+
+          <!-- Banner cuando hay un uso vigente (del vehículo) -->
+          <div
+            v-if="hasOpenUse && !hasExpiredDocs"
             class="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm border border-amber-200"
           >
             Ya existe un uso vigente. Cierre el uso actual para habilitar un nuevo registro.
           </div>
 
           <!-- 🔹 Bloque de novedades previas al inicio del uso -->
-          <div v-if="!hasOpenUse" class="border rounded-xl p-3 bg-slate-50 mb-6">
+          <div
+            v-if="!hasOpenUse && !hasExpiredDocs && !lockForAgentOpenUse"
+            class="border rounded-xl p-3 bg-slate-50 mb-6"
+          >
             <h4 class="font-semibold text-slate-700 text-sm mb-3">
               Agregar una nueva novedad
             </h4>
@@ -180,7 +210,7 @@
               <div class="sm:col-span-7">
                 <textarea
                   v-model="newNovedad.description"
-                  rows="2"
+                  rows="1"
                   maxlength="200"
                   class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   :placeholder="descPlaceholder"
@@ -262,7 +292,10 @@
           </div>
 
           <!-- Formulario nuevo uso -->
-          <div v-if="!hasOpenUse" class="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-4">
+          <div
+            v-if="!hasOpenUse && !hasExpiredDocs && !lockForAgentOpenUse"
+            class="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-4"
+          >
             <div class="sm:col-span-2">
               <label class="label">Agente</label>
               <template v-if="isAgentLocked">
@@ -300,10 +333,19 @@
               ></textarea>
             </div>
 
-            <div class="sm:col-span-6 flex justify-end">
+            <div class="sm:col-span-6 flex flex-col items-end gap-2">
               <button class="btn-primary" @click="createUse" :disabled="submitting">
                 {{ submitting ? 'Guardando…' : 'Iniciar uso' }}
               </button>
+
+              <div v-if="uiError" class="w-full sm:w-auto">
+                <div class="px-3 py-2 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 text-xs flex items-start gap-2">
+                  <span class="mt-0.5 text-sm">⚠️</span>
+                  <span class="leading-snug">
+                    {{ uiError }}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -419,6 +461,10 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['close', 'created'])
+const uiError = ref('')
+const lockForAgentOpenUse = computed(() =>
+  /uso.+abierto/i.test(uiError.value || '')
+)
 
 // 🔒 Modo bloqueado si viene agentId
 const agents = ref([])
@@ -738,27 +784,67 @@ const descPlaceholder = computed(() =>
 
 // --- Crear / cerrar usos ---
 async function createUse() {
+  if (hasOpenUse.value) {
+    uiError.value = 'Ya existe un uso abierto para este vehículo. Cierra el uso actual antes de iniciar otro.'
+    return
+  }
+
+  uiError.value = ''
   submitting.value = true
   try {
     let agentIdToUse = null
     if (props.agentId) {
+      // Modo AgentDashboard: bloqueado al agente logueado
       agentIdToUse = Number(props.agentId)
     } else {
+      // Modo superadmin / administración: se elige el agente por código
       const ag = agents.value.find(a => a.code === form.value.agentCode)
-      if (!ag) return alert('Agente no válido')
+      if (!ag) {
+        uiError.value = 'Selecciona un agente válido.'
+        return
+      }
       agentIdToUse = ag.id
     }
 
-    await http.post('/vehicles/uses/start', {
+    const payload = {
       vehicle_id: props.vehicle.id,
       agent_id: agentIdToUse,
       odometer_start: form.value.odometer_start || null,
       notes: (form.value.notes || '').trim() || null
-    })
+    }
+
+    const { data } = await http.post('/vehicles/uses/start', payload)
+
+    // Aviso de cambio de aceite (opcional, amigable)
+    if (data && data.oil_warning) {
+      const { remaining, nextOil } = data.oil_warning
+      const remTxt =
+        remaining != null ? `${remaining} km` : 'pocos kilómetros'
+      uiError.value =
+        `⚠️ Aviso de mantenimiento: al vehículo le faltan ${remTxt} para el próximo cambio de aceite` +
+        (nextOil != null ? ` (programado alrededor de ${nextOil} km).` : '.')
+    } else {
+      uiError.value = ''
+    }
+
+    // Notificamos al padre (AgentDashboard / Admin) que se creó el uso
+    emit('created', data)
 
     form.value = { agentCode: '', odometer_start: '', notes: '' }
-    await loadUses()
-    await loadNovedades()
+    await Promise.all([loadUses(), loadNovedades(), loadLastUseOdometer()])
+  } catch (err) {
+    const raw =
+      err?.response?.data?.error ||
+      err?.response?.data?.detail ||
+      err?.message ||
+      'No se pudo iniciar el uso.'
+
+    if (/uso.+abierto/i.test(raw)) {
+      uiError.value =
+        'Este agente ya tiene un uso abierto (en este u otro vehículo). Debe cerrarlo antes de iniciar uno nuevo.'
+    } else {
+      uiError.value = raw
+    }
   } finally {
     submitting.value = false
   }
@@ -773,6 +859,9 @@ async function closeUse(u) {
   try {
     await http.patch(`/vehicles/uses/${u.id}/end`, { odometer_end: odoNum })
     await loadUses()
+    await loadLastUseOdometer()
+    // Si quisieras notificar al padre:
+    // emit('created', { closed_use_id: u.id })
   } catch (e) {
     console.error(e)
     alert('Error al cerrar el uso.')
@@ -782,6 +871,75 @@ async function closeUse(u) {
 function showNovedades(id) {
   selectedUseId.value = id
 }
+
+// === Documentos vencidos / sin registrar (SOAT / Tecno) ===
+function isEmptyDate(dateValue) {
+  // Solo consideramos "sin registrar" cuando el campo existe y viene vacío
+  if (dateValue === null || dateValue === undefined) return false
+  const s = String(dateValue).trim()
+  return s === ''
+}
+
+function isExpiredDate(dateValue) {
+  // No hay valor -> no lo tratamos como vencido (lo maneja isEmptyDate)
+  if (dateValue === null || dateValue === undefined) return false
+  const s = String(dateValue).trim()
+  if (!s) return false
+
+  const d = new Date(s)
+  // Si la fecha es inválida, NO bloqueamos (no la contamos ni como vencida ni sin registrar)
+  if (Number.isNaN(d.getTime())) return false
+
+  const today = new Date()
+  d.setHours(0, 0, 0, 0)
+  today.setHours(0, 0, 0, 0)
+  return d < today
+}
+
+const soatDate = computed(() =>
+  props.vehicle?.soat_until ??
+  props.vehicle?.soatUntil ??
+  props.vehicle?.soat_expire_at ??
+  props.vehicle?.soatExpireAt ??
+  props.vehicle?.soat ??              // por si está así en el backend
+  null
+)
+
+const tecnoDate = computed(() =>
+  props.vehicle?.tecno_until ??
+  props.vehicle?.tecnoUntil ??
+  props.vehicle?.tecno_expire_at ??
+  props.vehicle?.tecnoExpireAt ??
+  props.vehicle?.tecno ??             // por si está así en el backend
+  null
+)
+
+// Bloqueamos si falta la fecha (campo vacío) o si está vencida
+const hasExpiredDocs = computed(() =>
+  isEmptyDate(soatDate.value) ||
+  isEmptyDate(tecnoDate.value) ||
+  isExpiredDate(soatDate.value) ||
+  isExpiredDate(tecnoDate.value)
+)
+
+const expiredDocsLabel = computed(() => {
+  const parts = []
+
+  if (isEmptyDate(soatDate.value)) {
+    parts.push('SOAT sin registrar')
+  } else if (isExpiredDate(soatDate.value)) {
+    parts.push('SOAT vencido')
+  }
+
+  if (isEmptyDate(tecnoDate.value)) {
+    parts.push('técnico-mecánica sin registrar')
+  } else if (isExpiredDate(tecnoDate.value)) {
+    parts.push('técnico-mecánica vencida')
+  }
+
+  return parts.join(' y ')
+})
+
 
 const lastUseOdoHint = ref(null)
 

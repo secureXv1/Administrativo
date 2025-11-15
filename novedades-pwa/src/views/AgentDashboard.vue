@@ -178,14 +178,36 @@
                     </button>
                   </div>
 
-                  <!-- Botón Nuevo uso -->
+                  <!-- Botón Nuevo uso / aviso de uso abierto -->
                   <div v-if="vehTab==='usos'">
+                    <!-- Si NO hay usos abiertos del agente, mostrar botón -->
                     <button
+                      v-if="!myOpenUses.length"
                       class="px-3 py-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 text-sm"
                       @click="openNewUseFlow"
                     >
                       Nuevo uso
                     </button>
+
+                    <!-- Si YA tiene un uso abierto, ocultar el botón y mostrar aviso suave -->
+                    <div
+                      v-else
+                      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs"
+                    >
+                      <span class="text-lg leading-none">⚠️</span>
+                      <div>
+                        <div class="font-semibold">Ya tienes un uso abierto</div>
+                        <div
+                          v-if="myOpenUses[0]?.vehicle?.code"
+                          class="text-[11px]"
+                        >
+                          Vehículo:
+                          <span class="font-mono">
+                            {{ myOpenUses[0].vehicle.code }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -200,39 +222,372 @@
 
               <!-- TAB: Asignaciones -->
               <div v-show="vehTab==='asignaciones'" class="p-4">
-                <div v-if="loadingAssignmentsAll" class="text-sm text-slate-500">Cargando asignaciones…</div>
-                <div v-else-if="!assignmentsAll.length" class="text-sm text-slate-500">No hay asignaciones registradas.</div>
-                <div v-else class="overflow-x-auto rounded-xl border border-slate-200">
-                  <table class="min-w-full text-sm">
-                    <thead class="bg-slate-800 text-white">
-                      <tr>
-                        <th class="text-left py-2 px-3 font-semibold">Vehículo</th>
-                        <th class="text-left py-2 px-3 font-semibold">Inicio</th>
-                        <th class="text-left py-2 px-3 font-semibold">Fin</th>
-                        <th class="text-left py-2 px-3 font-semibold">Km inicio</th>
-                        <th class="text-left py-2 px-3 font-semibold">Nota</th>
-                        <th class="text-left py-2 px-3 font-semibold">Aceptación</th>
-                      </tr>
-                    </thead>
-                    <tbody class="bg-white">
-                      <tr v-for="row in assignmentsAll" :key="row.id" class="border-t"
-                          :class="!row.end_date ? 'bg-amber-50/60' : ''">
-                        <td class="py-2 px-3 font-medium">{{ row.vehicle.code }}</td>
-                        <td class="py-2 px-3">{{ row.start_date }}</td>
-                        <td class="py-2 px-3">{{ row.end_date || '—' }}</td>
-                        <td class="py-2 px-3">{{ row.odometer_start ?? '—' }}</td>
-                        <td class="py-2 px-3">{{ row.notes || '—' }}</td>
-                        <td class="py-2 px-3">
-                          <div v-if="row.agent_ack_at">
-                            <span class="text-emerald-700 text-xs font-medium"> {{ row.agent_ack_note || '—' }} </span>
+                <div v-if="loadingAssignmentsAll" class="text-sm text-slate-500">
+                  Cargando asignaciones…
+                </div>
+
+                <div v-else-if="!assignmentsAll.length" class="text-sm text-slate-500">
+                  No hay asignaciones registradas.
+                </div>
+
+                <div v-else class="rounded-xl border border-slate-200 bg-white">
+                  <!-- 🖥️ Desktop: tabla clásica -->
+                  <div class="overflow-x-auto rounded-xl hidden md:block">
+                    <table class="min-w-full text-xs md:text-sm">
+                      <thead class="bg-slate-800 text-white">
+                        <tr>
+                          <th class="text-left py-2 px-3 font-semibold">Vehículo</th>
+                          <th class="text-left py-2 px-3 font-semibold">Inicio</th>
+                          <th class="text-left py-2 px-3 font-semibold">Fin</th>
+                          <th class="text-left py-2 px-3 font-semibold">Km inicio</th>
+                          <!-- 🔹 Nueva columna -->
+                          <th class="text-left py-2 px-3 font-semibold hidden lg:table-cell">
+                            SOAT / Tecno / Aceite
+                          </th>
+                          <th class="text-left py-2 px-3 font-semibold">Nota</th>
+                          <th class="text-left py-2 px-3 font-semibold">Aceptación</th>
+                          <th class="text-left py-2 px-3 font-semibold">Usos en el período</th>
+                        </tr>
+                      </thead>
+                      <tbody class="bg-white">
+                        <!-- Bloque por asignación: fila principal + fila desplegable -->
+                        <template v-for="row in assignmentsAll" :key="row.id">
+                          <!-- FILA PRINCIPAL -->
+                          <tr
+                            class="border-t transition"
+                            :class="!row.end_date
+                              ? 'bg-amber-50/80 border-l-4 border-l-amber-500'   /* ASIGNACIÓN VIGENTE */
+                              : 'bg-slate-50/40 text-slate-400'                   /* CERRADA (apagadita) */
+                            "
+                          >
+                            <td class="py-2 px-3 font-medium">
+                              {{ row.vehicle.code }}
+                            </td>
+                            <td class="py-2 px-3">{{ row.start_date }}</td>
+                            <td class="py-2 px-3">{{ row.end_date || '—' }}</td>
+                            <td class="py-2 px-3">{{ row.odometer_start ?? '—' }}</td>
+
+                            <!-- 🔹 Celda SOAT/Tecno/Aceite (solo >= lg) -->
+                            <td class="py-2 px-3 align-top hidden lg:table-cell">
+                              <div class="space-y-1 text-[11px] text-slate-600">
+
+                                <!-- SOAT -->
+                                <div>
+                                  SOAT:
+                                  <span
+                                    :class="expiryColor(daysUntil(row.vehicle.soat_until))"
+                                  >
+                                    {{ formatDateShort(row.vehicle.soat_until) }}
+                                  </span>
+                                </div>
+
+                                <!-- Tecno -->
+                                <div>
+                                  Tecno:
+                                  <span
+                                    :class="expiryColor(daysUntil(row.vehicle.tecno_until))"
+                                  >
+                                    {{ formatDateShort(row.vehicle.tecno_until) }}
+                                  </span>
+                                </div>
+
+                                <!-- Aceite -->
+                                <div>
+                                  <span class="font-medium">{{ formatOilInfo(row.vehicle) }}</span>
+                                </div>
+
+                              </div>
+                            </td>
+
+
+                            <td class="py-2 px-3">{{ row.notes || '—' }}</td>
+
+                            <!-- Columna Aceptación -->
+                            <td class="py-2 px-3">
+                              <div class="space-y-1">
+                                <!-- Estado actual -->
+                                <div v-if="row.agent_ack_at">
+                                  <div class="text-[11px] text-slate-500">
+                                    Aceptada
+                                    <span v-if="row.agent_ack_at">el {{ row.agent_ack_at }}</span>
+                                  </div>
+                                  <div
+                                    v-if="row.agent_ack_note"
+                                    class="text-xs text-emerald-700"
+                                  >
+                                    Nota: {{ row.agent_ack_note }}
+                                  </div>
+                                  <div
+                                    v-if="row.agent_ack_extra_note"
+                                    class="text-xs text-slate-600"
+                                  >
+                                    Nota extra: {{ row.agent_ack_extra_note }}
+                                  </div>
+                                </div>
+                                <div v-else>
+                                  <span
+                                    class="inline-flex items-center gap-1 text-xs text-amber-700"
+                                  >
+                                    <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                    Pendiente de aceptación
+                                  </span>
+                                </div>
+
+                                <!-- Acciones -->
+                                <div class="flex flex-wrap gap-2 mt-1">
+                                  <!-- Botón aceptar (si aún no ha aceptado) -->
+                                  <button
+                                    v-if="!row.agent_ack_at"
+                                    type="button"
+                                    class="px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                                    @click="openAccept(row)"
+                                  >
+                                    Aceptar y registrar nota
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+
+                            <!-- Columna botón para ver usos -->
+                            <td class="py-2 px-3">
+                              <button
+                                type="button"
+                                class="px-2 py-1 rounded-md border border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
+                                @click="toggleAssignmentUses(row)"
+                              >
+                                {{
+                                  expandedAssignmentId === row.id
+                                    ? 'Ocultar usos'
+                                    : 'Ver usos'
+                                }}
+                              </button>
+                            </td>
+                          </tr>
+
+                          <!-- FILA DESPLEGABLE: usos dentro del período de la asignación -->
+                          <tr v-if="expandedAssignmentId === row.id">
+                            <td colspan="8" class="bg-slate-50 px-3 py-3">
+                              <div class="text-xs text-slate-500 mb-2">
+                                Usos del vehículo
+                                <span class="font-semibold">{{ row.vehicle.code }}</span>
+                                en el período
+                                <span class="font-semibold">{{ row.start_date }}</span>
+                                →
+                                <span class="font-semibold">{{ row.end_date || 'actualidad' }}</span>
+                              </div>
+
+                              <div v-if="!usesForAssignment(row).length" class="text-xs text-slate-500">
+                                No hay usos registrados en este período.
+                              </div>
+
+                              <div
+                                v-else
+                                class="overflow-x-auto rounded-lg border border-slate-200 bg-white"
+                              >
+                                <table class="min-w-full text-xs">
+                                  <thead class="bg-slate-100 text-slate-700">
+                                    <tr>
+                                      <th class="text-left py-1.5 px-2 font-semibold">
+                                        Inicio
+                                      </th>
+                                      <th class="text-left py-1.5 px-2 font-semibold">
+                                        Fin
+                                      </th>
+                                      <th class="text-left py-1.5 px-2 font-semibold">
+                                        Km salida
+                                      </th>
+                                      <th class="text-left py-1.5 px-2 font-semibold">
+                                        Km entrada
+                                      </th>
+                                      <th class="text-left py-1.5 px-2 font-semibold">
+                                        Funcionario
+                                      </th>
+                                      <th class="text-left py-1.5 px-2 font-semibold">
+                                        Notas
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    <tr
+                                      v-for="u in usesForAssignment(row)"
+                                      :key="u.id"
+                                      class="border-t transition"
+                                      :class="!u.ended_at
+                                        ? 'bg-emerald-50/80 border-l-4 border-l-emerald-500'
+                                        : 'bg-slate-50/40 text-slate-400'
+                                      "
+                                    >
+
+                                      <td class="py-1.5 px-2">{{ u.started_at || '—' }}</td>
+                                      <td class="py-1.5 px-2">{{ u.ended_at || '—' }}</td>
+                                      <td class="py-1.5 px-2">
+                                        {{ u.odometer_start ?? '—' }}
+                                      </td>
+                                      <td class="py-1.5 px-2">
+                                        {{ u.odometer_end ?? '—' }}
+                                      </td>
+                                      <td class="py-1.5 px-2">
+                                        {{ u.agent?.nickname || u.agent?.code || '—' }}
+                                      </td>
+                                      <td class="py-1.5 px-2">
+                                        {{ (u.notes || '').trim() || '—' }}
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
+                            </td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <!-- 📱 Móvil: tarjetas -->
+                  <div class="md:hidden p-2 space-y-3">
+                    <div
+                      v-for="row in assignmentsAll"
+                      :key="'m-'+row.id"
+                      class="rounded-xl border p-3 shadow-sm transition"
+                      :class="!row.end_date
+                        ? 'bg-amber-50/80 border-amber-500'        /* VIGENTE */
+                        : 'bg-slate-50/60 border-slate-300 text-slate-500' /* CERRADA */
+                      "
+                    >
+                      <div class="flex items-center justify-between gap-2">
+                        <div>
+                          <div class="text-sm font-semibold text-slate-900">
+                            Vehículo {{ row.vehicle.code }}
                           </div>
-                          <div v-else>
-                            <span class="text-amber-600 text-xs font-medium">Pendiente</span>
+                          <div class="text-[11px] text-slate-500">
+                            {{ row.start_date }} → {{ row.end_date || 'actualidad' }}
                           </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                        </div>
+                        <button
+                          type="button"
+                          class="px-2 py-1 rounded-md border border-slate-300 text-[11px] text-slate-700 hover:bg-slate-50"
+                          @click="toggleAssignmentUses(row)"
+                        >
+                          {{
+                            expandedAssignmentId === row.id ? 'Ocultar usos' : 'Ver usos'
+                          }}
+                        </button>
+                      </div>
+
+                      <div class="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-600">
+                        <!-- SOAT -->
+                        <div>
+                          <div class="font-medium text-slate-700">SOAT</div>
+                          <div :class="expiryColor(daysUntil(row.vehicle.soat_until))">
+                            {{ formatDateShort(row.vehicle.soat_until) }}
+                          </div>
+                        </div>
+                        <!-- Tecno -->
+                        <div>
+                          <div class="font-medium text-slate-700">Tecno</div>
+                          <div :class="expiryColor(daysUntil(row.vehicle.tecno_until))">
+                            {{ formatDateShort(row.vehicle.tecno_until) }}
+                          </div>
+                        </div>
+
+                        <!-- Aceite -->
+                        <div class="col-span-2">
+                          <div class="font-medium text-slate-700">Aceite</div>
+                          <div>{{ formatOilInfo(row.vehicle) }}</div>
+                        </div>
+                      </div>
+
+
+                      <div class="mt-2 text-[11px]">
+                        <div class="font-medium text-slate-700">Nota de asignación</div>
+                        <div>{{ row.notes || '—' }}</div>
+                      </div>
+
+                      <div class="mt-2 text-[11px]">
+                        <div class="font-medium text-slate-700 mb-1">Aceptación</div>
+                        <template v-if="row.agent_ack_at">
+                          <div class="text-slate-500">
+                            Aceptada el {{ row.agent_ack_at }}
+                          </div>
+                          <div
+                            v-if="row.agent_ack_note"
+                            class="text-emerald-700 mt-1"
+                          >
+                            Nota: {{ row.agent_ack_note }}
+                          </div>
+                          <div
+                            v-if="row.agent_ack_extra_note"
+                            class="text-slate-600 mt-1"
+                          >
+                            Nota extra: {{ row.agent_ack_extra_note }}
+                          </div>
+                        </template>
+                        <template v-else>
+                          <div class="flex items-center gap-1 text-amber-700">
+                            <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                            Pendiente de aceptación
+                          </div>
+                          <button
+                            type="button"
+                            class="mt-1 px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[11px]"
+                            @click="openAccept(row)"
+                          >
+                            Aceptar y registrar nota
+                          </button>
+                        </template>
+                      </div>
+
+                      <!-- Usos en el período (móvil) -->
+                      <div
+                        v-if="expandedAssignmentId === row.id"
+                        class="mt-3 border-t border-slate-200 pt-2"
+                      >
+                        <div class="text-[11px] text-slate-500 mb-1">
+                          Usos del vehículo en el período:
+                        </div>
+
+                        <div
+                          v-if="!usesForAssignment(row).length"
+                          class="text-[11px] text-slate-500"
+                        >
+                          No hay usos registrados en este período.
+                        </div>
+
+                        <div
+                          v-else
+                          class="space-y-2 max-h-64 overflow-y-auto pr-1"
+                        >
+                          <div
+                            v-for="u in usesForAssignment(row)"
+                            :key="u.id"
+                            class="rounded-lg border p-2 text-[11px] transition"
+                            :class="!u.ended_at
+                              ? 'bg-emerald-50/80 border-emerald-500'
+                              : 'bg-slate-50/60 border-slate-300 text-slate-500'
+                            "
+                          >
+                            <div class="flex justify-between gap-2">
+                              <div class="font-medium text-slate-800">
+                                {{ u.started_at || '—' }}
+                                <span class="text-slate-500">→ {{ u.ended_at || '—' }}</span>
+                              </div>
+                            </div>
+                            <div class="mt-1 grid grid-cols-2 gap-1 text-slate-600">
+                              <div>Km salida: {{ u.odometer_start ?? '—' }}</div>
+                              <div>Km entrada: {{ u.odometer_end ?? '—' }}</div>
+                              <div class="col-span-2">
+                                Agente:  {{ u.agent?.nickname || u.agent?.code || '—' }}
+                              </div>
+                            </div>
+                            <div class="mt-1 text-slate-700">
+                              {{ (u.notes || '').trim() || '—' }}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <!-- /móvil -->
                 </div>
               </div>
 
@@ -254,8 +609,15 @@
                       </tr>
                     </thead>
                     <tbody class="bg-white">
-                      <tr v-for="u in usesAll" :key="u.id" class="border-t"
-                          :class="!u.ended_at ? 'bg-amber-50/60' : ''">
+                      <tr
+                        v-for="u in usesAll"
+                        :key="u.id"
+                        class="border-t transition"
+                        :class="!u.ended_at
+                          ? 'bg-emerald-50/80 border-l-4 border-l-emerald-500'  /* USO ABIERTO */
+                          : 'bg-slate-50/40 text-slate-400'                      /* USO CERRADO */
+                        "
+                      >
                         <td class="py-2 px-3 font-medium">{{ u.vehicle?.code || '—' }}</td>
                         <td class="py-2 px-3">{{ u.started_at }}</td>
                         <td class="py-2 px-3">{{ u.ended_at || '—' }}</td>
@@ -456,7 +818,7 @@
       </div>
     </div>
   </div>
-  <!-- Modal Nota Extra -->
+  <!-- Modal Nota Extra >
   <div v-if="showAckExtra" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">
     <div class="bg-white rounded-2xl p-6 w-[96vw] max-w-md relative">
       <button class="absolute top-2 right-2 text-xl text-slate-500" @click="closeAckExtra">&times;</button>
@@ -479,7 +841,7 @@
         </button>
       </div>
     </div>
-  </div>
+  </div-->
 </template>
 
 <script setup>
@@ -507,6 +869,23 @@ const apiGet    = (p,o)   => api.get(p,o)
 const apiPost   = (p,b,o) => api.post(p,b,o)
 const apiPatch  = (p,b,o) => api.patch(p,b,o)
 const apiDelete = (p,o)   => api.delete(p,o)
+
+function daysUntil(dateStr) {
+  if (!dateStr) return null
+  const today = new Date()
+  const target = new Date(dateStr)
+  const diff = Math.ceil((target - today) / (1000 * 60 * 60 * 24))
+  return diff
+}
+
+function expiryColor(diff) {
+  if (diff === null) return 'text-slate-400'
+
+  if (diff <= 0) return 'text-red-700 font-semibold'      // vencido
+  if (diff <= 10) return 'text-red-600 font-semibold'      // muy cerca
+  if (diff <= 30) return 'text-orange-500 font-semibold'   // pronto
+  return 'text-emerald-600 font-semibold'                  // ok
+}
 
 // Cliente dedicado a /login
 const httpLogin = axios.create({ baseURL: '/login', timeout: 20000 })
@@ -611,10 +990,30 @@ const loadingUsesAll = ref(false)
 // Modal de nuevo uso
 const showUsesModal = ref(false)
 function openNewUseModal(){ showUsesModal.value = true }
-async function onUseCreated(){
+async function onUseCreated(payload){
   showUsesModal.value = false
-  await Promise.all([ loadUsesAll(), loadMyOpenUses() ])
+
+  // 👇 Si el backend envía advertencia de aceite, la mostramos
+  if (payload && payload.oil_warning) {
+    const { remaining, nextOil } = payload.oil_warning
+    const remTxt =
+      remaining != null
+        ? `${remaining} km`
+        : 'pocos kilómetros'
+
+    alert(
+      `⚠️ Aviso de mantenimiento\n\n` +
+      `Al vehículo le faltan ${remTxt} para el próximo cambio de aceite` +
+      (nextOil != null ? ` (programado alrededor de ${nextOil} km).` : '.')
+    )
+  }
+
+  await Promise.all([
+    loadUsesAll(),
+    loadMyOpenUses()
+  ])
 }
+
 
 const vehicleQuery = ref('')
 const vehicleResults = ref([])
@@ -657,6 +1056,7 @@ const pickerResults = ref([])
 const pickerVisible = ref(false)
 const pickerSelected = ref(null)
 const pickerInputRef = ref(null)
+const vehiclesById = ref({})
 
 function openNewUseFlow(){
   // si ya hay uno seleccionado, abre directo el modal de uso
@@ -691,6 +1091,31 @@ async function pickerSearch(){
     pickerResults.value = Array.isArray(data?.items) ? data.items : []
     pickerVisible.value = true
   }, 220)
+}
+
+async function ensureVehiclesCatalog () {
+  // si ya los tenemos cargados, no vuelvas a pedirlos
+  if (Object.keys(vehiclesById.value).length) return
+
+  try {
+    const { data } = await apiGet('/vehicles', { params: { pageSize: 1000 } })
+    const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    const map = {}
+    for (const v of items) {
+      if (v && v.id != null) {
+        map[String(v.id)] = v
+      }
+    }
+    vehiclesById.value = map
+    console.debug('[AgentDashboard] vehicles catalog loaded', Object.keys(map).length)
+  } catch (e) {
+    console.warn('[AgentDashboard] no se pudo cargar catálogo de vehículos', e)
+  }
+}
+
+function getVehicleFromCatalog (id) {
+  if (!id) return null
+  return vehiclesById.value[String(id)] || null
 }
 
 function pickerHideSoon(){ setTimeout(()=> pickerVisible.value = false, 150) }
@@ -771,7 +1196,83 @@ function sortOpenFirstThenStartDesc(a, b){
   return bStart.localeCompare(aStart)
 }
 
-function normalizeAssignmentRow(a){
+function normalizeAssignmentRow (a) {
+  const rawVehId =
+    a.vehicle?.id ??
+    a.vehicle_id ??
+    a.vehicleId ??
+    null
+
+  // Vehículo que viene en la asignación (si viene)
+  const vehFromAssignment = a.vehicle || {}
+
+  // Vehículo enriquecido desde el catálogo global
+  const vehFromCatalog = rawVehId ? getVehicleFromCatalog(rawVehId) || {} : {}
+
+  // Mezclamos: catálogo → asignación
+  const veh = {
+    ...vehFromCatalog,
+    ...vehFromAssignment
+  }
+
+  const vehId = rawVehId ?? veh.id ?? null
+  const vehCode =
+    veh.code ??
+    a.vehicle_code ??
+    a.vehicleCode ??
+    a.code ??
+    ''
+
+  // 🔍 Intentamos sacar SOAT / TECNO tanto del vehículo como de la asignación
+  const soatUntil =
+    // desde vehículo (varias variantes típicas)
+    veh.soat_until ??
+    veh.soatUntil ??
+    veh.soat_expire_at ??
+    veh.soatExpireAt ??
+    veh.soat_vencimiento ??
+    veh.soatVencimiento ??
+    veh.soat_date ??
+    veh.soatDate ??
+    // desde la propia asignación (por si el backend las “flatea”)
+    a.soat_until ??
+    a.soatUntil ??
+    a.vehicle_soat_until ??
+    a.vehicleSoatUntil ??
+    a.soat_expire_at ??
+    a.soatExpireAt ??
+    a.soat_vencimiento ??
+    a.soatVencimiento ??
+    a.soat_date ??
+    a.soatDate ??
+    null
+
+  const tecnoUntil =
+    veh.tecno_until ??
+    veh.tecnoUntil ??
+    veh.tecno_expire_at ??
+    veh.tecnoExpireAt ??
+    veh.tecno_vencimiento ??
+    veh.tecnoVencimiento ??
+    veh.tecno_date ??
+    veh.tecnoDate ??
+    a.tecno_until ??
+    a.tecnoUntil ??
+    a.vehicle_tecno_until ??
+    a.vehicleTecnoUntil ??
+    a.tecno_expire_at ??
+    a.tecnoExpireAt ??
+    a.tecno_vencimiento ??
+    a.tecnoVencimiento ??
+    a.tecno_date ??
+    a.tecnoDate ??
+    null
+
+  // Opcional: descomenta esto un momento para ver en consola qué está llegando:
+  // console.log('[ASSIGN RAW]', a)
+  // console.log('[VEH FROM CATALOG]', vehFromCatalog)
+  // console.log('[NORMALIZED soatUntil, tecnoUntil]', soatUntil, tecnoUntil)
+
   return {
     id: a.id,
     start_date: a.start_date ?? a.startDate ?? '',
@@ -780,14 +1281,88 @@ function normalizeAssignmentRow(a){
     notes: a.notes ?? a.note ?? '',
     agent_ack_at: a.accept_at ?? a.agent_ack_at ?? null,
     agent_ack_note: a.accept_note ?? a.agent_ack_note ?? null,
+
     vehicle: {
-      id: a.vehicle?.id ?? a.vehicle_id ?? a.vehicleId ?? null,
-      code: a.vehicle?.code ?? a.vehicle_code ?? a.vehicleCode ?? a.code ?? ''
+      id: vehId,
+      code: vehCode,
+
+      // 🔹 SOAT / Tecno ya con todos los fallbacks
+      soat_until: soatUntil,
+      tecno_until: tecnoUntil,
+
+      // 🔹 Odómetro actual del vehículo (no el de inicio de la asignación)
+      odometer:
+        veh.odometer ??
+        veh.odometro ??
+        a.vehicle_odometer ??
+        a.vehicleOdometer ??
+        null,
+
+      // 🔹 Aceite (último / intervalo / próximo)
+      oil_next_km:
+        veh.oil_next_km ??
+        veh.oilNextKm ??
+        a.oil_next_km ??
+        a.oilNextKm ??
+        null,
+
+      oil_last_km:
+        veh.oil_last_km ??
+        veh.oilLastKm ??
+        a.oil_last_km ??
+        a.oilLastKm ??
+        null,
+
+      oil_interval_km:
+        veh.oil_interval_km ??
+        veh.oilIntervalKm ??
+        a.oil_interval_km ??
+        a.oilIntervalKm ??
+        null
     }
   }
 }
 
-function normalizeUseRow(u){
+
+
+function normalizeUseRow (u) {
+  // Vehículo
+  const vId =
+    u.vehicle?.id ??
+    u.vehicle_id ??
+    u.vehicleId ??
+    null
+
+  const vCode =
+    u.vehicle?.code ??
+    u.vehicle_code ??
+    u.vehicleCode ??
+    ''
+
+  // Agente (soportando varios formatos de backend)
+  const aId =
+    u.agent?.id ??
+    u.agent_id ??
+    u.agentId ??
+    null
+
+  const aCode =
+    u.agent?.code ??
+    u.agent_code ??
+    u.agentCode ??
+    u.agent?.username ??
+    null
+
+  const aNickname =
+    u.agent?.nickname ??
+    u.agent_nickname ??
+    null
+
+  const aName =
+    u.agent?.name ??
+    u.agent_name ??
+    null
+
   return {
     id: u.id,
     started_at: u.started_at ?? u.startedAt ?? u.start_date ?? '',
@@ -796,8 +1371,14 @@ function normalizeUseRow(u){
     odometer_end: u.odometer_end ?? u.odometerEnd ?? null,
     notes: u.notes ?? u.note ?? '',
     vehicle: {
-      id: u.vehicle?.id ?? u.vehicle_id ?? u.vehicleId ?? null,
-      code: u.vehicle?.code ?? u.vehicle_code ?? u.vehicleCode ?? ''
+      id: vId,
+      code: vCode
+    },
+    agent: {
+      id: aId,
+      code: aCode,
+      nickname: aNickname,
+      name: aName
     }
   }
 }
@@ -807,36 +1388,142 @@ async function loadAssignmentsAll () {
   try {
     await ensureAgentId()
     const agentIdVal = meAgentId.value
-    if (!agentIdVal) { assignmentsAll.value = []; return }
-
-    // Preferible: endpoint directo de asignaciones del agente (todas)
-    let list = []
-    try {
-      const { data } = await apiGet(`/agents/${agentIdVal}/assignments`, { params: { pageSize: 1000 } })
-      list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    } catch {
-      // Fallback: recorrer vehículos asignados
-      const { data: vehsRes } = await apiGet('/vehicles', { params: { pageSize: 500, onlyAssigned: 1 } })
-      const vehicles = Array.isArray(vehsRes?.items) ? vehsRes.items : []
-      const acc = []
-      await Promise.all(vehicles.map(async v => {
-        try {
-          const { data: asgRes } = await apiGet(`/vehicles/${v.id}/assignments`, { params: { pageSize: 500 } })
-          const items = Array.isArray(asgRes?.items) ? asgRes.items : (Array.isArray(asgRes) ? asgRes : [])
-          for (const a of items){
-            const aAgent = a.agent_id ?? a.agentId ?? a.agent?.id
-            if (String(aAgent) === String(agentIdVal)) acc.push({ ...a, vehicle: { id: v.id, code: v.code } })
-          }
-        } catch {}
-      }))
-      list = acc
+    if (!agentIdVal) {
+      assignmentsAll.value = []
+      return
     }
 
-    assignmentsAll.value = list.map(normalizeAssignmentRow).sort(sortOpenFirstThenStartDesc)
+    // 👇 Aseguramos catálogo de vehículos (para soat/tecno/aceite)
+    await ensureVehiclesCatalog()
+
+    // Usamos el catálogo ya cargado en vez de llamar otra vez a /vehicles
+    const vehicles = Object.values(vehiclesById.value || {})
+    const acc = []
+
+    await Promise.all(
+      vehicles.map(async (v) => {
+        try {
+          const { data: asgRes } = await apiGet(`/vehicles/${v.id}/assignments`, {
+            params: { pageSize: 500 }
+          })
+          const items = Array.isArray(asgRes?.items)
+            ? asgRes.items
+            : (Array.isArray(asgRes) ? asgRes : [])
+
+          for (const a of items) {
+            const aAgent = a.agent_id ?? a.agentId ?? a.agent?.id
+            if (String(aAgent) === String(agentIdVal)) {
+              // Mezclamos la info del vehículo dentro de la asignación
+              acc.push({
+                ...a,
+                vehicle: {
+                  ...(a.vehicle || {}),
+                  id: v.id,
+                  code: v.code
+                }
+              })
+            }
+          }
+        } catch (e) {
+          console.warn(
+            '[loadAssignmentsAll] error cargando asignaciones de vehículo',
+            v.id,
+            e
+          )
+        }
+      })
+    )
+
+    assignmentsAll.value = acc
+      .map(normalizeAssignmentRow)
+      .sort(sortOpenFirstThenStartDesc)
   } finally {
     loadingAssignmentsAll.value = false
   }
 }
+
+// Asignación expandida (para mostrar/ocultar usos)
+const expandedAssignmentId = ref(null)
+// mapa: { [assignmentId]: [usos normalizados] }
+const assignUsesMap = ref({})
+
+function toggleAssignmentUses(row) {
+  if (expandedAssignmentId.value === row.id) {
+    // si ya está abierta, la cerramos
+    expandedAssignmentId.value = null
+    return
+  }
+  // abrimos esta
+  expandedAssignmentId.value = row.id
+
+  // si aún no hemos cargado los usos de esta asignación, los pedimos
+  if (!assignUsesMap.value[row.id]) {
+    loadUsesForAssignment(row)
+  }
+}
+
+// Parseo seguro de fechas
+function parseDateSafe(v) {
+  if (!v) return null
+  const d = new Date(v)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+// Carga los usos de un vehículo y filtra por el período de la asignación
+async function loadUsesForAssignment (row) {
+  const vehId = row?.vehicle?.id
+  if (!vehId) return
+
+  // 1) Pedimos TODOS los usos de ese vehículo (sin filtrar por agente)
+  const { data } = await apiGet('/vehicles/uses', {
+    params: {
+      vehicle_id: vehId,
+      pageSize: 2000
+    }
+  })
+
+  const rawItems = data?.items ?? data ?? []
+
+  // 2) Rango de la asignación (solo fecha, sin hora)
+  const startStr = (row.start_date || '').slice(0, 10)
+  const endRaw   = row.end_date || null
+  const endStr   = endRaw ? endRaw.slice(0, 10) : null
+
+  // 3) Filtramos en el front: usos cuyo started_at caiga dentro del rango
+  const filtered = rawItems.filter(u => {
+    const d = (
+      u.started_at ||
+      u.startedAt ||
+      u.start_date ||
+      u.startDate ||
+      u.start ||
+      u.created_at ||
+      ''
+    ).slice(0, 10)
+
+    if (!d) return false
+    if (startStr && d < startStr) return false
+    if (endStr && d > endStr) return false
+    return true
+  })
+
+  // 4) Guardamos en el mapa, normalizados
+  assignUsesMap.value = {
+    ...assignUsesMap.value,
+    [row.id]: filtered
+      .map(normalizeUseRow)
+      .sort(sortOpenFirstThenStartDesc)
+  }
+}
+
+/**
+ * Devuelve los usos de usesAll que se cruzan con el período de una asignación
+ * Criterio: mismo vehículo y el intervalo de uso intersecta el intervalo de la asignación.
+ */
+function usesForAssignment (row) {
+  return assignUsesMap.value[row.id] || []
+}
+
 
 async function loadUsesAll () {
   loadingUsesAll.value = true
@@ -947,20 +1634,27 @@ async function loadOpenUseNovedades(){
 async function loadMyActiveAssignments () {
   loadingAssignments.value = true
   try {
-    // 👇 Asegura agentId aquí
     await ensureAgentId()
     const agentIdVal = meAgentId.value
-    if (!agentIdVal) { myAssignments.value = []; return }
+    if (!agentIdVal) {
+      myAssignments.value = []
+      return
+    }
 
     const normalizeAssignment = (a, vehicleData = null) => {
-      const endRaw = a.end_date ?? a.endDate ?? a.ended_at ?? a.endedAt ?? a.end ?? null
-      const isOpen = (
+      const endRaw =
+        a.end_date ?? a.endDate ?? a.ended_at ?? a.endedAt ?? a.end ?? null
+
+      const isOpen =
         endRaw == null ||
         endRaw === '' ||
         endRaw === false ||
         endRaw === 0 ||
-        (typeof endRaw === 'string' && (endRaw.trim()==='' || endRaw.trim().toLowerCase()==='null' || endRaw.startsWith('0000-00-00')))
-      )
+        (typeof endRaw === 'string' &&
+          (endRaw.trim() === '' ||
+            endRaw.trim().toLowerCase() === 'null' ||
+            endRaw.startsWith('0000-00-00')))
+
       return {
         id: a.id,
         start_date: a.start_date ?? a.startDate ?? '',
@@ -970,45 +1664,58 @@ async function loadMyActiveAssignments () {
         agent_ack_note: a.accept_note ?? a.agent_ack_note ?? null,
         agent_ack_extra_note: a.agent_ack_extra_note ?? null,
         agent_ack_extra_at: a.agent_ack_extra_at ?? null,
-        vehicle: vehicleData || { id: a.vehicle_id ?? a.vehicleId ?? null, code: a.vehicle_code ?? a.code ?? '' },
+        vehicle:
+          vehicleData || {
+            id: a.vehicle_id ?? a.vehicleId ?? null,
+            code: a.vehicle_code ?? a.code ?? ''
+          },
         isOpen
       }
     }
 
-    // Opción A: /agents/:id/assignments
-    try {
-      const { data } = await apiGet(`/agents/${agentIdVal}/assignments`, { params: { active: 1, pageSize: 500 } })
-      const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-      if (list.length) {
-        myAssignments.value = list.map(a => normalizeAssignment(a, a.vehicle)).filter(a => a.isOpen)
-          .sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''))
-        return
-      }
-    } catch {}
+    // 🔹 DIRECTO a vehículos → /vehicles/:id/assignments (sin /agents/:id/assignments)
+    const { data: vehsRes } = await apiGet('/vehicles', {
+      params: { pageSize: 500, onlyAssigned: 1 }
+    })
+    const vehicles = Array.isArray(vehsRes?.items)
+      ? vehsRes.items
+      : (Array.isArray(vehsRes) ? vehsRes : [])
 
-    // Opción B: recorrer vehículos asignados (acotado)
-    const { data: vehsRes } = await apiGet('/vehicles', { params: { pageSize: 500, onlyAssigned: 1 } })
-    const vehicles = Array.isArray(vehsRes?.items) ? vehsRes.items : []
     const out = []
-    await Promise.all(vehicles.map(async v => {
-      try {
-        const { data: asgRes } = await apiGet(`/vehicles/${v.id}/assignments`, { params: { pageSize: 200 } })
-        const list = Array.isArray(asgRes?.items) ? asgRes.items : (Array.isArray(asgRes) ? asgRes : [])
-        for (const a of list) {
-          const aAgent = a.agent_id ?? a.agentId ?? a.agent?.id
-          if (String(aAgent) === String(agentIdVal)) {
-            const item = normalizeAssignment(a, { id: v.id, code: v.code })
-            if (item.isOpen) out.push(item)
+
+    await Promise.all(
+      vehicles.map(async (v) => {
+        try {
+          const { data: asgRes } = await apiGet(`/vehicles/${v.id}/assignments`, {
+            params: { pageSize: 200 }
+          })
+          const list = Array.isArray(asgRes?.items)
+            ? asgRes.items
+            : (Array.isArray(asgRes) ? asgRes : [])
+
+          for (const a of list) {
+            const aAgent = a.agent_id ?? a.agentId ?? a.agent?.id
+            if (String(aAgent) === String(agentIdVal)) {
+              const item = normalizeAssignment(a, { id: v.id, code: v.code })
+              if (item.isOpen) out.push(item)
+            }
           }
+        } catch (e) {
+          // opcional: console.warn('Error cargando asignaciones activas de vehículo', v.id, e)
         }
-      } catch {}
-    }))
-    out.sort((a,b) => (b.start_date || '').localeCompare(a.start_date || ''))
+      })
+    )
+
+    out.sort((a, b) =>
+      (b.start_date || '').localeCompare(a.start_date || '')
+    )
+
     myAssignments.value = out
   } finally {
     loadingAssignments.value = false
   }
 }
+
 
 async function loadMyOpenUses() {
   loadingOpenUses.value = true
@@ -1183,6 +1890,40 @@ function ymdLocal(d){
   const day = String(d.getDate()).padStart(2,'0')
   return `${y}-${m}-${day}`
 }
+function formatDateShort (v) {
+  if (!v) return '—'
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) {
+    return String(v).slice(0, 10) || '—'
+  }
+  return d.toLocaleDateString('es-CO', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit'
+  })
+}
+
+function formatOilInfo (veh) {
+  if (!veh) return '—'
+  const next  = veh.oil_next_km
+  const last  = veh.oil_last_km
+  const inter = veh.oil_interval_km
+
+  if (next != null && next !== '') {
+    return `Próx. aceite: ${next} km`
+  }
+  if (last != null && inter != null) {
+    const n = Number(last) + Number(inter)
+    if (Number.isFinite(n)) {
+      return `Próx. aceite: ${n} km`
+    }
+  }
+  if (last != null && last !== '') {
+    return `Último cambio: ${last} km`
+  }
+  return '—'
+}
+
 function startOfMonth(d){ const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x }
 function endOfMonth(d){ const x=new Date(d); x.setMonth(x.getMonth()+1,0); x.setHours(0,0,0,0); return x }
 function addMonths(d,n){ const x=new Date(d); x.setMonth(x.getMonth()+n); return x }

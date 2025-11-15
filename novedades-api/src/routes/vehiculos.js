@@ -95,6 +95,15 @@ async function vehicleHasOpenUse(vehicleId) {
   return row?.id || null
 }
 
+// Saber si un AGENTE tiene uso abierto
+async function agentHasOpenUse(agentId) {
+  const [[row]] = await pool.query(
+    'SELECT id FROM vehicle_uses WHERE agent_id=? AND ended_at IS NULL LIMIT 1',
+    [agentId]
+  )
+  return row?.id || null
+}
+
 /* -------------------------------------------------------
    VEHICLES
 ------------------------------------------------------- */
@@ -1050,34 +1059,146 @@ router.post(
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
     const { vehicle_id, agent_id, odometer_start, notes } = req.body
-    if (!vehicle_id || !agent_id) return res.status(422).json({ error:'vehicle_id y agent_id requeridos' })
+    if (!vehicle_id || !agent_id) {
+      return res.status(422).json({ error:'vehicle_id y agent_id requeridos' })
+    }
 
+    // 🔐 Alcance por rol
     const okScope = await validateAgentScope(req, Number(agent_id))
-    if (!okScope) return res.status(403).json({ error:'No autorizado para iniciar uso con ese agente' })
+    if (!okScope) {
+      return res.status(403).json({ error:'No autorizado para iniciar uso con ese agente' })
+    }
 
+    // 1) 🚫 Un agente no puede tener más de un uso abierto
+    const agentOpenId = await agentHasOpenUse(agent_id)
+    if (agentOpenId) {
+      return res.status(409).json({
+        error: 'El agente ya tiene un uso abierto. Debe cerrarlo antes de iniciar otro.',
+        useId: agentOpenId
+      })
+    }
+
+    // 2) 🚫 Un vehículo no puede tener dos usos abiertos (reforzamos)
     const openUseId = await vehicleHasOpenUse(vehicle_id)
-    if (openUseId) return res.status(409).json({ error:'Uso abierto existente', useId: openUseId })
+    if (openUseId) {
+      return res.status(409).json({
+        error:'El vehículo ya tiene un uso abierto.',
+        useId: openUseId
+      })
+    }
 
-    const [r] = await pool.query(`
+    // 3) ⛔ Bloqueo por SOAT / Tecnomecánica vencidos
+    const [[veh]] = await pool.query(
+      `SELECT 
+          id,
+          odometer,
+          soat_date  AS soatDate,
+          tecno_date AS tecnoDate,
+          oil_last_km,
+          oil_interval_km
+        FROM vehicles
+        WHERE id=? 
+        LIMIT 1`,
+      [vehicle_id]
+    )
+
+    if (!veh) {
+      return res.status(404).json({ error: 'Vehículo no encontrado' })
+    }
+
+    // Usamos el mismo criterio que en /vehicles/due: DATEDIFF
+    const [[exp]] = await pool.query(
+      `SELECT 
+          DATEDIFF(soat_date , CURDATE()) AS soatDiff,
+          DATEDIFF(tecno_date, CURDATE()) AS tecnoDiff
+        FROM vehicles
+        WHERE id=? 
+        LIMIT 1`,
+      [vehicle_id]
+    )
+
+    const soatDiff  = exp?.soatDiff
+    const tecnoDiff = exp?.tecnoDiff
+
+    const soatVencido  = (soatDiff  !== null && soatDiff  < 0)
+    const tecnoVencido = (tecnoDiff !== null && tecnoDiff < 0)
+
+    if (soatVencido || tecnoVencido) {
+      const partes = []
+      if (soatVencido)  partes.push('SOAT')
+      if (tecnoVencido) partes.push('Técnico-mecánica')
+      return res.status(409).json({
+        error: `No puedes iniciar el uso porque el ${partes.join(' y ')} está vencido.`
+      })
+    }
+
+    // 4) ⚠️ Advertencia por cambio de aceite (NO bloquea)
+    const OIL_THRESHOLD = 500 // km restantes para considerar "poco"
+    let oil_warning = null
+
+    // Odómetro actual: preferimos el que envía el front, si no el del vehículo
+    let currentOdo = null
+    if (odometer_start != null && odometer_start !== '') {
+      currentOdo = Number(odometer_start)
+    } else if (veh.odometer != null) {
+      currentOdo = Number(veh.odometer)
+    }
+
+    let nextOil = null
+    if (veh.oil_last_km != null && veh.oil_interval_km != null) {
+      const last  = Number(veh.oil_last_km)
+      const inter = Number(veh.oil_interval_km)
+      if (Number.isFinite(last) && Number.isFinite(inter) && inter > 0) {
+        nextOil = last + inter
+      }
+    }
+
+    if (
+      currentOdo != null && Number.isFinite(currentOdo) &&
+      nextOil    != null && Number.isFinite(nextOil)
+    ) {
+      const remaining = nextOil - currentOdo
+      if (remaining <= OIL_THRESHOLD) {
+        oil_warning = {
+          remaining,
+          nextOil
+        }
+      }
+    }
+
+    // 5) Insertar el uso
+    const [r] = await pool.query(
+      `
       INSERT INTO vehicle_uses
         (vehicle_id, agent_id, started_at, odometer_start, notes, created_by)
-      VALUES (?, ?, COALESCE(?, NOW()), ?, ?, ?)`,
-      [vehicle_id, agent_id, req.body.started_at || null, odometer_start ?? null, notes || null, req.user.uid]
+      VALUES (?, ?, COALESCE(?, NOW()), ?, ?, ?)
+      `,
+      [
+        vehicle_id,
+        agent_id,
+        req.body.started_at || null,
+        currentOdo ?? null,
+        notes || null,
+        req.user.uid
+      ]
     )
     const useId = r.insertId
 
-    // mover staging -> uso
+    // 6) mover staging -> uso
     await pool.query(
       'UPDATE vehicle_novelties SET use_id=? WHERE vehicle_id=? AND use_id IS NULL',
       [useId, vehicle_id]
     )
 
     await logEvent({
-      req, userId:req.user.uid,
+      req,
+      userId: req.user.uid,
       action: Actions.VEHICLE_USE_START,
-      details:{ vehicleId:Number(vehicle_id), agentId:Number(agent_id), useId }
+      details: { vehicleId: Number(vehicle_id), agentId: Number(agent_id), useId }
     })
-    res.json({ id: useId })
+
+    // Mandamos también la advertencia (si existe) para que el front la muestre
+    res.json({ id: useId, oil_warning })
   }
 )
 
