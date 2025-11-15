@@ -673,6 +673,15 @@
             @close="onUsesModalClose"
             @created="onUseCreated"
           />
+
+          <VehicleNoveltiesModal
+            v-if="showNovsModal && pendingVehicle && pendingCloseUse"
+            :vehicle="pendingVehicle"
+            :closing-use="pendingCloseUse"
+            @close="onNovsModalClose"
+            @close-use="onNovsModalConfirmClose"
+          />
+
           <!-- Modal: seleccionar vehículo para nuevo uso -->
           <div v-if="showVehiclePicker" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">
             <div class="bg-white rounded-2xl p-5 w-[96vw] max-w-lg relative">
@@ -865,6 +874,39 @@
       </div>
     </div>
   </div-->
+    <!-- Modal Sí / No para cerrar uso (AgentDashboard) -->
+  <div
+    v-if="showAskNovelty"
+    class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center"
+  >
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-[95vw] max-w-sm">
+      <h3 class="font-semibold text-lg text-slate-900 mb-2">
+        Cerrar uso
+      </h3>
+
+      <p class="text-sm text-slate-700 mb-4">
+        ¿Deseas registrar una nueva novedad antes de cerrar el uso?
+      </p>
+
+      <div class="flex gap-3">
+        <!-- SÍ -->
+        <button
+          class="btn-primary flex-1"
+          @click="handleConfirmClose('S')"
+        >
+          Sí
+        </button>
+
+        <!-- NO -->
+        <button
+          class="btn-secondary flex-1"
+          @click="handleConfirmClose('N')"
+        >
+          No
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -875,6 +917,10 @@ import { defineAsyncComponent } from 'vue'
 const VehicleUsesModal = defineAsyncComponent(() =>
   import('@/components/vehicles/VehicleUsesModal.vue')
 )
+const VehicleNoveltiesModal = defineAsyncComponent(() =>
+  import('@/components/vehicles/VehicleNoveltiesModal.vue')
+)
+
 const api = axios.create({ baseURL: '/', timeout: 20000 })
 api.interceptors.request.use((config) => {
   const t = localStorage.getItem('token')
@@ -1013,6 +1059,13 @@ const loadingUsesAll = ref(false)
 // Modal de nuevo uso
 const showUsesModal = ref(false)
 function openNewUseModal(){ showUsesModal.value = true }
+const showNovsModal = ref(false)       // modal de novedades para cerrar uso
+const pendingCloseUse = ref(null)      // uso que queremos cerrar
+const pendingVehicle = ref(null)       // vehículo asociado a ese uso
+const showAskNovelty = ref(false)
+const useToClose = ref(null)
+
+
 async function onUseCreated(payload){
   showUsesModal.value = false
 
@@ -1158,6 +1211,31 @@ async function ensureVehiclesCatalog () {
 function getVehicleFromCatalog (id) {
   if (!id) return null
   return vehiclesById.value[String(id)] || null
+}
+
+async function resolveVehicleForUse(u) {
+  if (!u) return null
+
+  // Si el uso ya trae el objeto vehículo completo, úsalo
+  if (u.vehicle && u.vehicle.id) {
+    return u.vehicle
+  }
+
+  // Intentar resolver por id
+  const vehId =
+    u.vehicle?.id ??
+    u.vehicle_id ??
+    u.vehicleId ??
+    null
+
+  if (!vehId) return null
+
+  // Aseguramos catálogo
+  await ensureVehiclesCatalog()
+  return getVehicleFromCatalog(vehId) || {
+    id: vehId,
+    code: u.vehicle?.code ?? u.vehicle_code ?? u.vehicleCode ?? '—'
+  }
 }
 
 function pickerHideSoon(){ setTimeout(()=> pickerVisible.value = false, 150) }
@@ -1594,24 +1672,49 @@ async function loadUsesAll () {
   }
 }
 
-async function endUseFromRow(u){
+function endUseFromRow(u) {
   if (!u?.id) return
-  const od = prompt(`Odómetro final para ${u.vehicle?.code || 'vehículo'} (opcional):`, '')
+  useToClose.value = u
+  showAskNovelty.value = true
+}
+
+async function handleConfirmClose(option) {
+  const u = useToClose.value
+  showAskNovelty.value = false
+  useToClose.value = null
+  if (!u) return
+
+  // 👉 Opción S: registrar novedad antes de cerrar
+  if (option === 'S') {
+    pendingCloseUse.value = u
+    pendingVehicle.value = await resolveVehicleForUse(u)
+    showNovsModal.value = true
+    return
+  }
+
+  // 👉 Opción N: cerrar uso directo (misma lógica que tenías antes)
+  const od = prompt(
+    `Odómetro final para ${u.vehicle?.code || 'vehículo'} (opcional):`,
+    ''
+  )
   let odNum = null
-  if (od!=null && od!==''){
+  if (od != null && od !== '') {
     const n = Number(od)
-    if(!Number.isFinite(n) || n<0) return alert('Odómetro inválido')
+    if (!Number.isFinite(n) || n < 0) {
+      alert('Odómetro inválido')
+      return
+    }
     odNum = n
   }
+
   try {
     await apiPatch(`/vehicles/uses/${u.id}/end`, { odometer_end: odNum })
-    await Promise.all([ loadUsesAll(), loadMyOpenUses() ])
+    await Promise.all([loadUsesAll(), loadMyOpenUses()])
     alert('Uso cerrado correctamente.')
   } catch (e) {
     alert(e?.response?.data?.error || 'Error al cerrar uso')
   }
 }
-
 
 const showAckExtra   = ref(false)
 const ackExtraItem   = ref(null)
@@ -1631,6 +1734,41 @@ function closeAckExtra(){
   ackExtraNote.value = ''
   ackExtraErr.value = ''
 }
+
+function onNovsModalClose() {
+  showNovsModal.value = false
+  pendingCloseUse.value = null
+  pendingVehicle.value = null
+}
+
+async function onNovsModalConfirmClose() {
+  const use = pendingCloseUse.value
+  if (!use) return
+
+  // Aquí mantenemos el odómetro como OPCIONAL (igual que en endUseFromRow)
+  const od = prompt(
+    `Odómetro final para ${use.vehicle?.code || 'vehículo'} (opcional):`,
+    ''
+  )
+  let odNum = null
+  if (od != null && od !== '') {
+    const n = Number(od)
+    if (!Number.isFinite(n) || n < 0) return alert('Odómetro inválido')
+    odNum = n
+  }
+
+  try {
+    await apiPatch(`/vehicles/uses/${use.id}/end`, { odometer_end: odNum })
+    showNovsModal.value = false
+    pendingCloseUse.value = null
+    pendingVehicle.value = null
+    await Promise.all([loadUsesAll(), loadMyOpenUses()])
+    alert('Uso cerrado correctamente.')
+  } catch (e) {
+    alert(e?.response?.data?.error || 'Error al cerrar uso')
+  }
+}
+
 
 async function submitAckExtra(){
   ackExtraErr.value = ''

@@ -322,7 +322,7 @@
                       <button
                         v-if="!u.ended_at"
                         class="px-3 py-1 rounded-md text-white text-xs font-semibold bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-1 transition"
-                        @click="closeUse(u)"
+                        @click="askCloseUse(u)"
                       >
                         Finalizar uso
                       </button>
@@ -376,6 +376,40 @@
       </div>
     </div>
   </div>
+  <!-- Pregunta S/N amigable para cierre de uso -->
+  <div
+    v-if="showAskNovelty"
+    class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center"
+  >
+    <div class="bg-white rounded-2xl shadow-xl p-6 w-[95vw] max-w-sm">
+      <h3 class="font-semibold text-lg text-slate-900 mb-2">
+        Cerrar uso
+      </h3>
+
+      <p class="text-sm text-slate-700 mb-4">
+        ¿Deseas registrar una nueva novedad antes de cerrar el uso?
+      </p>
+
+      <div class="flex gap-3">
+        <!-- SÍ -->
+        <button
+          class="btn-primary flex-1"
+          @click="confirmClose('S')"
+        >
+          Sí
+        </button>
+
+        <!-- NO -->
+        <button
+          class="btn-secondary flex-1"
+          @click="confirmClose('N')"
+        >
+          No
+        </button>
+      </div>
+    </div>
+  </div>
+
 </template>
 
 <script setup>
@@ -395,7 +429,7 @@ const props = defineProps({
   vehicle: { type: Object, required: true },
 })
 
-const emit = defineEmits(['close', 'created'])
+const emit = defineEmits(['close', 'created', 'end', 'end-with-novelty'])
 const uiError = ref('')
 const lockForAgentOpenUse = computed(() =>
   /uso.+abierto/i.test(uiError.value || '')
@@ -786,37 +820,16 @@ async function createUse() {
 }
 
 async function closeUse(u) {
-  const odoStr = prompt('Ingrese el odómetro final:')
-  if (odoStr === null) return // canceló
-  if (odoStr.trim() === '') {
-    alert('Debes ingresar el odómetro final.')
+  if (!u) return
+
+  if (wantsNovelty) {
+    // 👉 no cerramos aquí, solo avisamos al padre que quiere novedad
+    emit('end-with-novelty', u)
     return
   }
 
-  const odoNum = Number(odoStr)
-  if (!Number.isFinite(odoNum)) {
-    alert('Debe ingresar un número válido.')
-    return
-  }
-
-  const startKm = u.odometer_start != null ? Number(u.odometer_start) : null
-  if (startKm != null && Number.isFinite(startKm) && odoNum < startKm) {
-    alert(`El odómetro final no puede ser menor al inicial (${startKm}).`)
-    return
-  }
-
-  try {
-    await http.patch(`/vehicles/uses/${u.id}/end`, { odometer_end: odoNum })
-    await loadUses()
-    await loadLastUseOdometer()
-  } catch (e) {
-    console.error(e)
-    const msg =
-      e?.response?.data?.error ||
-      e?.response?.data?.detail ||
-      'Error al cerrar el uso.'
-    alert(msg)
-  }
+  // 👉 flujo normal: solo cerrar uso
+  emit('end', u)
 }
 
 function showNovedades(id) {
@@ -933,6 +946,30 @@ async function loadLastUseOdometer() {
     lastUseOdoHint.value = null
   }
 }
+
+const showAskNovelty = ref(false)
+const useToClose = ref(null)
+
+function askCloseUse(u) {
+  useToClose.value = u
+  showAskNovelty.value = true
+}
+
+function confirmClose(option) {
+  const u = useToClose.value
+  showAskNovelty.value = false
+  useToClose.value = null
+  if (!u) return
+
+  if (option === 'S') {
+    // 👉 cerrar con novedad
+    emit('end-with-novelty', u)
+  } else {
+    // 👉 cerrar directo
+    emit('end', u)
+  }
+}
+
 
 onMounted(() => {
   loadUses()

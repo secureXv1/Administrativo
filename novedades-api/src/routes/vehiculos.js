@@ -1362,7 +1362,7 @@ router.get(
   }
 )
 
-// POST /vehicles/:tipo/:id/novelties (solo tipo=vehicle)
+// POST /vehicles/:tipo/:id/novelties (tipo: vehicle | uses)
 router.post(
   '/:tipo/:id/novelties',
   requireAuth,
@@ -1370,48 +1370,83 @@ router.post(
   upload.single('photo'),
   async (req, res) => {
     const { tipo, id } = req.params
-    let refField = null
+    const refId = Number(id)
 
-    if (tipo === 'uses') {
-      return res.status(403).json({ error:'NoveltiesEditNotAllowedOnUses' })
-    } else if (tipo === 'assignments') {
-      return res.status(410).json({ error:'NoveltiesDisabledForAssignments' })
+    let vehicleId = null
+    let useId = null
+
+    if (tipo === 'assignments') {
+      // seguimos sin permitir novedades ligadas a asignaciones
+      return res.status(410).json({ error: 'NoveltiesDisabledForAssignments' })
     } else if (tipo === 'vehicle') {
-      refField = 'vehicle_id'
+      // ✅ novedad directa al vehículo (staging o genérica)
+      const [[exists]] = await pool.query(
+        'SELECT id FROM vehicles WHERE id=? LIMIT 1',
+        [refId]
+      )
+      if (!exists) {
+        return res.status(404).json({ error: 'Vehículo no encontrado' })
+      }
+      vehicleId = refId
+      useId = null
+    } else if (tipo === 'uses') {
+      // ✅ ahora SÍ permitimos novedades ligadas a un uso concreto
+      const [[useRow]] = await pool.query(
+        'SELECT id, vehicle_id FROM vehicle_uses WHERE id=? LIMIT 1',
+        [refId]
+      )
+      if (!useRow) {
+        return res.status(404).json({ error: 'UseNotFound' })
+      }
+      vehicleId = useRow.vehicle_id
+      useId = useRow.id
     } else {
       return res.status(400).json({ error: 'Tipo inválido' })
     }
 
     const description = String(req.body.description || '').trim()
-    if (!description && !req.file) return res.status(422).json({ error: 'Debe enviar descripción o foto' })
+    if (!description && !req.file) {
+      return res.status(422).json({ error: 'Debe enviar descripción o foto' })
+    }
 
-    // Validaciones + bloqueo si hay uso abierto
-    const [[exists]] = await pool.query('SELECT 1 FROM vehicles WHERE id=?', [id])
-    if (!exists) return res.status(404).json({ error: 'Vehículo no encontrado' })
-
-    const openUseId = await vehicleHasOpenUse(id)
-    if (openUseId) return res.status(409).json({ error:'OpenUseExists', useId: openUseId })
+    // 🔓 IMPORTANTE:
+    // Ya NO bloqueamos si el vehículo tiene uso abierto.
+    // Se pueden registrar novedades en cualquier momento.
 
     const photoUrl = req.file
-      ? path.relative(path.join(__dirname, '..'), req.file.path).replace(/\\/g, '/')
+      ? path
+          .relative(path.join(__dirname, '..'), req.file.path)
+          .replace(/\\/g, '/')
       : null
 
     const [r] = await pool.query(
-      `INSERT INTO vehicle_novelties (${refField}, description, photo_url, created_by)
-       VALUES (?,?,?,?)`,
-      [id, description || '(sin descripción)', photoUrl, req.user.uid]
+      `INSERT INTO vehicle_novelties (vehicle_id, use_id, description, photo_url, created_by)
+       VALUES (?,?,?,?,?)`,
+      [
+        vehicleId,
+        useId,
+        description || '(sin descripción)',
+        photoUrl,
+        req.user.uid
+      ]
     )
 
     await logEvent({
       req,
       userId: req.user.uid,
       action: Actions.VEHICLE_NOVELTY_CREATE,
-      details: { [`${refField}`]: Number(id), noveltyId: r.insertId, hasPhoto: !!photoUrl },
+      details: {
+        vehicleId: Number(vehicleId),
+        useId: useId ? Number(useId) : null,
+        noveltyId: r.insertId,
+        hasPhoto: !!photoUrl
+      }
     })
 
     res.json({ ok: true, id: r.insertId, photoUrl })
   }
 )
+
 
 // GET /vehicles/:id/novelties/recent
 router.get(

@@ -209,6 +209,31 @@
               </ul>
             </div>
           </div>
+          <!-- Banner para cerrar uso si viene en modo "cerrar con novedad" -->
+            <div
+            v-if="closingUse"
+            class="mt-4 pt-3 border-t border-dashed border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+            >
+            <p class="text-xs text-slate-600">
+                Tienes un uso pendiente por cerrar
+                <span v-if="closingUse.agentCode" class="font-semibold">
+                ({{ closingUse.agentCode }})
+                </span>
+                <span v-if="closingUse.started_at" class="text-slate-500">
+                — inicio {{ closingUse.started_at }}
+                </span>.
+                Cuando termines de registrar las novedades, pulsa
+                <span class="font-semibold">“Guardar y cerrar uso”</span>.
+            </p>
+            <button
+                type="button"
+                class="btn-primary btn-xs"
+                @click="emit('close-use')"
+            >
+                Guardar y cerrar uso
+            </button>
+            </div>
+
 
           <!-- 👉 Listado general de novedades -->
           <div class="border rounded-xl p-3">
@@ -289,10 +314,11 @@ import { http } from '@/lib/http'
 import VehiclePartsPickerPro from './VehiclePartsPickerPro.vue'
 
 const props = defineProps({
-  vehicle: { type: Object, required: true }
+  vehicle: { type: Object, required: true },
+  closingUse: { type: Object, required: false, default: null } // 👉 uso pendiente opcional
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'close-use'])
 
 const recentNovedades = ref([])
 const loadingNovs = ref(false)

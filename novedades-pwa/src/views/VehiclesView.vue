@@ -344,18 +344,18 @@
     <VehicleUsesModal
       v-if="showUses"
       :vehicle="currentVehicle"
-      :initial-tab="usesInitialTab"
       @close="onCloseUses"
-      @iniciar-uso="onIniciarUso"
       @end="cerrarUso"
+      @end-with-novelty="cerrarUsoConNovedad"
     />
 
     <VehicleNoveltiesModal
       v-if="showNovs"
       :vehicle="currentVehicle"
+      :closing-use="pendingCloseUse"
       @close="onCloseNovs"
+      @close-use="onConfirmCloseUseFromNovs"
     />
-
   </div>
 
  <!-- Modal Agregar vehículo -->
@@ -623,13 +623,13 @@ const showState = ref(false)
 const showHistory = ref(false)
 const historyItems = ref([])
 
-// 👇 ya lo agregaste arriba pero para que veas el conjunto
-const showNovs = ref(false)
-
 const stateError = ref('');
 
 const showNovelties = ref(false)
 const usesInitialTab = ref('uses') // pestaña por defecto cuando abres desde "Usos"
+
+const showNovs = ref(false)          // ya lo tienes por el modal de novedades
+const pendingCloseUse = ref(null)    // 👉 uso que se quiere cerrar con novedad
 
 function canShowChangedOilCheckbox() {
   const prev = currentVehicle.value?.estado;
@@ -1115,7 +1115,8 @@ function openNovs(v) {
 
 function onCloseNovs () {
   showNovs.value = false
-  // si quieres, refresca el listado para actualizar contadores de novedades
+  // el uso se mantiene abierto si se canceló
+  pendingCloseUse.value = null
   loadVehicles()
 }
 
@@ -1131,27 +1132,100 @@ function onCloseUses () {
   // if (activeTab.value === 'due') loadDue()
 }
 
-function onIniciarUso(vehicle) {
-  currentVehicle.value = vehicle
-  showUses.value = false
-  setTimeout(() => {
-    showControl.value = true
-  }, 150)
-}
-async function cerrarUso(useId) {
-  if (!useId) return
+async function cerrarUso(use) {
+  if (!use) return
+
+  const u = use
+  const odoStr = prompt('Ingrese el odómetro final:')
+  if (odoStr === null) return // canceló
+  if (odoStr.trim() === '') {
+    alert('Debes ingresar el odómetro final.')
+    return
+  }
+
+  const odoNum = Number(odoStr)
+  if (!Number.isFinite(odoNum)) {
+    alert('Debe ingresar un número válido.')
+    return
+  }
+
+  const startKm = u.odometer_start != null ? Number(u.odometer_start) : null
+  if (startKm != null && Number.isFinite(startKm) && odoNum < startKm) {
+    alert(`El odómetro final no puede ser menor al inicial (${startKm}).`)
+    return
+  }
+
   try {
-    if (!confirm('¿Seguro que quieres cerrar este uso?')) return
-    await http.patch(`/vehicles/uses/${useId}/end`, {
-      odometer_end: null,
-      notes: null
-    })
+    await http.patch(`/vehicles/uses/${u.id}/end`, { odometer_end: odoNum })
     showUses.value = false
-    loadVehicles()
+    await loadVehicles()
   } catch (e) {
-    alert(e?.response?.data?.error || 'Error al cerrar el uso')
+    console.error(e)
+    const msg =
+      e?.response?.data?.error ||
+      e?.response?.data?.detail ||
+      'Error al cerrar el uso.'
+    alert(msg)
   }
 }
+
+function cerrarUsoConNovedad(use) {
+  if (!use) return
+
+  // Guardamos el uso pendiente de cierre
+  pendingCloseUse.value = use
+
+  // Aseguramos que currentVehicle ya esté seteado (debería estarlo)
+  // pero por si acaso lo buscamos
+  if (!currentVehicle.value) {
+    const found = vehicles.value.find(v => v.id === use.vehicle_id)
+    if (found) currentVehicle.value = found
+  }
+
+  // Cerramos modal de usos y abrimos el de novedades
+  showUses.value = false
+  showNovs.value = true
+}
+
+async function onConfirmCloseUseFromNovs() {
+  const use = pendingCloseUse.value
+  if (!use) return
+
+  const odoStr = prompt('Ingrese el odómetro final:')
+  if (odoStr === null) return
+  if (odoStr.trim() === '') {
+    alert('Debes ingresar el odómetro final.')
+    return
+  }
+
+  const odoNum = Number(odoStr)
+  if (!Number.isFinite(odoNum)) {
+    alert('Debe ingresar un número válido.')
+    return
+  }
+
+  const startKm = use.odometer_start != null ? Number(use.odometer_start) : null
+  if (startKm != null && Number.isFinite(startKm) && odoNum < startKm) {
+    alert(`El odómetro final no puede ser menor al inicial (${startKm}).`)
+    return
+  }
+
+  try {
+    await http.patch(`/vehicles/uses/${use.id}/end`, { odometer_end: odoNum })
+    pendingCloseUse.value = null
+    showNovs.value = false
+    await loadVehicles()
+  } catch (e) {
+    console.error(e)
+    const msg =
+      e?.response?.data?.error ||
+      e?.response?.data?.detail ||
+      'Error al cerrar el uso.'
+    alert(msg)
+  }
+}
+
+
 function applyFilters() {
   loadVehicles();
 }
@@ -1163,6 +1237,7 @@ function onQueryInput() {
     loadVehicles();
   }, 350); // debounce
 }
+
 
 onUnmounted(() => {
   clearTimeout(queryTimer);
