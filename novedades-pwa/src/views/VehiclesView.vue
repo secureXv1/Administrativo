@@ -130,8 +130,9 @@
               <th class="py-2 pr-3">Grupo</th>
               <th class="py-2 pr-3">Unidad</th>
               <th class="py-2 pr-3">Asig./Usos</th>
-              <th class="py-2 pr-3">Est./Hist</th>
-              <th class="py-2 pr-3">Edit./Borr</th>
+              <th class="py-2 pr-3">Est./Hist.</th>
+              <th class="py-2 pr-3">Edit./Borr.</th>
+              <th class="py-2 pr-3 w-[1%] whitespace-nowrap">Nov.</th>
             </tr>
           </thead>
           <tbody>
@@ -255,6 +256,43 @@
                   </button>
                 </div>
               </td>
+              <!-- 🔹 Nueva columna Novedades -->
+              <td class="py-2 pr-3">
+                <div class="flex items-center gap-2">
+                  <button
+                    class="icon-btn relative"
+                    title="Ver / gestionar novedades del vehículo"
+                    @click="openNovs(v)"
+                  >
+                    <svg
+                      class="w-5 h-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                      <circle cx="12" cy="10" r="1" />
+                      <path d="M12 12v3" />
+                    </svg>
+
+                    <!-- 🔴 Badge de novedades nuevas (si lo devuelves del backend) -->
+                    <span
+                      v-if="v.vehicleNewNoveltiesCount > 0"
+                      class="absolute -top-1 -right-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-600 text-white text-[10px] font-semibold"
+                    >
+                      {{ v.vehicleNewNoveltiesCount }}
+                    </span>
+                  </button>
+
+                  <span
+                    v-if="v.vehicleNoveltiesCount > 0"
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-700"
+                  >
+                    {{ v.vehicleNoveltiesCount }} novedad{{ v.vehicleNoveltiesCount === 1 ? '' : 'es' }}
+                  </span>
+                </div>
+              </td>
             </tr>
             <tr v-if="!loading && !vehicles.length">
               <td colspan="8" class="py-6 text-center text-slate-500">Sin resultados</td>
@@ -306,10 +344,18 @@
     <VehicleUsesModal
       v-if="showUses"
       :vehicle="currentVehicle"
+      :initial-tab="usesInitialTab"
       @close="onCloseUses"
       @iniciar-uso="onIniciarUso"
       @end="cerrarUso"
     />
+
+    <VehicleNoveltiesModal
+      v-if="showNovs"
+      :vehicle="currentVehicle"
+      @close="onCloseNovs"
+    />
+
   </div>
 
  <!-- Modal Agregar vehículo -->
@@ -561,6 +607,7 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue' // ⬅️ añ
 import { http } from '@/lib/http'
 import VehicleAssignmentsModal from '@/components/vehicles/VehicleAssignmentsModal.vue'
 import VehicleUsesModal from '@/components/vehicles/VehicleUsesModal.vue'
+import VehicleNoveltiesModal from '@/components/vehicles/VehicleNoveltiesModal.vue'
 import BadgeDate from '@/components/BadgeDate.vue'
 
 const activeTab = ref('list')
@@ -573,11 +620,17 @@ const showControl = ref(false)
 const currentVehicle = ref(null)
 const showState = ref(false)
 
-
 const showHistory = ref(false)
 const historyItems = ref([])
 
+// 👇 ya lo agregaste arriba pero para que veas el conjunto
+const showNovs = ref(false)
+
 const stateError = ref('');
+
+const showNovelties = ref(false)
+const usesInitialTab = ref('uses') // pestaña por defecto cuando abres desde "Usos"
+
 function canShowChangedOilCheckbox() {
   const prev = currentVehicle.value?.estado;
   const next = stateForm.value.new_status;
@@ -1025,9 +1078,14 @@ function openAssignments(v) {
   currentVehicle.value = v
   showAssign.value = true
 }
-function openUses(v) {
+function openUses(v, tab = 'uses') {
   currentVehicle.value = v
+  usesInitialTab.value = tab
   showUses.value = true
+}
+function openNovelties(v) {
+  // abrir el mismo modal de usos pero en pestaña de "novedades"
+  openUses(v, 'novelties')
 }
 function startUse(v) {
   currentVehicle.value = v
@@ -1049,6 +1107,16 @@ function onCloseAssign () {
   if (activeTab.value === 'due') {
     loadDue()
   }
+}
+function openNovs(v) {
+  currentVehicle.value = v
+  showNovs.value = true
+}
+
+function onCloseNovs () {
+  showNovs.value = false
+  // si quieres, refresca el listado para actualizar contadores de novedades
+  loadVehicles()
 }
 
 function onCloseUses () {

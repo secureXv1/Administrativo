@@ -191,12 +191,25 @@
                       class="flex items-center justify-between gap-2"
                     >
                       <span class="truncate">• {{ n.description }}</span>
-                      <a
-                        v-if="n.photoUrl"
-                        :href="`/${n.photoUrl}`"
-                        target="_blank"
-                        class="text-[11px] text-blue-600 underline shrink-0"
-                      >foto</a>
+
+                      <div class="flex items-center gap-2 shrink-0">
+                        <a
+                          v-if="n.photoUrl"
+                          :href="`/${n.photoUrl}`"
+                          target="_blank"
+                          class="text-[11px] text-blue-600 underline"
+                        >
+                          foto
+                        </a>
+
+                        <button
+                          type="button"
+                          class="text-[11px] text-rose-600 hover:underline"
+                          @click="deleteNovedad(n.id)"
+                        >
+                          eliminar
+                        </button>
+                      </div>
                     </li>
                   </ul>
                 </div>
