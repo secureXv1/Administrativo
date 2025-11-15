@@ -1087,10 +1087,11 @@ router.post(
       })
     }
 
-    // 3) ⛔ Bloqueo por SOAT / Tecnomecánica vencidos
+    // 3) Traer datos del vehículo (incluye ESTADO)
     const [[veh]] = await pool.query(
       `SELECT 
           id,
+          estado,
           odometer,
           soat_date  AS soatDate,
           tecno_date AS tecnoDate,
@@ -1106,7 +1107,17 @@ router.post(
       return res.status(404).json({ error: 'Vehículo no encontrado' })
     }
 
-    // Usamos el mismo criterio que en /vehicles/due: DATEDIFF
+    // 👀 DEBUG (puedes dejarlo mientras pruebas)
+    console.log('DEBUG /uses/start veh:', veh)
+
+    // 3.1 ⛔ VEHÍCULO NO EN ESTADO SERVICIO
+    if (veh.estado !== 'SERVICIO') {
+      return res.status(409).json({
+        error: `El vehículo está en estado "${veh.estado}" y no puede iniciar un uso. Solo vehículos en SERVICIO pueden iniciar usos.`
+      })
+    }
+
+    // 3.2 ⛔ Bloqueo por SOAT / Tecnomecánica vencidos (usando DATEDIFF como antes)
     const [[exp]] = await pool.query(
       `SELECT 
           DATEDIFF(soat_date , CURDATE()) AS soatDiff,
@@ -1202,6 +1213,7 @@ router.post(
   }
 )
 
+
 // PATCH /vehicles/uses/:id/end
 router.patch(
   '/uses/:id/end',
@@ -1211,8 +1223,10 @@ router.patch(
     const { id } = req.params
     const { ended_at, odometer_end, notes } = req.body
 
+    // Traemos datos del uso (incluye odómetro inicial)
     const [[useRow]] = await pool.query(
-      'SELECT vehicle_id, agent_id, ended_at FROM vehicle_uses WHERE id=? LIMIT 1',[id]
+      'SELECT vehicle_id, agent_id, ended_at, odometer_start FROM vehicle_uses WHERE id=? LIMIT 1',
+      [id]
     )
     if (!useRow) return res.status(404).json({ error:'Uso no encontrado' })
     if (useRow.ended_at) return res.status(409).json({ error:'El uso ya está cerrado' })
@@ -1220,19 +1234,48 @@ router.patch(
     const okScope = await validateAgentScope(req, Number(useRow.agent_id))
     if (!okScope) return res.status(403).json({ error:'No autorizado para cerrar este uso' })
 
+    // ✅ Validar odómetro final obligatorio y no menor al inicial
+    const startKm = useRow.odometer_start != null
+      ? Number(useRow.odometer_start)
+      : null
+
+    const endKm = Number(odometer_end)
+
+    if (!Number.isFinite(endKm)) {
+      return res.status(422).json({ error: 'Debes ingresar un odómetro final válido.' })
+    }
+
+    if (startKm != null && Number.isFinite(startKm) && endKm < startKm) {
+      return res.status(422).json({
+        error: `El odómetro final (${endKm}) no puede ser menor al inicial (${startKm}).`
+      })
+    }
+
     const sets = []
     const args = []
-    if (ended_at !== undefined) { sets.push('ended_at=?'); args.push(ended_at) }
-    else                        { sets.push('ended_at=NOW()') }
-    sets.push('odometer_end=?'); args.push(odometer_end ?? null)
-    sets.push('notes=COALESCE(?, notes)'); args.push(notes ?? null)
+
+    if (ended_at !== undefined) {
+      sets.push('ended_at=?')
+      args.push(ended_at)
+    } else {
+      sets.push('ended_at=NOW()')
+    }
+
+    sets.push('odometer_end=?')
+    args.push(endKm)
+
+    sets.push('notes=COALESCE(?, notes)')
+    args.push(notes ?? null)
+
     args.push(id)
+
     await pool.query(`UPDATE vehicle_uses SET ${sets.join(', ')} WHERE id=?`, args)
 
     await logEvent({
-      req, userId:req.user.uid,
+      req,
+      userId:req.user.uid,
       action: Actions.VEHICLE_USE_END,
-      details:{ useId:Number(id), vehicleId:Number(useRow.vehicle_id), agentId:Number(useRow.agent_id) }
+      details:{ useId:Number(id), vehicleId:Number(useRow.vehicle_id), agentId:Number(useRow.agent_id), odometer_end: endKm }
     })
     res.json({ ok:true })
   }
@@ -1245,24 +1288,35 @@ router.get(
   requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
   async (req, res) => {
     const { id } = req.params
+
     const [[row]] = await pool.query(
       `
       SELECT COALESCE(
+        -- 1) Último uso CERRADO (ended_at no nulo) con odómetro final
         (SELECT odometer_end
            FROM vehicle_uses
-          WHERE vehicle_id=? AND odometer_end IS NOT NULL
+          WHERE vehicle_id=? 
+            AND ended_at IS NOT NULL
+            AND odometer_end IS NOT NULL
           ORDER BY ended_at DESC, id DESC
           LIMIT 1),
+
+        -- 2) Si nunca se ha cerrado un uso, tomamos el odómetro inicial del último uso
         (SELECT odometer_start
            FROM vehicle_uses
-          WHERE vehicle_id=? AND odometer_start IS NOT NULL
+          WHERE vehicle_id=? 
+            AND odometer_start IS NOT NULL
           ORDER BY started_at DESC, id DESC
-          LIMIT 1)
+          LIMIT 1),
+
+        -- 3) Fallback: odómetro del propio vehículo
+        (SELECT odometer FROM vehicles WHERE id=? LIMIT 1)
       ) AS last
       `,
-      [id, id]
+      [id, id, id]
     )
-    res.json({ lastOdometer: row?.last ?? null })
+
+    res.json({ lastOdometer: row?.last != null ? Number(row.last) : null })
   }
 )
 

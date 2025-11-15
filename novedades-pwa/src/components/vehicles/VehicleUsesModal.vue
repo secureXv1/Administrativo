@@ -18,282 +18,198 @@
 
         <!-- BODY con scroll interno -->
         <div class="px-3 sm:px-4 py-4 overflow-y-auto max-h-[90dvh]">
-          <!-- Banner: documentos vencidos -->
+          <!-- ⛔ BLOQUEO POR ESTADO DEL VEHÍCULO -->
           <div
-            v-if="hasExpiredDocs"
+            v-if="isWrongState"
             class="mb-4 p-3 rounded-lg bg-rose-50 text-rose-800 text-sm border border-rose-200"
           >
-            Este vehículo tiene {{ expiredDocsLabel }} vencido.
-            No es posible iniciar nuevos usos ni registrar novedades
-            hasta que se actualicen los documentos.
+            <strong>Este vehículo no puede iniciar usos.</strong><br>
+            {{ wrongStateLabel }}.<br>
+            Solo vehículos en estado <strong>SERVICIO</strong> pueden iniciar un uso o registrar novedades.
           </div>
 
-          <!-- Banner: agente con otro uso -->
-          <div
-            v-if="lockForAgentOpenUse && !hasExpiredDocs"
-            class="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm border border-amber-200 flex items-start gap-2"
-          >
-            <span class="mt-0.5 text-lg leading-none">⚠️</span>
-            <div>
-              <div class="font-semibold mb-0.5">
-                El agente ya tiene un uso vigente
-              </div>
-              <p class="text-xs sm:text-[13px]">
-                Este agente tiene un uso abierto (en este u otro vehículo).
-                Cierra el uso anterior para habilitar nuevos registros.
-              </p>
-            </div>
+          <!-- ⛔ 1) DOCUMENTOS VENCIDOS O SIN REGISTRAR -->
+          <div v-if="hasExpiredDocs" class="mb-4 p-3 rounded-lg bg-rose-50 text-rose-800 text-sm border border-rose-200">
+            <strong>Este vehículo tiene {{ expiredDocsLabel }}.</strong><br>
+            No es posible iniciar nuevos usos ni registrar novedades hasta que se actualicen los documentos.
           </div>
 
-          <!-- Banner cuando hay un uso vigente (del vehículo) -->
-          <div
-            v-if="hasOpenUse && !hasExpiredDocs"
-            class="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm border border-amber-200"
-          >
+          <!-- 🟡 2) AGENTE CON USO ABIERTO -->
+          <div v-else-if="lockForAgentOpenUse" class="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm border border-amber-200">
+            <strong>El agente ya tiene un uso vigente.</strong><br>
+            Cierra el uso anterior para habilitar nuevos registros.
+          </div>
+
+          <!-- 🟠 3) VEHÍCULO CON USO ABIERTO -->
+          <div v-else-if="hasOpenUse" class="mb-4 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm border border-amber-200">
             Ya existe un uso vigente. Cierre el uso actual para habilitar un nuevo registro.
           </div>
 
-          <!-- 🔹 Bloque de novedades previas al inicio del uso -->
-          <div
-            v-if="!hasOpenUse && !hasExpiredDocs && !lockForAgentOpenUse"
-            class="border rounded-xl p-3 bg-slate-50 mb-6"
-          >
-            <h4 class="font-semibold text-slate-700 text-sm mb-3">
-              Agregar una nueva novedad
-            </h4>
+          <!-- 🟢 4) SOLO SI TODO ESTÁ OK → MOSTRAR CROQUIS + NOVEDADES + FORMULARIO -->
+          <div v-else-if="!isWrongState && !hasExpiredDocs && !hasOpenUse && !lockForAgentOpenUse">
+            <!-- 🔹 Bloque de novedades previas al inicio del uso -->
+            <div class="border rounded-xl p-3 bg-slate-50 mb-6">
 
-            <!-- Picker visual + categorías internas/sistemas -->
-            <div class="grid grid-cols-1 gap-3 mb-3">
-              <!-- Picker visual -->
-              <VehiclePartsPickerPro
-                v-model="selectedPartKey"
-                :topSrc="topSrc"
-                :leftSrc="leftSrc"
-                :rightSrc="rightSrc"
-                :highlight-keys="partKeysConNovedades"
-              />
+              <h4 class="font-semibold text-slate-700 text-sm mb-3">
+                Agregar una nueva novedad
+              </h4>
 
-              <!-- Campo 'Otro' cuando es OTRO físico -->
-              <div v-if="selectedPartKey === 'OTRO'">
-                <input
-                  v-model="customPartName"
-                  class="input w-full"
-                  placeholder="Especifica la parte (ej: tapa combustible)"
+              <!-- Picker visual + categorías internas/sistemas -->
+              <div class="grid grid-cols-1 gap-3 mb-3">
+
+                <!-- Picker visual -->
+                <VehiclePartsPickerPro
+                  v-model="selectedPartKey"
+                  :topSrc="topSrc"
+                  :leftSrc="leftSrc"
+                  :rightSrc="rightSrc"
+                  :highlight-keys="partKeysConNovedades"
                 />
-              </div>
 
-              <!-- Categorías internas / sistemas -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1 text-xs">
-                <!-- Interior -->
-                <div>
-                  <div class="flex items-center justify-between mb-1">
-                    <span class="font-semibold text-slate-700">Interior</span>
-                    <button
-                      type="button"
-                      class="text-[11px] text-slate-500 hover:underline"
-                      @click="clearInternalSelection"
-                      v-if="selectedInternalKey && isInternalSelection('INTERIOR')"
-                    >
-                      Quitar selección
-                    </button>
-                  </div>
-                  <div class="flex flex-wrap gap-1">
-                    <button
-                      v-for="sec in INTERNAL_SECTIONS"
-                      :key="sec.key"
-                      type="button"
-                      :class="[
-                        'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
-                        selectedInternalKey === sec.key
-                          ? 'bg-slate-900 text-white border-slate-900'
-                          : internalCounts[sec.key] > 0
-                            ? 'border-red-500 text-red-700 bg-red-50'
-                            : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
-                      ]"
-                      @click="selectInternal(sec.key)"
-                    >
-                      {{ sec.label }}
-                      <span
-                        v-if="internalCounts[sec.key] > 0"
-                        class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                <!-- Campo 'Otro' -->
+                <div v-if="selectedPartKey === 'OTRO'">
+                  <input
+                    v-model="customPartName"
+                    class="input w-full"
+                    placeholder="Especifica la parte (ej: tapa combustible)"
+                  />
+                </div>
+
+                <!-- Categorías internas / sistemas -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1 text-xs">
+
+                  <!-- Interior -->
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="font-semibold text-slate-700">Interior</span>
+                      <button
+                        type="button"
+                        class="text-[11px] text-slate-500 hover:underline"
+                        @click="clearInternalSelection"
+                        v-if="selectedInternalKey && isInternalSelection('INTERIOR')"
                       >
-                        {{ internalCounts[sec.key] }}
-                      </span>
-                    </button>
-                  </div>
-                </div>
+                        Quitar selección
+                      </button>
+                    </div>
 
-                <!-- Sistemas -->
-                <div>
-                  <div class="flex items-center justify-between mb-1">
-                    <span class="font-semibold text-slate-700">Sistemas</span>
-                    <button
-                      type="button"
-                      class="text-[11px] text-slate-500 hover:underline"
-                      @click="clearInternalSelection"
-                      v-if="selectedInternalKey && isInternalSelection('SISTEMA')"
-                    >
-                      Quitar selección
-                    </button>
-                  </div>
-                  <div class="flex flex-wrap gap-1">
-                    <button
-                      v-for="sec in SYSTEM_SECTIONS"
-                      :key="sec.key"
-                      type="button"
-                      :class="[
-                        'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
-                        selectedInternalKey === sec.key
-                          ? 'bg-slate-900 text-white border-slate-900'
-                          : internalCounts[sec.key] > 0
-                            ? 'border-red-500 text-red-700 bg-red-50'
-                            : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
-                      ]"
-                      @click="selectInternal(sec.key)"
-                    >
-                      {{ sec.label }}
-                      <span
-                        v-if="internalCounts[sec.key] > 0"
-                        class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                    <div class="flex flex-wrap gap-1">
+                      <button
+                        v-for="sec in INTERNAL_SECTIONS"
+                        :key="sec.key"
+                        type="button"
+                        :class="[
+                          'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
+                          selectedInternalKey === sec.key
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : internalCounts[sec.key] > 0
+                              ? 'border-red-500 text-red-700 bg-red-50'
+                              : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
+                        ]"
+                        @click="selectInternal(sec.key)"
                       >
-                        {{ internalCounts[sec.key] }}
-                      </span>
-                    </button>
+                        {{ sec.label }}
+                        <span
+                          v-if="internalCounts[sec.key] > 0"
+                          class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                        >
+                          {{ internalCounts[sec.key] }}
+                        </span>
+                      </button>
+                    </div>
                   </div>
+
+                  <!-- Sistemas -->
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="font-semibold text-slate-700">Sistemas</span>
+                      <button
+                        type="button"
+                        class="text-[11px] text-slate-500 hover:underline"
+                        @click="clearInternalSelection"
+                        v-if="selectedInternalKey && isInternalSelection('SISTEMA')"
+                      >
+                        Quitar selección
+                      </button>
+                    </div>
+
+                    <div class="flex flex-wrap gap-1">
+                      <button
+                        v-for="sec in SYSTEM_SECTIONS"
+                        :key="sec.key"
+                        type="button"
+                        :class="[
+                          'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
+                          selectedInternalKey === sec.key
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : internalCounts[sec.key] > 0
+                              ? 'border-red-500 text-red-700 bg-red-50'
+                              : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
+                        ]"
+                        @click="selectInternal(sec.key)"
+                      >
+                        {{ sec.label }}
+                        <span
+                          v-if="internalCounts[sec.key] > 0"
+                          class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                        >
+                          {{ internalCounts[sec.key] }}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
-              </div>
-              <!-- Etiqueta unificada de selección (parte o sistema/interior) -->
-              <div v-if="scopeLabel" class="mt-2 text-xs text-slate-600">
-                <span class="text-slate-500">Seleccionado:</span>
-                <span class="ml-1 font-semibold">{{ scopeLabel }}</span>
-              </div>
-              <!-- Novedades de la parte / categoría seleccionada -->
-              <div
-                v-if="scopeLabel && novsSelectedScope.length"
-                class="mt-2 rounded-lg border border-slate-200 bg-white p-2 text-xs"
-              >
-                <div class="flex items-center justify-between mb-1">
-                  <span class="font-semibold text-slate-700">
-                    Novedades de: {{ scopeLabel }}
-                  </span>
-                  <button
-                    type="button"
-                    class="text-[11px] text-blue-600 hover:underline"
-                    @click="showAllForScope = !showAllForScope"
-                  >
-                    {{ showAllForScope ? 'Ver menos' : 'Ver todas' }}
-                  </button>
+
+                <!-- Etiqueta seleccionada -->
+                <div v-if="scopeLabel" class="mt-2 text-xs text-slate-600">
+                  <span class="text-slate-500">Seleccionado:</span>
+                  <span class="ml-1 font-semibold">{{ scopeLabel }}</span>
                 </div>
-                <ul class="space-y-1 max-h-32 overflow-y-auto">
-                  <li
-                    v-for="n in (showAllForScope ? novsSelectedScope : novsSelectedScope.slice(0,3))"
-                    :key="n.id"
-                    class="flex items-center justify-between gap-2"
-                  >
-                    <span class="truncate">• {{ n.description }}</span>
-                    <a
-                      v-if="n.photoUrl"
-                      :href="`/${n.photoUrl}`"
-                      target="_blank"
-                      class="text-[11px] text-blue-600 underline shrink-0"
-                    >
-                      foto
-                    </a>
-                  </li>
-                </ul>
-              </div>
-            </div>
 
-            <!-- Formulario para nueva novedad (desc + foto + agregar) -->
-            <div class="mt-3 grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
-              <!-- Descripción -->
-              <div class="sm:col-span-7">
-                <textarea
-                  v-model="newNovedad.description"
-                  rows="1"
-                  maxlength="200"
-                  class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  :placeholder="descPlaceholder"
-                ></textarea>
-                <div class="text-[11px] text-slate-400 mt-1">
-                  {{ (newNovedad.description || '').length }}/200
-                </div>
-              </div>
-
-              <!-- Foto -->
-              <div class="sm:col-span-3">
-                <label
-                  class="inline-flex items-center justify-center px-3 py-2 w-full rounded-lg border border-slate-300 bg-white text-slate-800 text-sm cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  Seleccionar img
-                  <input type="file" accept="image/*" class="hidden" @change="onPhoto" />
-                </label>
-                <div class="text-[11px] text-slate-500 truncate mt-1">
-                  {{ newNovedad.file ? newNovedad.file.name : 'Ningún archivo' }}
-                </div>
-              </div>
-
-              <!-- Botón -->
-              <div class="sm:col-span-2 flex items-end">
-                <button class="btn-primary w-full" @click="addNovedad">Agregar</button>
-              </div>
-            </div>
-
-            <h4 class="font-semibold text-slate-700 text-sm mt-5 mb-2 flex items-center justify-between">
-              <span>Novedades recientes del vehículo</span>
-
-              <button
-                v-if="!loadingNovs && recentNovedades.length"
-                type="button"
-                class="text-[11px] text-blue-600 hover:underline"
-                @click="showRecentList = !showRecentList"
-              >
-                {{ showRecentList ? 'Ocultar listado' : `Ver listado (${recentNovedades.length})` }}
-              </button>
-            </h4>
-
-            <div v-if="loadingNovs" class="text-xs text-slate-500">Cargando novedades…</div>
-
-            <div v-else>
-              <div v-if="!recentNovedades.length" class="text-xs text-slate-400 mb-2">
-                No hay novedades registradas aún.
-              </div>
-
-              <div
-                v-else-if="showRecentList"
-                class="border rounded-lg bg-white p-2 max-h-40 overflow-y-auto space-y-1"
-              >
+                <!-- Novedades de la parte elegida -->
                 <div
-                  v-for="n in recentNovedades"
-                  :key="n.id"
-                  class="text-xs flex items-center justify-between border-b last:border-b-0 py-1"
+                  v-if="scopeLabel && novsSelectedScope.length"
+                  class="mt-2 rounded-lg border border-slate-200 bg-white p-2 text-xs"
                 >
-                  <div class="min-w-0">
-                    • <span class="truncate inline-block max-w-[220px] align-middle">{{ n.description }}</span>
-                    <a
-                      v-if="n.photoUrl"
-                      :href="`/${n.photoUrl}`"
-                      target="_blank"
-                      class="text-blue-600 underline ml-1"
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="font-semibold text-slate-700">
+                      Novedades de: {{ scopeLabel }}
+                    </span>
+                    <button
+                      type="button"
+                      class="text-[11px] text-blue-600 hover:underline"
+                      @click="showAllForScope = !showAllForScope"
                     >
-                      foto
-                    </a>
-                    <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
+                      {{ showAllForScope ? 'Ver menos' : 'Ver todas' }}
+                    </button>
                   </div>
-                  <button
-                    class="text-red-600 hover:text-red-800 font-medium text-[11px] shrink-0 ml-2"
-                    @click="deleteNovedad(n.id)"
-                  >
-                    Eliminar
-                  </button>
+
+                  <ul class="space-y-1 max-h-32 overflow-y-auto">
+                    <li
+                      v-for="n in (showAllForScope ? novsSelectedScope : novsSelectedScope.slice(0,3))"
+                      :key="n.id"
+                      class="flex items-center justify-between gap-2"
+                    >
+                      <span class="truncate">• {{ n.description }}</span>
+                      <a
+                        v-if="n.photoUrl"
+                        :href="`/${n.photoUrl}`"
+                        target="_blank"
+                        class="text-[11px] text-blue-600 underline shrink-0"
+                      >foto</a>
+                    </li>
+                  </ul>
                 </div>
+
               </div>
-            </div>
-          </div>
+
+            </div> <!-- ESTE ES EL ÚNICO CIERRE CORRECTO -->
+
+          </div> <!-- CIERRA EL v-else-if PRINCIPAL -->
 
           <!-- Formulario nuevo uso -->
           <div
-            v-if="!hasOpenUse && !hasExpiredDocs && !lockForAgentOpenUse"
+            v-if="!isWrongState && !hasExpiredDocs && !hasOpenUse && !lockForAgentOpenUse"
             class="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-4"
           >
             <div class="sm:col-span-2">
@@ -454,6 +370,12 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { http } from '@/lib/http'
 import NovedadesBlock from './NovedadesBlock.vue'
 import VehiclePartsPickerPro from './VehiclePartsPickerPro.vue'
+
+const canEdit = computed(() =>
+  !hasHardLock.value &&
+  !hasOpenUse.value &&
+  !lockForAgentOpenUse.value
+)
 
 const props = defineProps({
   agentId: { type: [Number, String], required: false, default: null },
@@ -852,19 +774,35 @@ async function createUse() {
 
 async function closeUse(u) {
   const odoStr = prompt('Ingrese el odómetro final:')
-  if (!odoStr) return
+  if (odoStr === null) return // canceló
+  if (odoStr.trim() === '') {
+    alert('Debes ingresar el odómetro final.')
+    return
+  }
+
   const odoNum = Number(odoStr)
-  if (isNaN(odoNum)) return alert('Debe ingresar un número válido.')
+  if (!Number.isFinite(odoNum)) {
+    alert('Debe ingresar un número válido.')
+    return
+  }
+
+  const startKm = u.odometer_start != null ? Number(u.odometer_start) : null
+  if (startKm != null && Number.isFinite(startKm) && odoNum < startKm) {
+    alert(`El odómetro final no puede ser menor al inicial (${startKm}).`)
+    return
+  }
 
   try {
     await http.patch(`/vehicles/uses/${u.id}/end`, { odometer_end: odoNum })
     await loadUses()
     await loadLastUseOdometer()
-    // Si quisieras notificar al padre:
-    // emit('created', { closed_use_id: u.id })
   } catch (e) {
     console.error(e)
-    alert('Error al cerrar el uso.')
+    const msg =
+      e?.response?.data?.error ||
+      e?.response?.data?.detail ||
+      'Error al cerrar el uso.'
+    alert(msg)
   }
 }
 
@@ -873,46 +811,74 @@ function showNovedades(id) {
 }
 
 // === Documentos vencidos / sin registrar (SOAT / Tecno) ===
-function isEmptyDate(dateValue) {
-  // Solo consideramos "sin registrar" cuando el campo existe y viene vacío
-  if (dateValue === null || dateValue === undefined) return false
-  const s = String(dateValue).trim()
-  return s === ''
+function isEmptyDate(value) {
+  if (!value) return true
+  const s = String(value).trim()
+
+  // casos típicos de BD
+  if (s === '' || s === 'null' || s === 'undefined') return true
+  if (s === '0000-00-00' || s.startsWith('0000-00-00')) return true
+
+  return false
 }
 
-function isExpiredDate(dateValue) {
-  // No hay valor -> no lo tratamos como vencido (lo maneja isEmptyDate)
-  if (dateValue === null || dateValue === undefined) return false
-  const s = String(dateValue).trim()
-  if (!s) return false
+function isExpiredDate(value) {
+  if (isEmptyDate(value)) return false
+
+  // normalizar cadenas tipo "2025-11-15 00:00:00"
+  const s = String(value).trim().replace(' ', 'T')
 
   const d = new Date(s)
-  // Si la fecha es inválida, NO bloqueamos (no la contamos ni como vencida ni sin registrar)
   if (Number.isNaN(d.getTime())) return false
 
   const today = new Date()
   d.setHours(0, 0, 0, 0)
   today.setHours(0, 0, 0, 0)
+
   return d < today
 }
 
-const soatDate = computed(() =>
-  props.vehicle?.soat_until ??
-  props.vehicle?.soatUntil ??
-  props.vehicle?.soat_expire_at ??
-  props.vehicle?.soatExpireAt ??
-  props.vehicle?.soat ??              // por si está así en el backend
-  null
-)
+const soatDate = computed(() => {
+  const v = props.vehicle || {}
+  return (
+    // 🔹 primero los nombres que sí manda el backend
+    v.soatDate ??
+    v.soat_date ??
+    // 🔹 compatibilidad con otros nombres que probaste antes
+    v.soat_until ??
+    v.soatUntil ??
+    v.soat_expire_at ??
+    v.soatExpireAt ??
+    v.soat ??
+    null
+  )
+})
 
-const tecnoDate = computed(() =>
-  props.vehicle?.tecno_until ??
-  props.vehicle?.tecnoUntil ??
-  props.vehicle?.tecno_expire_at ??
-  props.vehicle?.tecnoExpireAt ??
-  props.vehicle?.tecno ??             // por si está así en el backend
-  null
-)
+const tecnoDate = computed(() => {
+  const v = props.vehicle || {}
+  return (
+    // 🔹 primero los nombres que sí manda el backend
+    v.tecnoDate ??
+    v.tecno_date ??
+    // 🔹 compatibilidad con otros nombres que probaste antes
+    v.tecno_until ??
+    v.tecnoUntil ??
+    v.tecno_expire_at ??
+    v.tecnoExpireAt ??
+    v.tecno ??
+    null
+  )
+})
+
+const isWrongState = computed(() => {
+  const st = String(props.vehicle?.estado || '').trim().toUpperCase()
+  return st !== 'SERVICIO'
+})
+
+const wrongStateLabel = computed(() => {
+  const st = String(props.vehicle?.estado || '').trim()
+  return st ? `Estado actual: "${st}"` : 'Estado desconocido'
+})
 
 // Bloqueamos si falta la fecha (campo vacío) o si está vencida
 const hasExpiredDocs = computed(() =>

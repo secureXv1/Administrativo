@@ -126,7 +126,9 @@
               <th class="py-2 pr-3">Funcionario</th>
               <th class="py-2 pr-3">Grupo</th>
               <th class="py-2 pr-3">Unidad</th>
-              <th class="py-2 pr-3">Acciones</th>
+              <th class="py-2 pr-3">Asig./Usos</th>
+              <th class="py-2 pr-3">Est./Hist</th>
+              <th class="py-2 pr-3">Edit./Borr</th>
             </tr>
           </thead>
           <tbody>
@@ -200,6 +202,30 @@
                       <path d="M3 11V7a5 5 0 0 1 5-5h8a5 5 0 0 1 5 5v4" />
                     </svg>
                   </button>
+                </div>
+              </td>
+              <td class="py-2 pr-3">
+                <div class="flex flex-wrap gap-2">
+                  <!-- Cambiar estado -->
+                  <button class="icon-btn" title="Cambiar estado" @click="openStateModal(v)">
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 12h18M12 3v18" />
+                    </svg>
+                  </button>
+
+                  <!-- Ver historial de estados -->
+                  <button class="icon-btn" title="Ver historial" @click="openHistory(v)">
+                    <!-- icono reloj / timeline -->
+                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M3 12a9 9 0 1 0 9-9" />
+                      <path d="M3 3v6h6" />
+                      <path d="M12 7v5l3 3" />
+                    </svg>
+                  </button>
+                </div>
+              </td>
+              <td class="py-2 pr-3">
+                <div class="flex flex-wrap gap-2">
                   <!-- Editar -->
                   <button class="icon-btn" title="Editar vehículo" @click="openEditVehicle(v)">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -215,22 +241,6 @@
                       <path d="M10 10v6" />
                       <path d="M14 10v6" />
                       <path d="M5 6l1-2h12l1 2" />
-                    </svg>
-                  </button>
-                  <!-- Cambiar estado -->
-                  <button class="icon-btn" title="Cambiar estado" @click="openStateModal(v)">
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M3 12h18M12 3v18" />
-                    </svg>
-                  </button>
-
-                  <!-- Ver historial de estados -->
-                  <button class="icon-btn" title="Ver historial" @click="openHistory(v)">
-                    <!-- icono reloj / timeline -->
-                    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M3 12a9 9 0 1 0 9-9" />
-                      <path d="M3 3v6h6" />
-                      <path d="M12 7v5l3 3" />
                     </svg>
                   </button>
                 </div>
