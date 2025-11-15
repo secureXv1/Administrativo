@@ -17,7 +17,7 @@
           <div class="sm:col-span-2">
             <label class="label">Buscar</label>
             <input class="input" v-model="filters.q"
-                   placeholder="Código o Nickname" />
+                   placeholder="Código, Nickname, Grupo o Unidad" />
           </div>
 
           <div>
