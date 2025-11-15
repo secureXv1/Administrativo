@@ -907,17 +907,25 @@ async function loadAllReports(date) {
 }
 
 
-// ===== Filtrado
 const agentesFiltrados = computed(() => {
   let list = agentes.value.slice()
   const q = filters.value.q.trim().toUpperCase()
   if (q) {
-    list = list.filter(a =>
-      String(a.code||'').toUpperCase().includes(q) ||
-      String(a.novelty_description||'').toUpperCase().includes(q) ||
-      String(a.unitName||'').toUpperCase().includes(q) ||
-      String(a.mission||'').toUpperCase().includes(q)   
-    )
+    list = list.filter(a => {
+      const code  = String(a.code || '').toUpperCase()
+      const nick  = String(a.nickname || '').toUpperCase()
+      const desc  = String(a.novelty_description || '').toUpperCase()
+      const unit  = String(a.unitName || '').toUpperCase()
+      const miss  = String(a.mission || '').toUpperCase()
+
+      return (
+        code.includes(q) ||
+        nick.includes(q) ||          // 🔍 búsqueda por nickname
+        desc.includes(q) ||
+        unit.includes(q) ||
+        miss.includes(q)
+      )
+    })
   }
   if (filters.value.category !== 'ALL') list = list.filter(a => String(a.category) === filters.value.category)
   if (filters.value.state !== 'ALL')    list = list.filter(a => String(a.state).toUpperCase() === filters.value.state)
@@ -927,14 +935,14 @@ const agentesFiltrados = computed(() => {
     list = list.filter(a => String(a.unitName||'') === uName)
   }
 
-  // 👇 orden personalizado por categoría
   return list.sort((a, b) => {
     const ca = categorySort(a.category)
     const cb = categorySort(b.category)
     if (ca !== cb) return ca - cb
-    return String(a.code).localeCompare(String(b.code)) // desempate por código
+    return String(a.code).localeCompare(String(b.code))
   })
 })
+
 
 
 // Resumen chips
