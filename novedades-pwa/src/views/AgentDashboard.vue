@@ -244,11 +244,14 @@
                           <th class="text-left py-2 px-3 font-semibold hidden lg:table-cell">
                             SOAT / Tecno / Aceite
                           </th>
-                          <th class="text-left py-2 px-3 font-semibold">Nota</th>
+                          <!--th class="text-left py-2 px-3 font-semibold">Nota</th-->
                           <th class="text-left py-2 px-3 font-semibold">Aceptación</th>
+                          <!-- 🔹 NUEVA COLUMNA Novedades -->
+                          <th class="text-left py-2 px-3 font-semibold">Novedades</th>
                           <th class="text-left py-2 px-3 font-semibold">Usos en el período</th>
                         </tr>
                       </thead>
+
                       <tbody class="bg-white">
                         <!-- Bloque por asignación: fila principal + fila desplegable -->
                         <template v-for="row in assignmentsAll" :key="row.id">
@@ -298,10 +301,6 @@
 
                               </div>
                             </td>
-
-
-                            <td class="py-2 px-3">{{ row.notes || '—' }}</td>
-
                             <!-- Columna Aceptación -->
                             <td class="py-2 px-3">
                               <div class="space-y-1">
@@ -357,7 +356,16 @@
                                 </div>
                               </div>
                             </td>
-
+                            <!-- 🔹 NUEVA COLUMNA Novedades -->
+                            <td class="py-2 px-3">
+                              <button
+                                type="button"
+                                class="px-2 py-1 rounded-md border border-slate-300 text-xs text-slate-700 hover:bg-slate-50"
+                                @click="openVehicleNovelties(row.vehicle)"
+                              >
+                                Ver novedades
+                              </button>
+                            </td>
                             <!-- Columna botón para ver usos -->
                             <td class="py-2 px-3">
                               <button
@@ -376,7 +384,7 @@
 
                           <!-- FILA DESPLEGABLE: usos dentro del período de la asignación -->
                           <tr v-if="expandedAssignmentId === row.id">
-                            <td colspan="8" class="bg-slate-50 px-3 py-3">
+                            <td colspan="9" class="bg-slate-50 px-3 py-3">
                               <div class="text-xs text-slate-500 mb-2">
                                 Usos del vehículo
                                 <span class="font-semibold">{{ row.vehicle.code }}</span>
@@ -600,8 +608,14 @@
                             </div>
                           </template>
                         </template>
+                        <button
+                          type="button"
+                          class="mt-2 px-2 py-1 rounded-md border border-slate-300 text-[11px] text-slate-700 hover:bg-slate-50"
+                          @click="openVehicleNovelties(row.vehicle)"
+                        >
+                          Ver novedades
+                        </button>
                       </div>
-
 
                       <!-- Usos en el período (móvil) -->
                       <div
@@ -775,12 +789,13 @@
           />
 
           <VehicleNoveltiesModal
-            v-if="showNovsModal && pendingVehicle && pendingCloseUse"
+            v-if="showNovsModal && pendingVehicle"
             :vehicle="pendingVehicle"
-            :closing-use="pendingCloseUse"
+            :closing-use="pendingCloseUse || null"
             @close="onNovsModalClose"
             @close-use="onNovsModalConfirmClose"
           />
+
 
           <!-- Modal: seleccionar vehículo para nuevo uso -->
           <div v-if="showVehiclePicker" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">
@@ -2368,6 +2383,14 @@ function formatOilInfo (veh) {
     return `Último cambio: ${last} km`
   }
   return '—'
+}
+
+function openVehicleNovelties(vehicle) {
+  if (!vehicle || !vehicle.id) return
+  pendingVehicle.value = vehicle
+  // 👇 modo "solo ver": sin uso a cerrar
+  pendingCloseUse.value = null
+  showNovsModal.value = true
 }
 
 function startOfMonth(d){ const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x }
