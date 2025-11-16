@@ -415,8 +415,13 @@
                                       <th class="text-left py-1.5 px-2 font-semibold">
                                         Notas
                                       </th>
+                                      <!-- 🔹 Nueva columna -->
+                                      <th class="text-left py-1.5 px-2 font-semibold">
+                                        Aceptación
+                                      </th>
                                     </tr>
                                   </thead>
+
                                   <tbody>
                                     <tr
                                       v-for="u in usesForAssignment(row)"
@@ -427,7 +432,6 @@
                                         : 'bg-slate-50/40 text-slate-400'
                                       "
                                     >
-
                                       <td class="py-1.5 px-2">{{ u.started_at || '—' }}</td>
                                       <td class="py-1.5 px-2">{{ u.ended_at || '—' }}</td>
                                       <td class="py-1.5 px-2">
@@ -441,6 +445,44 @@
                                       </td>
                                       <td class="py-1.5 px-2">
                                         {{ (u.notes || '').trim() || '—' }}
+                                      </td>
+
+                                      <!-- 🔹 Nueva celda: Aceptación del uso -->
+                                      <td class="py-1.5 px-2">
+                                        <div class="space-y-1 text-[11px]">
+                                          <!-- Ya aceptado -->
+                                          <div v-if="u.agent_ack_at">
+                                            <span class="inline-flex items-center gap-1 text-emerald-700">
+                                              <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                              Aceptado el {{ u.agent_ack_at }}
+                                            </span>
+                                            <div v-if="u.agent_ack_note" class="text-slate-700">
+                                              Nota: {{ u.agent_ack_note }}
+                                            </div>
+                                          </div>
+
+                                          <!-- Cerrado pero pendiente de aceptación -->
+                                          <div v-else-if="u.ended_at">
+                                            <span class="inline-flex items-center gap-1 text-amber-700">
+                                              <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                              Pendiente de aceptación
+                                            </span>
+                                            <button
+                                              type="button"
+                                              class="mt-1 px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white"
+                                              @click="openUseAccept(u)"
+                                            >
+                                              Aceptar uso
+                                            </button>
+                                          </div>
+
+                                          <!-- Uso aún abierto -->
+                                          <div v-else>
+                                            <span class="text-slate-400">
+                                              El uso debe estar cerrado para poder aceptarlo.
+                                            </span>
+                                          </div>
+                                        </div>
                                       </td>
                                     </tr>
                                   </tbody>
@@ -606,6 +648,43 @@
                             <div class="mt-1 text-slate-700">
                               {{ (u.notes || '').trim() || '—' }}
                             </div>
+                            <!-- 🔹 Nueva celda: Aceptación del uso -->
+                              <td class="py-1.5 px-2">
+                                <div class="space-y-1 text-[11px]">
+                                  <!-- Ya aceptado -->
+                                  <div v-if="u.agent_ack_at">
+                                    <span class="inline-flex items-center gap-1 text-emerald-700">
+                                      <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                      Aceptado el {{ u.agent_ack_at }}
+                                    </span>
+                                    <div v-if="u.agent_ack_note" class="text-slate-700">
+                                      Nota: {{ u.agent_ack_note }}
+                                    </div>
+                                  </div>
+
+                                  <!-- Cerrado pero pendiente de aceptación -->
+                                  <div v-else-if="u.ended_at">
+                                    <span class="inline-flex items-center gap-1 text-amber-700">
+                                      <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                      Pendiente de aceptación
+                                    </span>
+                                    <button
+                                      type="button"
+                                      class="mt-1 px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white"
+                                      @click="openUseAccept(u)"
+                                    >
+                                      Aceptar uso
+                                    </button>
+                                  </div>
+
+                                  <!-- Uso aún abierto -->
+                                  <div v-else>
+                                    <span class="text-slate-400">
+                                      El uso debe estar cerrado para poder aceptarlo.
+                                    </span>
+                                  </div>
+                                </div>
+                             </td>
                           </div>
                         </div>
                       </div>
@@ -629,6 +708,7 @@
                         <th class="text-left py-2 px-3 font-semibold">Km salida</th>
                         <th class="text-left py-2 px-3 font-semibold">Km entrada</th>
                         <th class="text-left py-2 px-3 font-semibold">Notas</th>
+                        <th class="text-left py-2 px-3 font-semibold">Aceptación</th>
                         <th class="text-left py-2 px-3 font-semibold"></th>
                       </tr>
                     </thead>
@@ -648,6 +728,26 @@
                         <td class="py-2 px-3">{{ u.odometer_start ?? '—' }}</td>
                         <td class="py-2 px-3">{{ u.odometer_end ?? '—' }}</td>
                         <td class="py-2 px-3">{{ (u.notes || '').trim() || '—' }}</td>
+
+                        <!-- NUEVA COLUMNA: Aceptación -->
+                        <td class="py-2 px-3">
+                          <div class="space-y-1 text-xs">
+                            <!-- Ya aceptado -->
+                            <div v-if="u.agent_ack_at">
+                              <span class="inline-flex items-center gap-1 text-emerald-700">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                Aceptado el {{ u.agent_ack_at }}
+                              </span>
+                              <div v-if="u.agent_ack_note" class="text-slate-700">
+                                Nota: {{ u.agent_ack_note }}
+                              </div>
+                            </div>
+
+                            
+                          </div>
+                        </td>
+
+                        <!-- Botón Cerrar (solo cuando está abierto) -->
                         <td class="py-2 px-3 text-right">
                           <button
                             v-if="!u.ended_at"
@@ -875,6 +975,59 @@
     </div>
   </div-->
     <!-- Modal Sí / No para cerrar uso (AgentDashboard) -->
+       <!-- Modal: aceptar uso cerrado -->
+  <div v-if="showUseAccept" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">
+    <div class="bg-white rounded-2xl p-6 w-[96vw] max-w-md relative">
+      <button class="absolute top-2 right-2 text-xl text-slate-500" @click="closeUseAccept">
+        &times;
+      </button>
+
+      <h3 class="font-semibold text-lg mb-3">Aceptar uso de vehículo</h3>
+      <p class="text-sm text-slate-600 mb-3">
+        Confirma que el uso cerrado es correcto y deja una nota (solo se puede enviar una vez).
+      </p>
+
+      <!-- Resumen del uso -->
+      <div class="text-xs mb-3 rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+        <div><span class="font-semibold">Vehículo:</span> {{ useAcceptItem?.vehicle?.code || '—' }}</div>
+        <div><span class="font-semibold">Inicio:</span> {{ useAcceptItem?.started_at || '—' }}</div>
+        <div><span class="font-semibold">Fin:</span> {{ useAcceptItem?.ended_at || '—' }}</div>
+      </div>
+
+      <div>
+        <label class="label">Nota (obligatoria, máx. 300)</label>
+        <textarea
+          v-model="useAcceptNote"
+          class="input w-full"
+          rows="4"
+          maxlength="300"
+        />
+        <p class="text-xs text-slate-500 mt-1">
+          {{ (useAcceptNote || '').length }}/300
+        </p>
+        <p v-if="useAcceptErr" class="text-sm text-rose-600 mt-2">
+          {{ useAcceptErr }}
+        </p>
+      </div>
+
+      <div class="flex gap-3 pt-3">
+        <button
+          class="btn-secondary flex-1"
+          @click="closeUseAccept"
+          :disabled="acceptingUse"
+        >
+          Cancelar
+        </button>
+        <button
+          class="btn-primary flex-1"
+          @click="submitUseAccept"
+          :disabled="acceptingUse || !(useAcceptNote || '').trim()"
+        >
+          {{ acceptingUse ? 'Enviando…' : 'Aceptar uso' }}
+        </button>
+      </div>
+    </div>
+  </div>
   <div
     v-if="showAskNovelty"
     class="fixed inset-0 z-50 bg-black/40 flex items-center justify-center"
@@ -1143,6 +1296,95 @@ const acceptNote   = ref('')
 const acceptErr    = ref('')
 const accepting    = ref(false)
 const agentResolveMsg = ref('') // Mensaje visible si no hay vínculo user↔agent
+
+// ===== ACEPTACIÓN DE USOS CERRADOS =====
+const showUseAccept   = ref(false)
+const useAcceptItem   = ref(null)
+const useAcceptNote   = ref('')
+const useAcceptErr    = ref('')
+const acceptingUse    = ref(false)
+
+function openUseAccept(u) {
+  useAcceptItem.value = u
+  useAcceptNote.value = ''
+  useAcceptErr.value  = ''
+  showUseAccept.value = true
+}
+
+function closeUseAccept() {
+  showUseAccept.value = false
+  useAcceptItem.value = null
+  useAcceptNote.value = ''
+  useAcceptErr.value  = ''
+}
+
+async function submitUseAccept() {
+  useAcceptErr.value = ''
+  const note = (useAcceptNote.value || '').trim()
+  if (!note) {
+    useAcceptErr.value = 'La nota es obligatoria.'
+    return
+  }
+  if (note.length > 300) {
+    useAcceptErr.value = 'Máximo 300 caracteres.'
+    return
+  }
+  if (!useAcceptItem.value?.id) {
+    useAcceptErr.value = 'Uso inválido.'
+    return
+  }
+
+  const useId = useAcceptItem.value.id
+  acceptingUse.value = true
+
+  try {
+    await apiPatch(`/vehicles/uses/${useId}/accept`, { note })
+
+    // 🔹 Marca de tiempo “bonita” para mostrar en la tabla
+    const nowStr = new Date().toISOString().slice(0, 19).replace('T', ' ')
+
+    // === 1) Actualizamos el array principal de usos (pestaña USOS) ===
+    usesAll.value = usesAll.value.map(u =>
+      u.id === useId
+        ? {
+            ...u,
+            agent_ack_at: nowStr,
+            agent_ack_note: note
+          }
+        : u
+    )
+
+    // === 2) Actualizamos también los usos dentro de cada asignación desplegada ===
+    const newMap = {}
+    for (const [asgId, list] of Object.entries(assignUsesMap.value || {})) {
+      newMap[asgId] = list.map(u =>
+        u.id === useId
+          ? {
+              ...u,
+              agent_ack_at: nowStr,
+              agent_ack_note: note
+            }
+          : u
+      )
+    }
+    assignUsesMap.value = newMap
+
+    // Cerrar modal y limpiar
+    showUseAccept.value = false
+    useAcceptItem.value = null
+    useAcceptNote.value = ''
+
+    // Opcional: si quieres asegurarte de sincronizar con backend:
+    // await loadUsesAll()
+  } catch (e) {
+    useAcceptErr.value =
+      e?.response?.data?.error ||
+      e?.message ||
+      'No se pudo aceptar el uso.'
+  } finally {
+    acceptingUse.value = false
+  }
+}
 
 // —— Flujo "Nuevo uso" con selector de vehículo ——
 const showVehiclePicker = ref(false)
@@ -1455,8 +1697,6 @@ function normalizeAssignmentRow (a) {
   }
 }
 
-
-
 function normalizeUseRow (u) {
   // Vehículo
   const vId =
@@ -1471,7 +1711,7 @@ function normalizeUseRow (u) {
     u.vehicleCode ??
     ''
 
-  // Agente (soportando varios formatos de backend)
+  // Agente
   const aId =
     u.agent?.id ??
     u.agent_id ??
@@ -1497,11 +1737,25 @@ function normalizeUseRow (u) {
 
   return {
     id: u.id,
-    started_at: u.started_at ?? u.startedAt ?? u.start_date ?? '',
-    ended_at: u.ended_at ?? u.endedAt ?? u.end_date ?? null,
+    started_at: u.started_at ?? u.startedAt ?? u.start_date ?? u.startDate ?? '',
+    ended_at:   u.ended_at   ?? u.endedAt   ?? u.end_date   ?? u.endDate   ?? null,
     odometer_start: u.odometer_start ?? u.odometerStart ?? null,
-    odometer_end: u.odometer_end ?? u.odometerEnd ?? null,
+    odometer_end:   u.odometer_end   ?? u.odometerEnd   ?? null,
     notes: u.notes ?? u.note ?? '',
+
+    // 👇 AQUÍ EL CAMBIO IMPORTANTE
+    agent_ack_at:
+      u.agent_ack_at ??
+      u.agentAckAt ??      // <-- lo que devuelve tu SELECT
+      u.accept_at ??
+      null,
+
+    agent_ack_note:
+      u.agent_ack_note ??
+      u.agentAckNote ??    // <-- lo que devuelve tu SELECT
+      u.accept_note ??
+      null,
+
     vehicle: {
       id: vId,
       code: vCode

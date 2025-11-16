@@ -86,6 +86,11 @@ async function validateAgentScope(req, agentId) {
   return false;
 }
 
+// Devuelve el agentId asociado al usuario logueado (si existe)
+function getRequesterAgentId(req) {
+  return req.user?.agentId ?? req.user?.agent_id ?? null
+}
+
 // Saber si un vehículo tiene uso abierto
 async function vehicleHasOpenUse(vehicleId) {
   const [[row]] = await pool.query(
@@ -1041,19 +1046,34 @@ router.get(
     if (agent_id)   { where.push('vu.agent_id=?');   args.push(agent_id)   }
     if (String(open||'0') === '1') where.push('vu.ended_at IS NULL')
     const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : ''
+
     const [rows] = await pool.query(`
-      SELECT vu.id, vu.vehicle_id AS vehicleId, v.code AS vehicleCode, v.estado, v.odometer, v.oil_last_km,v.oil_interval_km,
-             vu.agent_id AS agentId, a.code AS agentCode,
-             DATE_FORMAT(vu.started_at,'%Y-%m-%d %H:%i:%s') AS started_at,
-             DATE_FORMAT(vu.ended_at  ,'%Y-%m-%d %H:%i:%s') AS ended_at,
-             vu.odometer_start, vu.odometer_end, vu.notes,
-             vu.created_by
+      SELECT 
+        vu.id,
+        vu.vehicle_id AS vehicleId,
+        v.code        AS vehicleCode,
+        v.estado,
+        v.odometer,
+        v.oil_last_km,
+        v.oil_interval_km,
+        vu.agent_id   AS agentId,
+        a.code        AS agentCode,
+        DATE_FORMAT(vu.started_at,'%Y-%m-%d %H:%i:%s') AS started_at,
+        DATE_FORMAT(vu.ended_at  ,'%Y-%m-%d %H:%i:%s') AS ended_at,
+        vu.odometer_start,
+        vu.odometer_end,
+        vu.notes,
+        vu.created_by,
+        -- 🔹 campos de aceptación del uso
+        vu.agent_ack_at   AS agentAckAt,
+        vu.agent_ack_note AS agentAckNote
       FROM vehicle_uses vu
       JOIN vehicles v ON v.id = vu.vehicle_id
       JOIN agent a    ON a.id = vu.agent_id
       ${whereSql}
       ORDER BY vu.id DESC
     `, args)
+
     res.json({ items: rows })
   }
 )
@@ -1219,7 +1239,6 @@ router.post(
   }
 )
 
-
 // PATCH /vehicles/uses/:id/end
 router.patch(
   '/uses/:id/end',
@@ -1287,6 +1306,145 @@ router.patch(
   }
 )
 
+// PATCH /vehicles/uses/:id/end
+router.patch(
+  '/uses/:id/end',
+  requireAuth,
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  async (req, res) => {
+    // ... (este lo dejas tal cual lo tienes)
+  }
+)
+
+// PATCH /vehicles/uses/:id/accept  { note }
+router.patch(
+  '/uses/:id/accept',
+  requireAuth,
+  requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
+  async (req, res) => {
+    const { id }   = req.params
+    const noteRaw  = String(req.body?.note || '').trim()
+
+    if (!noteRaw) {
+      return res.status(422).json({ error: 'La nota es obligatoria.' })
+    }
+    if (noteRaw.length > 300) {
+      return res.status(422).json({ error: 'La nota no puede superar 300 caracteres.' })
+    }
+
+    // 1) Traer el uso (ahora necesitamos más campos)
+    const [[useRow]] = await pool.query(
+      `
+      SELECT 
+        id,
+        vehicle_id,
+        agent_id,
+        started_at,
+        ended_at,
+        agent_ack_at
+      FROM vehicle_uses
+      WHERE id = ?
+      LIMIT 1
+      `,
+      [id]
+    )
+
+    if (!useRow) {
+      return res.status(404).json({ error: 'Uso no encontrado' })
+    }
+
+    // Debe estar CERRADO
+    if (!useRow.ended_at) {
+      return res.status(409).json({ error: 'El uso debe estar cerrado antes de poder aceptarlo.' })
+    }
+
+    // No permitir doble aceptación
+    if (useRow.agent_ack_at) {
+      return res.status(409).json({ error: 'El uso ya fue aceptado previamente.' })
+    }
+
+    const role = String(req.user?.role || '').toLowerCase()
+    const requesterAgentId = getRequesterAgentId(req)
+
+    // 2) Si es AGENTE, aplicamos la nueva regla:
+    //    - puede aceptar si él hizo el uso
+    //    - o si es el agente asignado al vehículo en la fecha del uso
+    if (role === 'agent') {
+      if (!requesterAgentId) {
+        return res.status(403).json({ error: 'No se pudo determinar tu agente asociado.' })
+      }
+
+      const sameAgent = Number(requesterAgentId) === Number(useRow.agent_id)
+
+      let assignedToVehicle = false
+
+      // Si no es el mismo que hizo el uso, verificamos asignación del vehículo
+      if (!sameAgent) {
+        const useDate = useRow.started_at || useRow.ended_at
+
+        const [[assignmentRow]] = await pool.query(
+          `
+          SELECT id
+          FROM vehicle_assignments
+          WHERE
+            vehicle_id = ?
+            AND agent_id = ?
+            AND start_date <= DATE(?)
+            AND (end_date IS NULL OR end_date >= DATE(?))
+          ORDER BY start_date DESC
+          LIMIT 1
+          `,
+          [
+            useRow.vehicle_id,
+            requesterAgentId,
+            useDate,
+            useDate
+          ]
+        )
+
+        assignedToVehicle = !!assignmentRow
+      }
+
+      if (!sameAgent && !assignedToVehicle) {
+        return res.status(403).json({
+          error: 'Solo el agente asignado al vehículo en la fecha del uso (o quien realizó el uso) puede aceptarlo.'
+        })
+      }
+    }
+
+    // 3) Para líderes / supervisión / superadmin dejamos el permiso amplio
+    //    (requireRole ya los filtró)
+
+    // 4) Actualizamos la aceptación
+    await pool.query(
+      `
+      UPDATE vehicle_uses
+      SET agent_ack_at   = NOW(),
+          agent_ack_note = ?
+      WHERE id = ?
+      `,
+      [noteRaw, id]
+    )
+
+    try {
+      await logEvent({
+        req,
+        userId: req.user.uid,
+        action: Actions.VEHICLE_USE_ACCEPT ?? 'VEHICLE_USE_ACCEPT',
+        details: {
+          useId: Number(id),
+          // quién hizo originalmente el uso:
+          useAgentId: Number(useRow.agent_id),
+          // quién está aceptando ahora:
+          acceptedByAgentId: requesterAgentId ? Number(requesterAgentId) : null
+        }
+      })
+    } catch (_) {}
+
+    res.json({ ok: true })
+  }
+)
+
 // GET /vehicles/:id/last-use-odometer
 router.get(
   '/:id/last-use-odometer',
@@ -1325,6 +1483,8 @@ router.get(
     res.json({ lastOdometer: row?.last != null ? Number(row.last) : null })
   }
 )
+
+
 
 /* -------------------------------------------------------
    NOVELTIES
