@@ -49,8 +49,21 @@
       <!-- Formulario crear/editar -->
       <div class="card">
         <div class="card-body">
-          <div v-if="msg" :class="[msgClass, 'mb-4', 'text-base', 'font-semibold']">
-            {{ msg }}
+          <!-- Mensaje + búsqueda -->
+          <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
+            <div v-if="msg" :class="[msgClass, 'text-base', 'font-semibold']">
+              {{ msg }}
+            </div>
+
+            <div class="w-full sm:w-64">
+              <label class="label">Buscar usuario</label>
+              <input
+                class="input w-full"
+                v-model.trim="userFilter"
+                type="text"
+                placeholder="Username..."
+              />
+            </div>
           </div>
 
           <form class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end mb-6" @submit.prevent="onSubmit">
@@ -118,7 +131,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="u in users" :key="u.id">
+                <tr v-for="u in filteredUsers" :key="u.id">
                   <td>{{ u.id }}</td>
                   <td class="font-mono break-all">{{ u.username }}</td>
                   <td class="uppercase">{{ u.role }}</td>
@@ -181,7 +194,7 @@
 
           <!-- Lista móvil (cards) -->
           <div class="grid gap-3 md:hidden">
-            <div v-for="u in users" :key="u.id" class="rounded-lg border p-3 bg-white">
+            <div v-for="u in filteredUsers" :key="u.id" class="rounded-lg border p-3 bg-white">
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <div class="text-xs text-slate-500">ID {{ u.id }}</div>
@@ -303,6 +316,28 @@ const units = ref([])
 
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
+
+// Filtro de usuarios
+const userFilter = ref('')
+
+const filteredUsers = computed(() => {
+  const q = userFilter.value.trim().toLowerCase()
+  if (!q) return users.value
+
+  return users.value.filter(u => {
+    const username = String(u.username || '').toLowerCase()
+    const role     = String(u.role || '').toLowerCase()
+    const gCode    = String(groupCode(u.groupId) || '').toLowerCase()
+    const uName    = String(unitName(u.unitId) || '').toLowerCase()
+
+    return (
+      username.includes(q) ||
+      role.includes(q) ||
+      gCode.includes(q) ||
+      uName.includes(q)
+    )
+  })
+})
 
 const form = ref({
   id: null,
