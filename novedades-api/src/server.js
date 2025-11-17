@@ -365,15 +365,38 @@ app.get('/me/profile', auth, async (req, res) => {
 app.get('/catalogs/agents', auth, async (req, res) => {
   try {
     const { q, code, category, groupId, unitId, limit = 50 } = req.query;
+
     const take = Math.min(Number(limit) || 50, 200);
     const params = [];
     let where = '1=1';
 
-    if (category) { where += ' AND a.category=?'; params.push(String(category)); }
-    if (groupId)  { where += ' AND a.groupId=?';  params.push(Number(groupId)); }
-    if (unitId)   { where += ' AND a.unitId=?';   params.push(Number(unitId)); }
-    if (code)     { where += ' AND a.code=?';     params.push(String(code).toUpperCase().trim()); }
-    else if (q)   { where += ' AND a.code LIKE ?';params.push(String(q).toUpperCase().trim() + '%'); }
+    const qNorm = q && String(q).trim();
+    let hasQ = !!qNorm;
+
+    if (category) {
+      where += ' AND a.category=?';
+      params.push(String(category));
+    }
+    if (groupId) {
+      where += ' AND a.groupId=?';
+      params.push(Number(groupId));
+    }
+    if (unitId) {
+      where += ' AND a.unitId=?';
+      params.push(Number(unitId));
+    }
+
+    // Si viene code, usamos búsqueda exacta por código y
+    // NO usamos q para filtrar (se ignora q en este caso).
+    if (code) {
+      where += ' AND a.code=?';
+      params.push(String(code).toUpperCase().trim());
+      hasQ = false;
+    }
+
+    // Si hay q (búsqueda libre), no la usamos en SQL porque nickname está cifrado.
+    // En vez de eso traemos un bloque más grande y filtramos en JS.
+    const searchLimit = hasQ ? 500 : take;
 
     const [rows] = await pool.query(
       `SELECT
@@ -385,15 +408,10 @@ app.get('/catalogs/agents', auth, async (req, res) => {
          a.status,
          a.municipalityId,
          a.nickname,
-         a.nickname, a.mt, a.birthday,
-
-         -- unidad (solo name para evitar columnas inexistentes)
+         a.mt,
+         a.birthday,
          u.name AS unitName,
-
-         -- grupo
          g.code AS groupCode,
-
-         -- municipio (renombrado para no chocar con "name")
          m.dept AS muniDept,
          m.name AS muniName
        FROM agent a
@@ -403,21 +421,42 @@ app.get('/catalogs/agents', auth, async (req, res) => {
        WHERE ${where}
        ORDER BY a.code
        LIMIT ?`,
-      [...params, take]
+      [...params, searchLimit]
     );
 
-    res.json(rows.map(r => ({
-      ...r,
-      nickname: decNullable(r.nickname),
-      mt: r.mt || null,
-      birthday: r.birthday ? String(r.birthday).slice(0,10) : null
-    })));
-   
+    const qLower = (qNorm || '').toLowerCase();
+
+    let result = rows.map(r => {
+      let nickname = null;
+      try {
+        nickname = r.nickname ? decNullable(r.nickname) : null;
+      } catch {
+        nickname = null;
+      }
+      return {
+        ...r,
+        nickname,
+        mt: r.mt || null,
+        birthday: r.birthday ? String(r.birthday).slice(0, 10) : null
+      };
+    });
+
+    if (hasQ) {
+      result = result.filter(r => {
+        const codeLower = String(r.code || '').toLowerCase();
+        const nickLower = String(r.nickname || '').toLowerCase();
+        return codeLower.includes(qLower) || nickLower.includes(qLower);
+      });
+    }
+
+    // Respetar el "limit" que pide el cliente
+    res.json(result.slice(0, take));
   } catch (e) {
-    console.error('GET /catalogs/agents error:', e); // <— mira la consola del servidor
+    console.error('GET /catalogs/agents error:', e);
     res.status(500).json({ error: 'CatalogError', detail: e.message });
   }
 });
+
 
 // ===== Mis agentes (del líder de unidad) =====
 app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (req, res) => {
@@ -2523,7 +2562,6 @@ app.get('/admin/agents-no-unit', auth, requireRole('superadmin', 'supervision', 
   res.json(rows);
 });
 
-// End point para contador de días de racha por agente (cálculo JS, preciso + municipio/depto última novedad)
 // End point para contador de días de racha por agente (cálculo JS, preciso + municipio/depto última novedad)
 app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 'leader_group'), async (req, res) => {
   try {

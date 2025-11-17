@@ -91,13 +91,14 @@
               <div class="flex flex-col">
                 <label class="text-xs font-medium text-slate-600 mb-1 block">Agregar agente</label>
                 <input
-                  class="rounded-lg border border-slate-300 bg-white text-slate-900 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                  class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
                   list="free-agents-list"
                   v-model="agentSearch"
                   @input="onAgentSearchInput"
-                  placeholder="Buscar código (ej: O101)..."
+                  placeholder="Buscar código o nickname (ej: O101 o &quot;NOM.APE&quot;)..."
                   autocomplete="off"
                 />
+
                 <datalist id="free-agents-list">
                   <option
                     v-for="a in agentSearchResults.filter(x => !agents.some(y => y.code === x.code))"
@@ -105,7 +106,11 @@
                     :value="a.code"
                     @click="onSelectAgent(a.code)"
                   >
-                    {{ a.code }} ({{ displayCategory(a.category) }}){{ a.unitName ? ' — ' + a.unitName : '' }}
+                    {{ a.code }}
+                    <template v-if="a.nickname">
+                      — "{{ a.nickname }}"
+                    </template>
+                    ({{ displayCategory(a.category) }}){{ a.unitName ? ' — ' + a.unitName : '' }}
                   </option>
                 </datalist>
                 <p v-if="agentOwnershipMsg" class="mt-1 h-5 text-xs text-amber-700">{{ agentOwnershipMsg }}</p>
