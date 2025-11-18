@@ -214,6 +214,92 @@
                   </ul>
                 </div>
 
+                <!-- Novedades recientes -->
+                <h4 class="font-semibold text-slate-700 text-sm mt-5 mb-2 flex items-center justify-between">
+                  <span>Novedades recientes del vehículo</span>
+                  <button
+                    v-if="!loadingNovs && recentNovedades.length"
+                    type="button"
+                    class="text-[11px] text-blue-600 hover:underline"
+                    @click="showRecentList = !showRecentList"
+                  >
+                    {{ showRecentList ? 'Ocultar listado' : `Ver listado (${recentNovedades.length})` }}
+                  </button>
+                </h4>
+
+                <div v-if="loadingNovs" class="text-xs text-slate-500">Cargando novedades…</div>
+
+                <div v-else>
+                  <div v-if="!recentNovedades.length" class="text-xs text-slate-400 mb-2">
+                    No hay novedades registradas aún.
+                  </div>
+
+                  <div
+                    v-else-if="showRecentList"
+                    class="border rounded-lg bg-white p-2 max-h-40 overflow-y-auto space-y-1"
+                  >
+                    <div
+                      v-for="n in recentNovedades"
+                      :key="n.id"
+                      class="text-xs flex items-center justify-between border-b last:border-b-0 py-1"
+                    >
+                      <div class="min-w-0">
+                        • <span class="truncate inline-block max-w-[220px] align-middle">{{ n.description }}</span>
+                        <a
+                          v-if="n.photoUrl"
+                          :href="`/${n.photoUrl}`"
+                          target="_blank"
+                          class="text-blue-600 underline ml-1"
+                        >
+                          foto
+                        </a>
+                        <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
+                      </div>
+                      <button
+                        class="text-red-600 hover:text-red-800 font-medium text-[11px] shrink-0 ml-2"
+                        @click="deleteNovedad(n.id)"
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <!-- Formulario para nueva novedad (desc + foto + agregar) -->
+                <div class="mt-3 grid grid-cols-1 sm:grid-cols-12 gap-3 items-start">
+                  <!-- Descripción -->
+                  <div class="sm:col-span-7">
+                    <textarea
+                      v-model="newNovedad.description"
+                      rows="1"
+                      maxlength="200"
+                      class="w-full rounded-lg border border-slate-300 bg-white text-slate-900 placeholder-slate-400 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      :placeholder="descPlaceholder"
+                    ></textarea>
+                    <div class="text-[11px] text-slate-400 mt-1">
+                      {{ (newNovedad.description || '').length }}/200
+                    </div>
+                  </div>
+
+                  <!-- Foto -->
+                  <div class="sm:col-span-3">
+                    <label
+                      class="inline-flex items-center justify-center px-3 py-2 w-full rounded-lg border border-slate-300 bg-white text-slate-800 text-sm cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      Seleccionar img
+                      <input type="file" accept="image/*" class="hidden" @change="onPhoto" />
+                    </label>
+                    <div class="text-[11px] text-slate-500 truncate mt-1">
+                      {{ newNovedad.file ? newNovedad.file.name : 'Ningún archivo' }}
+                    </div>
+                  </div>
+
+                  <!-- Botón -->
+                  <div class="sm:col-span-2 flex items-end">
+                    <button class="btn-primary w-full" @click="addNovedad">Agregar</button>
+                  </div>
+                </div>
+
+            
               </div>
 
             </div> <!-- ESTE ES EL ÚNICO CIERRE CORRECTO -->
