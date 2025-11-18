@@ -82,6 +82,9 @@ const props = defineProps({
 
   // 🆕 partes que tienen novedades (se pintan en rojo)
   highlightKeys: { type: Array, default: () => [] },
+
+  // 🏍️ modo moto
+  isMoto: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'otro-change'])
@@ -106,75 +109,137 @@ const currentView = computed(() => {
 })
 
 /** PARTES Y HOTSPOTS */
-const PARTS = {
+// 🚐 Croquis vehículo (pickup)
+const PARTS_AUTO = {
   top: [
-    { key:'CAP', label:'Capó' },
-    { key:'VID', label:'Parabrisas delantero' },
-    { key:'VIT', label:'Parabrisas trasero' },
-    { key:'VDI', label:'Vidrio delantero izq.' },
-    { key:'VTI', label:'Vidrio trasero izq.' },
-    { key:'VDD', label:'Vidrio delanterio der.' },
-    { key:'VTD', label:'Vidrio trasero der.' },
+    { key:'CAP',    label:'Capó' },
+    { key:'VID',    label:'Parabrisas delantero' },
+    { key:'VIT',    label:'Parabrisas trasero' },
+    { key:'VDI',    label:'Vidrio delantero izq.' },
+    { key:'VTI',    label:'Vidrio trasero izq.' },
+    { key:'VDD',    label:'Vidrio delanterio der.' },
+    { key:'VTD',    label:'Vidrio trasero der.' },
     { key:'CABINA', label:'Techo' },
     { key:'PLATON', label:'Platón' },
-    { key:'CARGA', label:'Área de carga' },
-    { key:'LTI', label:'Llanta delantera izq.' },
-    { key:'LTD', label:'Llanta delantera der.' },
-    { key:'LLI', label:'Llanta trasera izq.' },
-    { key:'LLD', label:'Llanta trasera der.' },
-    { key:'LFD', label:'Luz delantera izq.' },
-    { key:'LFA', label:'Luz delantera der.' },
-    { key:'LTD_T', label:'Luz trasera izq.' },
-    { key:'LTA_T', label:'Luz trasera der.' },
-    { key:'PAR_L', label:'Parachoques trasero' },
-    { key:'PDI', label:'Puerta delantera izq.' },
-    { key:'PTI', label:'Puerta trasera izq.' },
-    { key:'PAD_R', label:'Parachoques delantero' },
-    { key:'EMI', label:'Espejo izq.' },
-    { key:'EMD', label:'Espejo der.' },
-    { key:'PDD', label:'Puerta delantera der.' },
-    { key:'PTD', label:'Puerta trasera der.' },
-    { key:'GDI', label:'Guardabarro delantero izq.' },
-    { key:'GTI', label:'Guardabarro trasero izq.' },
-    { key:'GDD', label:'Guardabarro delantero der.' },
-    { key:'GTD', label:'Guardabarro trasero der.' },
+    { key:'CARGA',  label:'Área de carga' },
+    { key:'LTI',    label:'Llanta delantera izq.' },
+    { key:'LTD',    label:'Llanta delantera der.' },
+    { key:'LLI',    label:'Llanta trasera izq.' },
+    { key:'LLD',    label:'Llanta trasera der.' },
+    { key:'LFD',    label:'Luz delantera izq.' },
+    { key:'LFA',    label:'Luz delantera der.' },
+    { key:'LTD_T',  label:'Luz trasera izq.' },
+    { key:'LTA_T',  label:'Luz trasera der.' },
+    { key:'PAR_L',  label:'Parachoques trasero' },
+    { key:'PDI',    label:'Puerta delantera izq.' },
+    { key:'PTI',    label:'Puerta trasera izq.' },
+    { key:'PAD_R',  label:'Parachoques delantero' },
+    { key:'EMI',    label:'Espejo izq.' },
+    { key:'EMD',    label:'Espejo der.' },
+    { key:'PDD',    label:'Puerta delantera der.' },
+    { key:'PTD',    label:'Puerta trasera der.' },
+    { key:'GDI',    label:'Guardabarro delantero izq.' },
+    { key:'GTI',    label:'Guardabarro trasero izq.' },
+    { key:'GDD',    label:'Guardabarro delantero der.' },
+    { key:'GTD',    label:'Guardabarro trasero der.' },
   ],
 }
 
-const HS = {
+const HS_AUTO = {
   top: [
-    { key:'CAP', type:'rect', x:90, y:30, w:70, h:130, r:20 },
-    { key:'VID', type:'poly', points:'625,25 780,25 795,70 610,70' },
-    { key:'VIT', type:'poly', points:'625,310 770,310 785,350 610,350' },
-    { key:'CABINA', type:'rect', x:220, y:40, w:140, h:110, r:18 },
-    { key:'PLATON', type:'rect', x:610, y:360, w:180, h:70, r:12 },
-    { key:'CARGA', type:'rect', x:380, y:30, w:140, h:135, r:8 },
-    { key:'LTI', type:'circle', cx:143, cy:320, r:33 },
-    { key:'LTD', type:'circle', cx:465, cy:485, r:33 },
-    { key:'LLI', type:'circle', cx:430, cy:320, r:33 },
-    { key:'LLD', type:'circle', cx:175, cy:485, r:34 },
-    { key:'LFD', type:'rect', x:770, y:95, w:50, h:30, r:3 },
-    { key:'LFA', type:'rect', x:590, y:95, w:50, h:30, r:3 },
-    { key:'LTD_T', type:'rect', x:580, y:375, w:25, h:55, r:3 },
-    { key:'LTA_T', type:'rect', x:795, y:375, w:25, h:55, r:3 },
-    { key:'PAR_L', type:'rect', x:580, y:435, w:240, h:28, r:6 },
-    { key:'PAD_R', type:'rect', x:585, y:140, w:235, h:50, r:6 },
-    { key:'PDI', type:'rect', x:200, y:245, w:90, h:70, r:6 },
-    { key:'PTI', type:'rect', x:295, y:245, w:80, h:70, r:6 },
-    { key:'PDD', type:'rect', x:320, y:410, w:90, h:70, r:6 },
-    { key:'PTD', type:'rect', x:230, y:410, w:80, h:70, r:6 },
-    { key:'EMI', type:'rect', x:805, y:55, w:30, h:30, r:3 },
-    { key:'EMD', type:'rect', x:570, y:55, w:30, h:30, r:3 },
-    { key:'GDI', type:'rect', x:100, y:250, w:90, h:30, r:9 },
-    { key:'GTI', type:'rect', x:390, y:250, w:140, h:30, r:9 },
-    { key:'GDD', type:'rect', x:420, y:420, w:90, h:30, r:9 },
-    { key:'GTD', type:'rect', x:80, y:420, w:140, h:30, r:9 },
-    { key:'VDI', type:'rect', x:235, y:200, w:50, h:40, r:9 },
-    { key:'VTI', type:'rect', x:305, y:200, w:50, h:40, r:9 },
-    { key:'VDD', type:'rect', x:325, y:370, w:50, h:40, r:9 },
-    { key:'VTD', type:'rect', x:250, y:370, w:50, h:40, r:9 },
+    { key:'CAP',    type:'rect',   x:90,  y:30,  w:70,  h:130, r:20 },
+    { key:'VID',    type:'poly',   points:'625,25 780,25 795,70 610,70' },
+    { key:'VIT',    type:'poly',   points:'625,310 770,310 785,350 610,350' },
+    { key:'CABINA', type:'rect',   x:220, y:40,  w:140, h:110, r:18 },
+    { key:'PLATON', type:'rect',   x:610, y:360, w:180, h:70,  r:12 },
+    { key:'CARGA',  type:'rect',   x:380, y:30,  w:140, h:135, r:8 },
+    { key:'LTI',    type:'circle', cx:143, cy:320, r:33 },
+    { key:'LTD',    type:'circle', cx:465, cy:485, r:33 },
+    { key:'LLI',    type:'circle', cx:430, cy:320, r:33 },
+    { key:'LLD',    type:'circle', cx:175, cy:485, r:34 },
+    { key:'LFD',    type:'rect',   x:770, y:95,  w:50,  h:30,  r:3 },
+    { key:'LFA',    type:'rect',   x:590, y:95,  w:50,  h:30,  r:3 },
+    { key:'LTD_T',  type:'rect',   x:580, y:375, w:25,  h:55,  r:3 },
+    { key:'LTA_T',  type:'rect',   x:795, y:375, w:25,  h:55,  r:3 },
+    { key:'PAR_L',  type:'rect',   x:580, y:435, w:240, h:28,  r:6 },
+    { key:'PAD_R',  type:'rect',   x:585, y:140, w:235, h:50,  r:6 },
+    { key:'PDI',    type:'rect',   x:200, y:245, w:90,  h:70,  r:6 },
+    { key:'PTI',    type:'rect',   x:295, y:245, w:80,  h:70,  r:6 },
+    { key:'PDD',    type:'rect',   x:320, y:410, w:90,  h:70,  r:6 },
+    { key:'PTD',    type:'rect',   x:230, y:410, w:80,  h:70,  r:6 },
+    { key:'EMI',    type:'rect',   x:805, y:55,  w:30,  h:30,  r:3 },
+    { key:'EMD',    type:'rect',   x:570, y:55,  w:30,  h:30,  r:3 },
+    { key:'GDI',    type:'rect',   x:100, y:250, w:90,  h:30,  r:9 },
+    { key:'GTI',    type:'rect',   x:390, y:250, w:140, h:30,  r:9 },
+    { key:'GDD',    type:'rect',   x:100, y:450, w:90,  h:30,  r:9 },
+    { key:'GTD',    type:'rect',   x:390, y:450, w:140, h:30,  r:9 },
   ],
 }
+
+// 🏍️ Croquis moto (vista superior)
+// Usamos las MISMAS keys que ya tienes en el modal: TANQUE, CUP, MAN_D, MAN_I, etc.
+const PARTS_MOTO = {
+  top: [
+    { key:'TANQUE', label:'Tanque' },
+    { key:'CUP',    label:'Cúpula / faro' },
+    { key:'MAN_D',  label:'Manubrio derecho' },
+    { key:'MAN_I',  label:'Manubrio izquierdo' },
+    { key:'POSAD',   label:'Posapiés der.' },
+    { key:'POSAI',   label:'Posapiés izq.' },
+    { key:'GUARD',   label:'Guardabarro del.' },
+    { key:'GUART',   label:'Guardabarro tra.' },
+    { key:'LL_DEL', label:'Llanta delantera' },
+    { key:'LL_TRA', label:'Llanta trasera' },
+    { key:'ESPED',   label:'Espejo der.' },
+    { key:'ESPEI',   label:'Espejo izq.' },
+    { key:'SILL',   label:'Sillin' },
+    { key:'TC',   label:'Tacometro' },
+    { key:'STOP',   label:'Stop' },
+    { key:'TPD',   label:'Tapas der' },
+    { key:'TPI',   label:'Tapas izq' },
+    { key:'DIRDD',   label:'Direccional del. der' },
+    { key:'DIRDI',   label:'Direccional del. izq' },
+    { key:'DIRTD',   label:'Direccional tra. der' },
+    { key:'DIRTI',   label:'Direccional tra. izq' },
+  ],
+}
+
+const HS_MOTO = {
+  top: [
+    // llantas
+    { key:'LL_DEL', type:'circle', cx:770, cy:425, r:55 },
+    { key:'LL_TRA', type:'circle', cx:510, cy:425, r:55 },
+
+    // tanque / cuerpo
+    { key:'TANQUE', type:'rect',   x:300, y:130, w:100, h:90,  r:12 },
+    { key:'SILL',  type:'rect',   x:300, y:240, w:100, h:160,  r:12},
+    { key:'TC',  type:'rect',   x:300, y:70, w:100, h:30,  r:12},
+
+    // frontal
+    { key:'CUP',    type:'rect',   x:135, y:62, w:40, h:40,  r:80 },
+    { key:'MAN_D',  type:'rect',   x:85, y:45, w:50,  h:20,  r:8 },
+    { key:'MAN_I',  type:'rect',   x:180, y:45, w:50,  h:20,  r:8 },
+    { key:'GUARD',   type:'rect',   x:130, y:115, w:50, h:40,  r:10 },
+    { key:'POSAD',   type:'rect',   x:95, y:165, w:30,  h:20,  r:10 },
+    { key:'POSAI',   type:'rect',   x:180, y:165, w:30,  h:20,  r:10 },
+    { key:'DIRDD',  type:'rect',   x:105, y:70, w:30,  h:20,  r:8 },
+    { key:'DIRDI',  type:'rect',   x:175, y:70, w:30,  h:20,  r:8 },
+    
+    //Tarsero
+    { key:'ESPED',   type:'rect',   x:210, y:260, w:40,  h:20,  r:6 },
+    { key:'ESPEI',   type:'rect',   x:70, y:260, w:40,  h:20,  r:6 },
+    { key:'GUART',   type:'rect',   x:140, y:380, w:50, h:40,  r:10 },
+    { key:'STOP',   type:'rect',   x:140, y:325, w:45, h:30,  r:10 },
+    { key:'DIRTD',   type:'rect',   x:185, y:360, w:30,  h:20,  r:6 },
+    { key:'DIRTI',   type:'rect',   x:110, y:360, w:30,  h:20,  r:6 },
+
+    //Costados
+    { key:'TPD',  type:'rect',   x:540, y:340, w:130, h:40,  r:12},
+    { key:'TPI',  type:'rect',   x:590, y:100, w:130, h:40,  r:12},
+   
+  ],
+}
+
 
 /** estado local */
 const otroText = ref(props.initialOtroText)
@@ -184,9 +249,23 @@ const hoverLabel = ref('')
 const tooltip = ref({ x: 0, y: 0 })
 
 /** Derivados */
-const partsListForView = computed(() => PARTS[view.value])
-const currentHotspots = computed(() => HS[view.value])
-const highlightSet = computed(() => new Set(props.highlightKeys || []))
+const partsSource = computed(() =>
+  props.isMoto ? PARTS_MOTO : PARTS_AUTO
+)
+const hsSource = computed(() =>
+  props.isMoto ? HS_MOTO : HS_AUTO
+)
+
+const partsListForView = computed(
+  () => partsSource.value[view.value] || []
+)
+const currentHotspots = computed(
+  () => hsSource.value[view.value] || []
+)
+const highlightSet = computed(
+  () => new Set(props.highlightKeys || [])
+)
+
 
 /** Select + etiquetas */
 function select(key){

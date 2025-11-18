@@ -9,6 +9,7 @@ import { pool } from '../db.js'
 import { logEvent, Actions } from '../audit.js'
 import { requireSuperadmin } from '../middlewares.js' // opcional aquí
 import crypto from 'crypto';   
+import fs from 'fs/promises'
 
 const router = express.Router()
 
@@ -1573,11 +1574,41 @@ router.post(
     // Ya NO bloqueamos si el vehículo tiene uso abierto.
     // Se pueden registrar novedades en cualquier momento.
 
-    const photoUrl = req.file
-      ? path
-          .relative(path.join(__dirname, '..'), req.file.path)
-          .replace(/\\/g, '/')
-      : null
+        let photoUrl = null
+
+    if (req.file) {
+      // 1) Traer código del vehículo
+      const [[vehRow]] = await pool.query(
+        'SELECT code FROM vehicles WHERE id=? LIMIT 1',
+        [vehicleId]
+      )
+
+      const rawCode = vehRow?.code || `veh-${vehicleId}`
+      const safeCode = String(rawCode)
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9\-_.]/gi, '_') // solo caracteres seguros para carpeta
+
+      // 2) Carpeta destino: /uploads/vehicles/<CODE>/
+      const uploadsRoot = path.join(process.cwd(), 'uploads')
+      const vehicleFolder = path.join(uploadsRoot, 'vehicles', safeCode)
+
+      await fs.mkdir(vehicleFolder, { recursive: true })
+
+      // 3) Nombre de archivo: timestamp + id tmp + extensión original
+      const ext = path.extname(req.file.originalname || '').toLowerCase() || '.jpg'
+      const baseName = `${Date.now()}-${req.file.filename}${ext}`
+      const finalPath = path.join(vehicleFolder, baseName)
+
+      // 4) Mover el archivo desde la carpeta temporal de Multer
+      await fs.rename(req.file.path, finalPath)
+
+      // 5) Ruta que guardamos en BD (relativa al root del servidor)
+      //    -> /uploads/... en el navegador se arma con `/${n.photoUrl}`
+      photoUrl = path
+        .join('uploads', 'vehicles', safeCode, baseName)
+        .replace(/\\/g, '/')
+    }
 
     const [r] = await pool.query(
       `INSERT INTO vehicle_novelties (vehicle_id, use_id, description, photo_url, created_by)

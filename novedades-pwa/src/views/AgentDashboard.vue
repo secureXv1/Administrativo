@@ -792,9 +792,14 @@
             v-if="showNovsModal && pendingVehicle"
             :vehicle="pendingVehicle"
             :closing-use="pendingCloseUse || null"
+
+            :readonly="true"     
+            :agent-id="meAgentId"  
+
             @close="onNovsModalClose"
             @close-use="onNovsModalConfirmClose"
           />
+
 
 
           <!-- Modal: seleccionar vehículo para nuevo uso -->
@@ -1612,6 +1617,25 @@ function normalizeAssignmentRow (a) {
     a.code ??
     ''
 
+  // 🔹 Tipo / categoría (para saber si es MOTO, CAMIONETA, etc.)
+  const category =
+    veh.category ??
+    veh.cat ??
+    veh.tipo ??
+    veh.type ??
+    a.vehicle_category ??
+    a.vehicleCat ??
+    a.vehicle_type ??
+    a.tipo ??
+    null
+
+  const type =
+    veh.type ??
+    veh.tipo ??
+    a.vehicle_type ??
+    a.tipo ??
+    null
+
   // 🔍 Intentamos sacar SOAT / TECNO tanto del vehículo como de la asignación
   const soatUntil =
     // desde vehículo (varias variantes típicas)
@@ -1657,11 +1681,6 @@ function normalizeAssignmentRow (a) {
     a.tecnoDate ??
     null
 
-  // Opcional: descomenta esto un momento para ver en consola qué está llegando:
-  // console.log('[ASSIGN RAW]', a)
-  // console.log('[VEH FROM CATALOG]', vehFromCatalog)
-  // console.log('[NORMALIZED soatUntil, tecnoUntil]', soatUntil, tecnoUntil)
-
   return {
     id: a.id,
     start_date: a.start_date ?? a.startDate ?? '',
@@ -1672,8 +1691,14 @@ function normalizeAssignmentRow (a) {
     agent_ack_note: a.accept_note ?? a.agent_ack_note ?? null,
 
     vehicle: {
-      id: vehId,
+      id:   vehId,
       code: vehCode,
+
+      // 🔹 info de tipo / categoría para que el modal sepa si es MOTO
+      category,
+      type,
+      cat:  category, // por si el modal usa .cat === 'MT'
+      tipo: type,
 
       // 🔹 SOAT / Tecno ya con todos los fallbacks
       soat_until: soatUntil,

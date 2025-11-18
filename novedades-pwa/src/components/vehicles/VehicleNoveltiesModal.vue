@@ -30,8 +30,8 @@
                 :leftSrc="leftSrc"
                 :rightSrc="rightSrc"
                 :highlight-keys="partKeysConNovedades"
+                :isMoto="isMoto"
               />
-
               <!-- Campo 'Otro' -->
               <div v-if="selectedPartKey === 'OTRO'">
                 <input
@@ -42,87 +42,92 @@
               </div>
 
               <!-- Categorías internas / sistemas -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1 text-xs">
-                <!-- Interior -->
-                <div>
-                  <div class="flex items-center justify-between mb-1">
-                    <span class="font-semibold text-slate-700">Interior</span>
-                    <button
-                      type="button"
-                      class="text-[11px] text-slate-500 hover:underline"
-                      @click="clearInternalSelection"
-                      v-if="selectedInternalKey && isInternalSelection('INTERIOR')"
-                    >
-                      Quitar selección
-                    </button>
-                  </div>
+                <div
+                  class="grid gap-3 mt-1 text-xs"
+                  :class="isMoto ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'"
+                >
 
-                  <div class="flex flex-wrap gap-1">
-                    <button
-                      v-for="sec in INTERNAL_SECTIONS"
-                      :key="sec.key"
-                      type="button"
-                      :class="[
-                        'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
-                        selectedInternalKey === sec.key
-                          ? 'bg-slate-900 text-white border-slate-900'
-                          : internalCounts[sec.key] > 0
-                            ? 'border-red-500 text-red-700 bg-red-50'
-                            : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
-                      ]"
-                      @click="selectInternal(sec.key)"
-                    >
-                      {{ sec.label }}
-                      <span
-                        v-if="internalCounts[sec.key] > 0"
-                        class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                  <!-- Interior (solo para vehículos que NO son moto) -->
+                  <div v-if="!isMoto">
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="font-semibold text-slate-700">Interior</span>
+                      <button
+                        type="button"
+                        class="text-[11px] text-slate-500 hover:underline"
+                        @click="clearInternalSelection"
+                        v-if="selectedInternalKey && isInternalSelection('INTERIOR')"
                       >
-                        {{ internalCounts[sec.key] }}
-                      </span>
-                    </button>
-                  </div>
-                </div>
+                        Quitar selección
+                      </button>
+                    </div>
 
-                <!-- Sistemas -->
-                <div>
-                  <div class="flex items-center justify-between mb-1">
-                    <span class="font-semibold text-slate-700">Sistemas</span>
-                    <button
-                      type="button"
-                      class="text-[11px] text-slate-500 hover:underline"
-                      @click="clearInternalSelection"
-                      v-if="selectedInternalKey && isInternalSelection('SISTEMA')"
-                    >
-                      Quitar selección
-                    </button>
-                  </div>
-
-                  <div class="flex flex-wrap gap-1">
-                    <button
-                      v-for="sec in SYSTEM_SECTIONS"
-                      :key="sec.key"
-                      type="button"
-                      :class="[
-                        'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
-                        selectedInternalKey === sec.key
-                          ? 'bg-slate-900 text-white border-slate-900'
-                          : internalCounts[sec.key] > 0
-                            ? 'border-red-500 text-red-700 bg-red-50'
-                            : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
-                      ]"
-                      @click="selectInternal(sec.key)"
-                    >
-                      {{ sec.label }}
-                      <span
-                        v-if="internalCounts[sec.key] > 0"
-                        class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                    <div class="flex flex-wrap gap-1">
+                      <button
+                        v-for="sec in INTERNAL_SECTIONS"
+                        :key="sec.key"
+                        type="button"
+                        :class="[
+                          'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
+                          selectedInternalKey === sec.key
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : internalCounts[sec.key] > 0
+                              ? 'border-red-500 text-red-700 bg-red-50'
+                              : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
+                        ]"
+                        @click="selectInternal(sec.key)"
                       >
-                        {{ internalCounts[sec.key] }}
-                      </span>
-                    </button>
+                        {{ sec.label }}
+                        <span
+                          v-if="internalCounts[sec.key] > 0"
+                          class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                        >
+                          {{ internalCounts[sec.key] }}
+                        </span>
+                      </button>
+                    </div>
                   </div>
+
+                  <!-- Sistemas (aplica para todos, auto y moto) -->
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="font-semibold text-slate-700">Sistemas</span>
+                      <button
+                        type="button"
+                        class="text-[11px] text-slate-500 hover:underline"
+                        @click="clearInternalSelection"
+                        v-if="selectedInternalKey && isInternalSelection('SISTEMA')"
+                      >
+                        Quitar selección
+                      </button>
+                    </div>
+
+                    <div class="flex flex-wrap gap-1">
+                      <button
+                        v-for="sec in SYSTEM_SECTIONS"
+                        :key="sec.key"
+                        type="button"
+                        :class="[
+                          'px-2 py-1 rounded-full border text-[11px] flex items-center gap-1',
+                          selectedInternalKey === sec.key
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : internalCounts[sec.key] > 0
+                              ? 'border-red-500 text-red-700 bg-red-50'
+                              : 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
+                        ]"
+                        @click="selectInternal(sec.key)"
+                      >
+                        {{ sec.label }}
+                        <span
+                          v-if="internalCounts[sec.key] > 0"
+                          class="inline-flex items-center justify-center text-[10px] rounded-full bg-red-600 text-white px-1.5"
+                        >
+                          {{ internalCounts[sec.key] }}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
                 </div>
-              </div>
 
               <!-- Etiqueta seleccionada -->
               <div v-if="scopeLabel" class="mt-2 text-xs text-slate-600">
@@ -198,12 +203,14 @@
                       foto
                     </a>
                     <button
+                      v-if="!isAgentView"
                       type="button"
-                      class="text-[11px] text-rose-600 hover:underline"
-                      @click="deleteNovedad(n.id)"
+                      class="text-xs text-rose-600 hover:underline"
+                      @click="deleteNovedad(item.id)"
                     >
-                      eliminar
+                      Eliminar
                     </button>
+
                   </div>
                 </li>
               </ul>
@@ -289,11 +296,12 @@
                     </td>
                     <td class="py-1 pl-2 align-top text-right">
                       <button
+                        v-if="!isAgentView"
                         type="button"
-                        class="text-[11px] text-rose-600 hover:underline"
-                        @click="deleteNovedad(n.id)"
+                        class="text-xs text-rose-600 hover:underline"
+                        @click="deleteNovedad(item.id)"
                       >
-                        eliminar
+                        Eliminar
                       </button>
                     </td>
                   </tr>
@@ -314,9 +322,15 @@ import { http } from '@/lib/http'
 import VehiclePartsPickerPro from './VehiclePartsPickerPro.vue'
 
 const props = defineProps({
-  vehicle: { type: Object, required: true },
-  closingUse: { type: Object, required: false, default: null } // 👉 uso pendiente opcional
+  vehicle:     { type: Object, required: true },
+  closingUse:  { type: Object, default: null },
+
+  // 👇 NUEVO
+  readonly:    { type: Boolean, default: false },
+  agentId:     { type: [Number, String], default: null }
 })
+
+const isAgentView = computed(() => props.readonly || props.agentId != null)
 
 const emit = defineEmits(['close', 'close-use'])
 
@@ -332,11 +346,27 @@ const selectedInternalKey = ref('')
 const showAllForScope = ref(false)
 
 // croquis
-const topSrc   = new URL('@/assets/pickup_top.png', import.meta.url).href
-const leftSrc  = new URL('@/assets/pickup_left.png', import.meta.url).href
-const rightSrc = new URL('@/assets/pickup_right.png', import.meta.url).href
+// 🚐 imágenes pickup
+const pickupTopSrc   = new URL('@/assets/pickup_top.png', import.meta.url).href
+const pickupLeftSrc  = new URL('@/assets/pickup_left.png', import.meta.url).href
+const pickupRightSrc = new URL('@/assets/pickup_right.png', import.meta.url).href
+
+// 🏍️ imágenes moto (créate estos PNG en src/assets/)
+const motoTopSrc   = new URL('@/assets/moto_top.png', import.meta.url).href
+const motoLeftSrc  = new URL('@/assets/moto_left.png', import.meta.url).href
+const motoRightSrc = new URL('@/assets/moto_right.png', import.meta.url).href
 
 const isMoto = computed(() => String(props.vehicle?.category || '') === 'MT')
+const topSrc = computed(() =>
+  isMoto.value ? motoTopSrc : pickupTopSrc
+)
+const leftSrc = computed(() =>
+  isMoto.value ? motoLeftSrc : pickupLeftSrc
+)
+const rightSrc = computed(() =>
+  isMoto.value ? motoRightSrc : pickupRightSrc
+)
+
 
 // partes vehículo
 const PARTS_AUTO = [
@@ -376,17 +406,27 @@ const PARTS_AUTO = [
 ]
 
 const PARTS_MOTO = [
-  { key: 'TANQUE', label: 'Tanque' },
-  { key: 'CUP',    label: 'Cúpula / faro' },
-  { key: 'MAN_D',  label: 'Manubrio derecho' },
-  { key: 'MAN_I',  label: 'Manubrio izquierdo' },
-  { key: 'POSA',   label: 'Posapiés' },
-  { key: 'GUAR',   label: 'Guardabarros' },
-  { key: 'LL_DEL', label: 'Llanta delantera' },
-  { key: 'LL_TRA', label: 'Llanta trasera' },
-  { key: 'ESPE',   label: 'Espejo' },
-  { key: 'CUBRE',  label: 'Cubrecarter' },
-  { key: 'OTRO',   label: 'Otro (especificar)' }
+  { key:'TANQUE', label:'Tanque' },
+  { key:'CUP',    label:'Cúpula / faro' },
+  { key:'MAN_D',  label:'Manubrio derecho' },
+  { key:'MAN_I',  label:'Manubrio izquierdo' },
+  { key:'POSAD',   label:'Posapiés der.' },
+  { key:'POSAI',   label:'Posapiés izq.' },
+  { key:'GUARD',   label:'Guardabarro del.' },
+  { key:'GUART',   label:'Guardabarro tra.' },
+  { key:'LL_DEL', label:'Llanta delantera' },
+  { key:'LL_TRA', label:'Llanta trasera' },
+  { key:'ESPED',   label:'Espejo der.' },
+  { key:'ESPEI',   label:'Espejo izq.' },
+  { key:'SILL',   label:'Sillin' },
+  { key:'TC',   label:'Tacometro' },
+  { key:'STOP',   label:'Stop' },
+  { key:'TPD',   label:'Tapas der.' },
+  { key:'TPI',   label:'Tapas izq' },
+  { key:'DIRDD',   label:'Direccional del. der' },
+  { key:'DIRDI',   label:'Direccional del. izq' },
+  { key:'DIRTD',   label:'Direccional tra. der' },
+  { key:'DIRTI',   label:'Direccional tra. izq' },
 ]
 
 // internas / sistemas

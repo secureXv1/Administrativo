@@ -64,8 +64,8 @@
                   :leftSrc="leftSrc"
                   :rightSrc="rightSrc"
                   :highlight-keys="partKeysConNovedades"
+                  :isMoto="isMoto"
                 />
-
                 <!-- Campo 'Otro' -->
                 <div v-if="selectedPartKey === 'OTRO'">
                   <input
@@ -76,10 +76,13 @@
                 </div>
 
                 <!-- Categorías internas / sistemas -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1 text-xs">
+                <div
+                  class="grid gap-3 mt-1 text-xs"
+                  :class="isMoto ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'"
+                >
 
-                  <!-- Interior -->
-                  <div>
+                  <!-- Interior (solo para vehículos que NO son moto) -->
+                  <div v-if="!isMoto">
                     <div class="flex items-center justify-between mb-1">
                       <span class="font-semibold text-slate-700">Interior</span>
                       <button
@@ -118,7 +121,7 @@
                     </div>
                   </div>
 
-                  <!-- Sistemas -->
+                  <!-- Sistemas (aplica para todos, auto y moto) -->
                   <div>
                     <div class="flex items-center justify-between mb-1">
                       <span class="font-semibold text-slate-700">Sistemas</span>
@@ -203,6 +206,7 @@
                         </a>
 
                         <button
+                          v-if="!isAgentView"
                           type="button"
                           class="text-[11px] text-rose-600 hover:underline"
                           @click="deleteNovedad(n.id)"
@@ -256,10 +260,12 @@
                         <span class="text-slate-400 ml-2">{{ n.created_at }}</span>
                       </div>
                       <button
-                        class="text-red-600 hover:text-red-800 font-medium text-[11px] shrink-0 ml-2"
+                        v-if="!isAgentView"
+                        type="button"
+                        class="text-[11px] text-rose-600 hover:underline"
                         @click="deleteNovedad(n.id)"
                       >
-                        Eliminar
+                        eliminar
                       </button>
                     </div>
                   </div>
@@ -511,9 +517,11 @@ const canEdit = computed(() =>
 )
 
 const props = defineProps({
-  agentId: { type: [Number, String], required: false, default: null },
-  vehicle: { type: Object, required: true },
+  agentId: { type: [Number, String], default: null },
+  vehicle: { type: Object, required: true }
 })
+
+const isAgentView = computed(() => props.agentId != null)
 
 const emit = defineEmits(['close', 'created', 'end', 'end-with-novelty'])
 const uiError = ref('')
@@ -529,9 +537,16 @@ const preferredAgent = computed(() => {
   return agents.value.find(a => String(a.id) === String(props.agentId)) || null
 })
 
-const topSrc   = new URL('@/assets/pickup_top.png', import.meta.url).href
-const leftSrc  = new URL('@/assets/pickup_left.png', import.meta.url).href
-const rightSrc = new URL('@/assets/pickup_right.png', import.meta.url).href
+// 🚐 imágenes pickup
+const pickupTopSrc   = new URL('@/assets/pickup_top.png', import.meta.url).href
+const pickupLeftSrc  = new URL('@/assets/pickup_left.png', import.meta.url).href
+const pickupRightSrc = new URL('@/assets/pickup_right.png', import.meta.url).href
+
+// 🏍️ imágenes moto (créate estos PNG en src/assets/)
+const motoTopSrc   = new URL('@/assets/moto_top.png', import.meta.url).href
+const motoLeftSrc  = new URL('@/assets/moto_left.png', import.meta.url).href
+const motoRightSrc = new URL('@/assets/moto_right.png', import.meta.url).href
+
 
 const uses = ref([])
 const loading = ref(false)
@@ -608,6 +623,16 @@ function onPhoto(e) {
 
 // --- Catálogos de partes físicas ---
 const isMoto = computed(() => String(props.vehicle?.category || '') === 'MT')
+const topSrc = computed(() =>
+  isMoto.value ? motoTopSrc : pickupTopSrc
+)
+const leftSrc = computed(() =>
+  isMoto.value ? motoLeftSrc : pickupLeftSrc
+)
+const rightSrc = computed(() =>
+  isMoto.value ? motoRightSrc : pickupRightSrc
+)
+
 
 const PARTS_AUTO = [
   // Zonas grandes
@@ -665,17 +690,27 @@ const PARTS_AUTO = [
 ]
 
 const PARTS_MOTO = [
-  { key: 'TANQUE', label: 'Tanque' },
-  { key: 'CUP',    label: 'Cúpula / faro' },
-  { key: 'MAN_D',  label: 'Manubrio derecho' },
-  { key: 'MAN_I',  label: 'Manubrio izquierdo' },
-  { key: 'POSA',   label: 'Posapiés' },
-  { key: 'GUAR',   label: 'Guardabarros' },
-  { key: 'LL_DEL', label: 'Llanta delantera' },
-  { key: 'LL_TRA', label: 'Llanta trasera' },
-  { key: 'ESPE',   label: 'Espejo' },
-  { key: 'CUBRE',  label: 'Cubrecarter' },
-  { key: 'OTRO',   label: 'Otro (especificar)' },
+  { key:'TANQUE', label:'Tanque' },
+  { key:'CUP',    label:'Cúpula / faro' },
+  { key:'MAN_D',  label:'Manubrio derecho' },
+  { key:'MAN_I',  label:'Manubrio izquierdo' },
+  { key:'POSAD',   label:'Posapiés der.' },
+  { key:'POSAI',   label:'Posapiés izq.' },
+  { key:'GUARD',   label:'Guardabarro del.' },
+  { key:'GUART',   label:'Guardabarro tra.' },
+  { key:'LL_DEL', label:'Llanta delantera' },
+  { key:'LL_TRA', label:'Llanta trasera' },
+  { key:'ESPED',   label:'Espejo der.' },
+  { key:'ESPEI',   label:'Espejo izq.' },
+  { key:'SILL',   label:'Sillin' },
+  { key:'TC',   label:'Tacometro' },
+  { key:'STOP',   label:'Stop' },
+  { key:'TPD',   label:'Tapas der.' },
+  { key:'TPI',   label:'Tapas izq' },
+  { key:'DIRDD',   label:'Direccional del. der' },
+  { key:'DIRDI',   label:'Direccional del. izq' },
+  { key:'DIRTD',   label:'Direccional tra. der' },
+  { key:'DIRTI',   label:'Direccional tra. izq' },
 ]
 
 // --- Catálogos internos / sistemas ---

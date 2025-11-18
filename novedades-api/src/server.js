@@ -14,6 +14,7 @@ import vehiclesRouter from './routes/vehiculos.js';
 
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
+import path from 'path';
 
 // === Zona horaria del proceso Node: Colombia ===
 process.env.TZ = 'America/Bogota';
@@ -119,6 +120,11 @@ async function main() {
   app.use(cors());
   app.use(helmet());
   app.use(express.json());
+
+  app.use(
+    '/uploads',
+    express.static(path.join(process.cwd(), 'uploads'))
+  );
 
   // ...otros routers
   app.use('/vehicles', vehiclesRouter);
