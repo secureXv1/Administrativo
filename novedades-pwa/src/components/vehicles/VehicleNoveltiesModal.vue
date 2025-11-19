@@ -427,6 +427,7 @@ const PARTS_MOTO = [
   { key:'DIRDI',   label:'Direccional del. izq' },
   { key:'DIRTD',   label:'Direccional tra. der' },
   { key:'DIRTI',   label:'Direccional tra. izq' },
+  { key:'ESC',   label:'Tubo de escape' },
 ]
 
 // internas / sistemas

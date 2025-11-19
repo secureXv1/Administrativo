@@ -201,6 +201,7 @@ const PARTS_MOTO = {
     { key:'DIRDI',   label:'Direccional del. izq' },
     { key:'DIRTD',   label:'Direccional tra. der' },
     { key:'DIRTI',   label:'Direccional tra. izq' },
+    { key:'ESC',   label:'Tubo de escape' },
   ],
 }
 
@@ -232,6 +233,7 @@ const HS_MOTO = {
     { key:'STOP',   type:'rect',   x:140, y:325, w:45, h:30,  r:10 },
     { key:'DIRTD',   type:'rect',   x:185, y:360, w:30,  h:20,  r:6 },
     { key:'DIRTI',   type:'rect',   x:110, y:360, w:30,  h:20,  r:6 },
+    { key:'ESC',   type:'rect',   x:185, y:395, w:40, h:60,  r:10 },
 
     //Costados
     { key:'TPD',  type:'rect',   x:540, y:340, w:130, h:40,  r:12},
