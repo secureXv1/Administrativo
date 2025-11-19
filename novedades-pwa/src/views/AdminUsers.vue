@@ -80,8 +80,11 @@
                 <option value="supervision">supervision</option>
                 <option value="leader_group">leader_group</option>
                 <option value="leader_unit">leader_unit</option>
+                <option value="leader_vehicles">leader_vehicles</option> 
+                <option value="agent">agent</option>                       
               </select>
             </div>
+
 
             <div v-if="showGroupSelect">
               <label class="label">Grupo</label>
@@ -269,6 +272,8 @@
                 <option value="supervision">supervision</option>
                 <option value="leader_group">leader_group</option>
                 <option value="leader_unit">leader_unit</option>
+                <option value="leader_vehicles">leader_vehicles</option> <!-- 👈 NUEVO -->
+                <option value="agent">agent</option>                     <!-- 👈 NUEVO -->
               </select>
             </div>
             <div v-if="showGroupSelect">

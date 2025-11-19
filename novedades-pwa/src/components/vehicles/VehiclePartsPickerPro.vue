@@ -171,8 +171,8 @@ const HS_AUTO = {
     { key:'EMD',    type:'rect',   x:570, y:55,  w:30,  h:30,  r:3 },
     { key:'GDI',    type:'rect',   x:100, y:250, w:90,  h:30,  r:9 },
     { key:'GTI',    type:'rect',   x:390, y:250, w:140, h:30,  r:9 },
-    { key:'GDD',    type:'rect',   x:100, y:450, w:90,  h:30,  r:9 },
-    { key:'GTD',    type:'rect',   x:390, y:450, w:140, h:30,  r:9 },
+    { key:'GDD',    type:'rect',   x:420, y:420, w:90,  h:30,  r:9 },
+    { key:'GTD',    type:'rect',   x:90, y:420, w:140, h:30,  r:9 },
   ],
 }
 

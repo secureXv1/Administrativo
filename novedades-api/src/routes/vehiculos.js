@@ -72,7 +72,7 @@ async function validateAgentScope(req, agentId) {
     return true;
   }
 
-  if (role === 'superadmin' || role === 'supervision') return true;
+  if (role === 'superadmin' || role === 'supervision' || role === 'leader_vehicles') return true;
 
   if (role === 'leader_group') {
     const [[row]] = await pool.query('SELECT groupId FROM agent WHERE id=? LIMIT 1', [agentId]);
@@ -118,7 +118,7 @@ async function agentHasOpenUse(agentId) {
 router.get(
   '/',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent','leader_vehicles'),
   async (req, res) => {
     try {
       const {
@@ -259,7 +259,7 @@ router.get(
 router.post(
   '/',
   requireAuth,
-  requireRole('superadmin','supervision'),
+  requireRole('superadmin','supervision', 'leader_vehicles'),
   async (req, res) => {
     try {
       const {
@@ -350,7 +350,7 @@ router.post(
 router.put(
   '/:id',
   requireAuth,
-  requireRole('superadmin','supervision'),
+  requireRole('superadmin','supervision', 'leader_vehicles'),
   async (req, res) => {
     try {
       const { id } = req.params;
@@ -448,7 +448,7 @@ router.put(
 router.delete(
   '/:id',
   requireAuth,
-  requireRole('superadmin'),
+  requireRole('superadmin', 'leader_vehicles'),
   async (req, res) => {
     try {
       const { id } = req.params
@@ -494,7 +494,7 @@ router.delete(
 router.post(
   '/:id/state-change',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { id } = req.params;
     const { new_status, odometer, note, changed_oil } = req.body; // changed_oil: boolean opcional
@@ -579,7 +579,7 @@ router.post(
 router.get(
   '/:id/status-history',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { id } = req.params;
     const limit = Math.min(Math.max(parseInt(req.query.limit,10) || 50, 1), 200);
@@ -610,7 +610,7 @@ router.get(
 router.get(
   '/:id/maintenances',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { id } = req.params;
     const [rows] = await pool.query(
@@ -648,7 +648,7 @@ router.get('/catalogs/units', requireAuth, async (_req, res) => {
 router.get(
   '/:id/assignments',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { id } = req.params
     const [rows] = await pool.query(`
@@ -682,7 +682,7 @@ router.get(
 router.get(
   '/agents/:agentId/assignments',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { agentId } = req.params
     const { active } = req.query
@@ -743,7 +743,7 @@ router.get(
 router.patch(
   '/assignments/:id/accept',
   requireAuth,
-  requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
+  requireRole('agent','leader_unit','leader_group','supervision','superadmin', 'leader_vehicles'),
   async (req, res) => {
     const { id }  = req.params;
     const noteRaw = String(req.body?.note || '').trim();
@@ -797,7 +797,7 @@ router.patch(
 router.patch(
   '/assignments/:id/ack',
   requireAuth,
-  requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
+  requireRole('agent','leader_unit','leader_group','supervision','superadmin', 'leader_vehicles'),
   async (req, res) => {
     const { id }   = req.params
     const noteRaw  = String(req.body?.note || '').trim()
@@ -846,7 +846,7 @@ router.patch(
 router.patch(
   '/assignments/:id/extra',
   requireAuth,
-  requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
+  requireRole('agent','leader_unit','leader_group','supervision','superadmin', 'leader_vehicles'),
   async (req, res) => {
     const { id }   = req.params
     const noteRaw  = String(req.body?.note || '').trim()
@@ -895,7 +895,7 @@ router.patch(
 router.post(
   '/:id/assignments',
   requireAuth,
-  requireRole('superadmin','supervision'),
+  requireRole('superadmin','supervision', 'leader_vehicles'),
   async (req, res) => {
     const { id } = req.params;
     const { agent_id, odometer_start, notes } = req.body;
@@ -958,7 +958,7 @@ router.post(
 router.patch(
   '/:vehicleId/assignments/:assignmentId',
   requireAuth,
-  requireRole('superadmin','supervision'),
+  requireRole('superadmin','supervision', 'leader_vehicles', 'leader_vehicles'),
   async (req, res) => {
     const { vehicleId, assignmentId } = req.params
     const { end_date, odometer_end, notes } = req.body
@@ -989,7 +989,7 @@ router.patch(
 router.get(
   '/:id/last-assignment-odometer',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { id } = req.params;
 
@@ -1039,7 +1039,7 @@ router.get(
 router.get(
   '/uses',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { vehicle_id, agent_id, open } = req.query
     const where = [], args = []
@@ -1083,7 +1083,7 @@ router.get(
 router.post(
   '/uses/start',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { vehicle_id, agent_id, odometer_start, notes } = req.body
     if (!vehicle_id || !agent_id) {
@@ -1244,7 +1244,7 @@ router.post(
 router.patch(
   '/uses/:id/end',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { id } = req.params
     const { ended_at, odometer_end, notes } = req.body
@@ -1311,7 +1311,7 @@ router.patch(
 router.patch(
   '/uses/:id/end',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     // ... (este lo dejas tal cual lo tienes)
   }
@@ -1321,7 +1321,7 @@ router.patch(
 router.patch(
   '/uses/:id/accept',
   requireAuth,
-  requireRole('agent','leader_unit','leader_group','supervision','superadmin'),
+  requireRole('agent','leader_unit','leader_group','supervision','superadmin', 'leader_vehicles'),
   async (req, res) => {
     const { id }   = req.params
     const noteRaw  = String(req.body?.note || '').trim()
@@ -1450,7 +1450,7 @@ router.patch(
 router.get(
   '/:id/last-use-odometer',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { id } = req.params
 
@@ -1495,7 +1495,7 @@ router.get(
 router.get(
   '/:tipo/:id/novelties',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
   async (req, res) => {
     const { tipo, id } = req.params
     const limit = Math.min(Math.max(parseInt(req.query.limit,10) || 10, 1), 100)
@@ -1527,7 +1527,7 @@ router.get(
 router.post(
   '/:tipo/:id/novelties',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent','leader_vehicles'),
   upload.single('photo'),
   async (req, res) => {
     const { tipo, id } = req.params
@@ -1643,7 +1643,7 @@ router.post(
 router.get(
   '/:id/novelties/recent',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent','leader_vehicles'),
   async (req, res) => {
     const { id } = req.params
     const limit = Math.min(Math.max(parseInt(req.query.limit,10) || 10, 1), 100)
@@ -1699,7 +1699,7 @@ router.get(
 router.delete(
   '/novelties/:id',
   requireAuth,
-  requireRole('superadmin','supervision'),
+  requireRole('superadmin','supervision','leader_vehicles'),
   async (req, res) => {
     const { id } = req.params
     const [[row]] = await pool.query('SELECT id, use_id FROM vehicle_novelties WHERE id=?', [id])
@@ -1720,7 +1720,7 @@ router.delete(
 router.get(
   '/due',
   requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent'),
+  requireRole('superadmin','supervision','leader_group','leader_unit','agent','leader_vehicles'),
   async (req, res) => {
     try {
       const within = Math.max(parseInt(req.query.within,10) || 30, 0)

@@ -90,49 +90,98 @@ async function getMe() {
 router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
 
-  // /login libre: si ya hay token, manda al home por rol
+  // 1) /login: si hay token, mandamos al home por rol (pero evitando bucle)
   if (to.path === '/login') {
     if (!token) return next()
+
     const me = await getMe()
-    if (!me) return next()
-    return next(homeByRole(me.role))
+    if (!me) {
+      localStorage.removeItem('token')
+      return next()
+    }
+
+    const target = homeByRole(me.role)
+    if (target === to.path) return next() // ya estamos donde toca
+    return next(target)
   }
 
-  // Resto requiere token
+  // 2) / : root → manda al home por rol o a /login
+  if (to.path === '/') {
+    if (!token) return next('/login')
+
+    const me = await getMe()
+    if (!me) {
+      localStorage.removeItem('token')
+      return next('/login')
+    }
+
+    const target = homeByRole(me.role)
+    if (target === to.path) return next()
+    return next(target)
+  }
+
+  // 3) Resto de rutas requiere token
   if (!token) return next('/login')
 
   const me = await getMe()
-  if (!me) return next('/login')
+  if (!me) {
+    localStorage.removeItem('token')
+    return next('/login')
+  }
 
   const role = String(me.role || '').toLowerCase()
 
-  // Si la ruta pide auth explícito, verificar
+  // 4) Si la ruta pide auth explícito o es /admin*/report
   if (to.meta?.requiresAuth || to.path.startsWith('/admin') || to.path === '/report') {
-    // Si la ruta define roles, validar
+    // 4.1) Roles declarados en meta
     if (to.meta?.roles && Array.isArray(to.meta.roles) && to.meta.roles.length) {
       const allowed = to.meta.roles.map(r => r.toLowerCase())
       if (!allowed.includes(role)) {
-        return next(homeByRole(role))
+        const target = homeByRole(role)
+        if (target === to.path) return next()
+        return next(target)
       }
       return next()
     }
 
-    // Sin roles explícitos:
+    // 4.2) Sin roles explícitos
     if (to.path.startsWith('/admin')) {
-      if (['superadmin', 'supervision', 'leader_group'].includes(role)) return next()
+      // Admin general
+      if (['superadmin', 'supervision', 'leader_group'].includes(role)) {
+        return next()
+      }
+
+      // leader_vehicles → solo /admin/vehicles
+      if (role === 'leader_vehicles') {
+        if (to.path.startsWith('/admin/vehicles')) {
+          return next()
+        }
+        // si intenta otro /admin/* lo mandamos a /admin/vehicles
+        if (to.path !== '/admin/vehicles') {
+          return next('/admin/vehicles')
+        }
+        return next()
+      }
+
       if (role === 'leader_unit') return next('/report')
       if (role === 'agent') return next('/agent')
+
+      // Otro rol desconocido → login
       return next('/login')
     }
 
+    // /report es solo leader_unit
     if (to.path === '/report') {
-      // /report es solo leader_unit
       if (role === 'leader_unit') return next()
-      return next(homeByRole(role))
+      const target = homeByRole(role)
+      if (target === to.path) return next()
+      return next(target)
     }
   }
 
+  // 5) Rutas que no requieren nada especial
   return next()
 })
+
 
 export default router

@@ -121,6 +121,8 @@ async function login () {
 
     if (me?.role === 'superadmin') {
       router.push('/admin/dashboard')
+    } else if (me?.role === 'leader_vehicles') {
+    router.push('/admin/vehicles')
     } else if (me?.role === 'supervision') {
       router.push('/admin/')
     } else if (me?.role === 'leader_group') {

@@ -22,78 +22,75 @@
 
             <!-- Dashboard (NO acordeón) -->
             <router-link
-                to="/admin/dashboard"
-                class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                :class="route.path.startsWith('/admin/dashboard') && !openSection ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-                @click="selectDashboard"
-                >
-                <Home class="w-5 h-5" />
-                <span class="flex-1 text-left">Dashboard</span>
+              v-if="canSeeDashboard"
+              to="/admin/dashboard"
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+              :class="route.path.startsWith('/admin/dashboard') && !openSection ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+              @click="selectDashboard"
+            >
+              <Home class="w-5 h-5" />
+              <span class="flex-1 text-left">Dashboard</span>
             </router-link>
 
-            <!-- NOVEDADES -->
-            <div>
-                <button
-                class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                @click="selectAccordion('novedades')"
-                :class="openSection === 'novedades' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-                >
-                <Newspaper class="w-5 h-5" />
-                <span class="flex-1 text-left">Novedades</span>
-                <svg :class="['size-4 transition-transform', openSection === 'novedades' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                </svg>
-                </button>
-                <transition name="fade">
-                <div v-if="openSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin" icon="dashboard" :collapsed="collapsed" label="Reporte" dark />
-                    <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed" />
-                    <SidebarItem to="/parte" icon="parte" :collapsed="collapsed" label="Parte" />
-                  </div>
-                </transition>
-            </div>
+
+           <!-- NOVEDADES -->
+          <div v-if="canSeeNovedades">
+            <button
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+              @click="selectAccordion('novedades')"
+              :class="openSection === 'novedades' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+            >
+              <Newspaper class="w-5 h-5" />
+              <span class="flex-1 text-left">Novedades</span>
+              <svg :class="['size-4 transition-transform', openSection === 'novedades' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <!-- ... submenu tal cual lo tienes ... -->
+          </div>
+
 
             <!-- FUNCIONARIOS -->
-            <div>
+          <div v-if="canSeeFuncionarios">
+            <button
+              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+              @click="selectAccordion('funcionarios')"
+              :class="openSection === 'funcionarios' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+            >
+              <Users class="w-5 h-5" />
+              <span class="flex-1 text-left">Funcionarios</span>
+              <svg :class="['size-4 transition-transform', openSection === 'funcionarios' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+              </svg>
+            </button>
+            <!-- ... submenu tal cual ... -->
+          </div>
+
+            <!-- VEHICULOS: superadmin + leader_vehicles -->
+            <template v-if="canSee(['superadmin','leader_vehicles'])">
+              <div>
                 <button
-                class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                @click="selectAccordion('funcionarios')"
-                :class="openSection === 'funcionarios' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+                  class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                  @click="selectAccordion('vehiculos')"
+                  :class="openSection === 'vehiculos' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
                 >
-                <Users class="w-5 h-5" />
-                <span class="flex-1 text-left">Funcionarios</span>
-                <svg :class="['size-4 transition-transform', openSection === 'funcionarios' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
+                  <Car class="w-5 h-5" />
+                  <span class="flex-1 text-left">Vehículos</span>
+                  <svg :class="['size-4 transition-transform', openSection === 'vehiculos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
                     <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                </svg>
+                  </svg>
                 </button>
                 <transition name="fade">
-                <div v-if="openSection === 'funcionarios'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin/agents" icon="agents" :collapsed="collapsed" label="Funcionarios" dark />
-                </div>
+                  <div v-if="openSection === 'vehiculos'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                    <SidebarItem to="/admin/vehicles" icon="vehicles" :collapsed="collapsed" label="Vehículos" dark />
+                  </div>
                 </transition>
-            </div>
+              </div>
+            </template>
+
               <!-- solo superadmin -->
             <template v-if="canSee(['superadmin'])">
-                <!-- VEHICULOS -->
-                <div>
-                    <button
-                    class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                    @click="selectAccordion('vehiculos')"
-                    :class="openSection === 'vehiculos' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-                    >
-                    <Car class="w-5 h-5" />
-                    <span class="flex-1 text-left">Vehículos</span>
-                    <svg :class="['size-4 transition-transform', openSection === 'vehiculos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-                    </svg>
-                    </button>
-                    <transition name="fade">
-                    <div v-if="openSection === 'vehiculos'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                        <SidebarItem to="/admin/vehicles" icon="vehicles" :collapsed="collapsed" label="Vehículos" dark />
-                    </div>
-                    </transition>
-                </div>
-
+               
                 <!-- SERVICIOS -->
                 <div>
                     <button
@@ -412,6 +409,15 @@ function canSee(roles) {
   if (!me.value || !me.value.role) return false
   return roles.map(r => r.toLowerCase()).includes(String(me.value.role).toLowerCase())
 }
+
+// 👇 NUEVOS helpers
+const isLeaderVehicles = computed(() => canSee(['leader_vehicles']))
+const isSuperadmin = computed(() => canSee(['superadmin']))
+
+// Secciones que NO deben aparecer al leader_vehicles
+const canSeeDashboard   = computed(() => !isLeaderVehicles.value)
+const canSeeNovedades   = computed(() => !isLeaderVehicles.value)
+const canSeeFuncionarios = computed(() => !isLeaderVehicles.value)
 
 // Estados de acordeón para cada sección
 const openNovedades = ref(true)
