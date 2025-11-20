@@ -72,7 +72,7 @@
             </div>
             
           </div>
-
+          
           <!-- Body (tu contenido original) -->
           <div class="p-4 space-y-6">
             <!-- Fecha -->
@@ -688,6 +688,329 @@
             </div>
           </div>
         </section>
+
+        <section
+          v-show="section==='proyeccion'"
+          class="bg-white rounded-2xl shadow border border-slate-200 overflow-hidden"
+        >
+          <!-- ===================================================== -->
+          <!-- PROYECCIÓN DE DESCANSO (por unidad / agente / rango) -->
+          <!-- ===================================================== -->
+          <div class="mt-6 rounded-2xl p-4 space-y-4">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 class="text-sm font-semibold text-indigo-900">
+                  Proyección de descanso
+                </h3>
+                <p class="text-xs text-indigo-800/80 max-w-xl">
+                  Define rangos de fechas y estado para cada funcionario de la unidad.
+                  No se permitirá guardar si hay días sin estado dentro del rango proyectado.
+                </p>
+              </div>
+              <span
+                class="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200"
+              >
+                🧭 Vista de planificación
+              </span>
+            </div>
+
+            <!-- Rango de proyección (obligatorio) + funcionario -->
+            <div
+              class="grid gap-3 sm:grid-cols-[repeat(2,minmax(0,1fr))_minmax(0,1.2fr)] items-end"
+            >
+              <div>
+                <label class="text-xs font-medium text-slate-700 mb-1 block">
+                  Desde (inicio de proyección)
+                </label>
+                <input
+                  type="date"
+                  class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+                  v-model="projRange.from"
+                >
+              </div>
+              <div>
+                <label class="text-xs font-medium text-slate-700 mb-1 block">
+                  Hasta (fin de proyección)
+                </label>
+                <input
+                  type="date"
+                  class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+                  v-model="projRange.to"
+                >
+              </div>
+
+              <!-- Agente activo para edición -->
+              <div>
+                <label class="text-xs font-medium text-slate-700 mb-1 block">
+                  Funcionario que estoy proyectando
+                </label>
+                <select
+                  class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+                  v-model="projSelectedAgentId"
+                >
+                  <option :value="null" disabled>Selecciona un funcionario…</option>
+                  <option
+                    v-for="a in agents"
+                    :key="a.id"
+                    :value="a.id"
+                  >
+                    {{ a.code }}
+                    <template v-if="a.nickname">
+                      — "{{ a.nickname }}"
+                    </template>
+                    ({{ displayCategory(a.category) }})
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <!-- LAYOUT PRINCIPAL: IZQ = rangos + línea de tiempo, DER = calendario -->
+            <div
+              v-if="projSelectedAgentId && projRange.from && projRange.to"
+              class="mt-4 grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
+            >
+              <!-- === COLUMNA IZQUIERDA: RANGOS + LÍNEA DE TIEMPO === -->
+              <div class="space-y-3">
+                <div class="space-y-3">
+                <!-- Editor de rangos: formulario simple -->
+                <div class="rounded-2xl border border-slate-200 bg-white p-3 space-y-3">
+                  <div class="text-xs text-slate-700">
+                    Rangos para
+                    <strong>{{ projCurrentAgentLabel }}</strong>
+                  </div>
+
+                  <div
+                    class="grid gap-2 sm:grid-cols-[repeat(2,minmax(0,1fr))_minmax(0,1.3fr)_max-content] items-end"
+                  >
+                    <div>
+                      <label class="text-[11px] font-medium text-slate-600 mb-1 block">
+                        Desde
+                      </label>
+                      <input
+                        type="date"
+                        class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
+                        v-model="projDraft.from"
+                      >
+                    </div>
+
+                    <div>
+                      <label class="text-[11px] font-medium text-slate-600 mb-1 block">
+                        Hasta
+                      </label>
+                      <input
+                        type="date"
+                        class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
+                        v-model="projDraft.to"
+                      >
+                    </div>
+
+                    <div>
+                      <label class="text-[11px] font-medium text-slate-600 mb-1 block">
+                        Estado
+                      </label>
+                      <select
+                        class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
+                        v-model="projDraft.state"
+                      >
+                        <option disabled value="">Selecciona…</option>
+                        <option
+                          v-for="st in STATUS_ORDER"
+                          :key="st"
+                          :value="st"
+                        >
+                          {{ st }}
+                        </option>
+                      </select>
+                    </div>
+
+                    <div class="flex justify-end">
+                      <button
+                        type="button"
+                        class="px-3 py-2 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        :disabled="!projCanAddDraft"
+                        @click="projAddRangeForCurrent"
+                      >
+                        Añadir rango
+                      </button>
+                    </div>
+                  </div>
+
+                  <p
+                    v-if="projDraftError"
+                    class="text-[11px] text-rose-700 mt-1"
+                  >
+                    {{ projDraftError }}
+                  </p>
+                </div>
+
+                <!-- Línea de tiempo para el agente actual -->
+                <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="text-xs font-semibold text-slate-700">
+                      Línea de tiempo de proyección
+                    </div>
+                    <div class="text-[11px] text-slate-500">
+                      {{ projRange.from }} → {{ projRange.to }}
+                    </div>
+                  </div>
+
+                  <div
+                    v-if="projTimelineSegments.length"
+                    class="space-y-2 relative mt-1 max-h-56 overflow-auto pr-1"
+                  >
+                    <div class="absolute left-2 top-0 bottom-0 w-px bg-slate-300" />
+                    <div
+                      v-for="(seg, i) in projTimelineSegments"
+                      :key="i"
+                      class="flex items-center gap-2 pl-4"
+                    >
+                      <div
+                        class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200"
+                        :class="colorClass(seg.state)?.dot || 'bg-slate-400'"
+                      />
+                      <div
+                        class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] shadow-sm"
+                        :class="colorClass(seg.state)?.pill || 'bg-slate-100 text-slate-700'"
+                      >
+                        <span>{{ iconFor(seg.state) }}</span>
+                        <span>{{ shortState(seg.state) }}</span>
+                        <span class="opacity-70">
+                          ({{ seg.from }} → {{ seg.to }})
+                        </span>
+                        <span class="opacity-70">
+                          • {{ seg.count }} día(s)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        class="ml-1 text-[11px] text-rose-700 hover:underline"
+                        @click="projRemoveSegment(i)"
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  </div>
+
+                  <p v-else class="text-[11px] text-slate-500 mt-1">
+                    Este funcionario no tiene rangos proyectados dentro del intervalo seleccionado.
+                  </p>
+                </div>
+              </div>
+
+
+              </div>
+
+              <!-- === COLUMNA DERECHA: CALENDARIO CUADRADO === -->
+              <div class="rounded-2xl border border-slate-200 bg-white p-3">
+                <div class="flex items-center justify-between mb-2">
+                  <div class="text-xs font-semibold text-slate-700">
+                    Calendario de proyección
+                  </div>
+                  <div class="text-[11px] text-slate-500">
+                    {{ projCalendarLabel }}
+                  </div>
+                </div>
+
+                <!-- Cabecera días semana -->
+                <div
+                  class="grid grid-cols-7 gap-1 text-[10px] font-medium text-slate-500 mb-1"
+                >
+                  <div class="text-center">L</div>
+                  <div class="text-center">M</div>
+                  <div class="text-center">X</div>
+                  <div class="text-center">J</div>
+                  <div class="text-center">V</div>
+                  <div class="text-center">S</div>
+                  <div class="text-center">D</div>
+                </div>
+
+                <!-- Calendario con scroll si el rango es grande -->
+                <div class="max-h-80 overflow-y-auto pr-1">
+                  <div class="grid grid-cols-7 gap-1">
+                    <div
+                      v-for="cell in projCalendarCells"
+                      :key="cell.key"
+                      :title="cell.title"
+                      class="h-14 rounded-lg border text-[10px] flex flex-col p-1 transition-all"
+                      :class="[
+                        cell.state
+                          ? (colorClass(cell.state)?.bg || 'bg-slate-100')
+                          : 'bg-white',
+                        cell.isOutside && 'opacity-60',
+                        projMissingDaysSet.has(cell.date) && '!border-rose-400 border-2'
+                      ]"
+                    >
+                      <div class="text-[10px] font-medium text-slate-700">
+                        {{ cell.day }}
+                      </div>
+                      <div
+                        v-if="cell.state"
+                        class="mt-auto text-center text-lg leading-none"
+                      >
+                        {{ iconFor(cell.state) }}
+                      </div>
+                      <div
+                        v-if="cell.state"
+                        class="text-[9px] text-center truncate"
+                      >
+                        {{ shortState(cell.state) }}
+                      </div>
+                      <div
+                        v-else
+                        class="mt-auto text-[9px] text-rose-500"
+                      >
+                        sin estado
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Mensajes y errores -->
+            <div class="mt-3 space-y-1">
+              <p
+                v-if="projErrors.length"
+                class="text-xs text-rose-700"
+              >
+                <strong>Revisa antes de guardar:</strong>
+                <ul class="list-disc list-inside space-y-0.5 mt-1">
+                  <li v-for="(e, i) in projErrors" :key="i">
+                    {{ e }}
+                  </li>
+                </ul>
+              </p>
+              <p
+                v-if="projMsg"
+                class="text-xs"
+                :class="projMsgOk ? 'text-emerald-700' : 'text-rose-700'"
+              >
+                {{ projMsg }}
+              </p>
+            </div>
+
+            <!-- Botón guardar proyección -->
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+              <button
+                type="button"
+                class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                :disabled="!projCanSave"
+                @click="saveProjection"
+              >
+                Guardar proyección de descanso
+              </button>
+              <div class="text-[11px] text-slate-500">
+                Se validará que todos los días entre
+                <strong>{{ projRange.from || '____' }}</strong>
+                y
+                <strong>{{ projRange.to || '____' }}</strong>
+                tengan estado
+                para cada funcionario que tenga rangos en la proyección.
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- ====== PERFIL (embebido) ====== -->
           <div v-show="section==='perfil'" class="space-y-6">
             <div class="bg-white rounded-2xl shadow p-4">
@@ -903,8 +1226,17 @@
 
 import axios from 'axios'
 import { http } from '@/lib/http'
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, reactive } from 'vue'
 import FechasBanner from '@/components/FechasBanner.vue'
+
+const restViewer = reactive({
+  from: '',      // 'YYYY-MM-DD'
+  to: '',        // 'YYYY-MM-DD'
+  agentId: null, // id del agente seleccionado (opcional para filtrar)
+  loading: false,
+  error: '',
+  byAgent: {}    // { [agentId]: [ { from, to, state } ] }
+})
 
 const toast = ref({ visible: false, text: '', kind: 'success' })
 function showToast(text, kind = 'success') {
@@ -1518,11 +1850,14 @@ onMounted(async () => {
 const section = ref('captura')  // 'captura' | 'perfil'
 const menu = [
   { key: 'captura', label: 'Captura de novedades' },
+  { key: 'proyeccion', label: 'Proyección funcionarios' },
   { key: 'perfil',  label: 'Perfil' },
 ]
 const titleBySection = computed(() => ({
   captura: 'Captura de novedades',
+  proyeccion: 'Proyección funcionarios',
   perfil: 'Perfil de usuario',
+
 }[section.value]))
 
 // --- estado perfil/cambio contraseña ---
@@ -1788,6 +2123,558 @@ const segments = computed(() => {
   return out
 })
 
+// ======================= PROYECCIÓN DE DESCANSO =======================
+
+// Rango global de proyección (por ej. 2025-11-25 → 2026-01-05)
+const projRange = ref({
+  from: '',
+  to: ''
+})
+
+// Mapa: agentId -> [ { from, to, state } ]
+const projByAgent = ref({})
+
+// Draft de rango para el formulario
+const projDraft = ref({
+  from: '',
+  to: '',
+  state: ''
+})
+const projDraftError = ref('')
+
+const projCanAddDraft = computed(() => {
+  const f = projDraft.value.from
+  const t = projDraft.value.to
+  const s = projDraft.value.state
+  if (!f || !t || !s) return false
+  const d1 = toDate(f)
+  const d2 = toDate(t)
+  if (!d1 || !d2 || d2 < d1) return false
+  return true
+})
+
+// Agente actualmente seleccionado en el editor
+const projSelectedAgentId = ref(null)
+
+// Mensajes
+const projMsg = ref('')
+const projMsgOk = ref(false)
+
+// Cargar proyección existente desde el backend para el rango [from,to]
+async function loadProjectionFromBackend () {
+  const from = projRange.value.from
+  const to   = projRange.value.to
+
+  projMsg.value = ''
+  projMsgOk.value = false
+
+  // Si no hay rango, limpiamos proyección en memoria
+  if (!from || !to) {
+    projByAgent.value = {}
+    return
+  }
+
+  const d1 = toDate(from)
+  const d2 = toDate(to)
+  if (!d1 || !d2 || d2 < d1) {
+    projByAgent.value = {}
+    return
+  }
+
+  try {
+    const { data } = await axios.get('/rest-planning', {
+      params: {
+        from,
+        to
+        // NO enviamos unitId: el backend ya filtra por unidad del usuario
+      },
+      headers: {
+        Authorization: 'Bearer ' + (localStorage.getItem('token') || '')
+      }
+    })
+
+    const items = Array.isArray(data?.items) ? data.items : []
+
+    const map = {}
+    for (const it of items) {
+      const aid = Number(it.agentId)
+      if (!aid) continue
+
+      if (!map[aid]) map[aid] = []
+      map[aid].push({
+        from: String(it.start_date).slice(0, 10), // viene así del backend
+        to:   String(it.end_date).slice(0, 10),
+        state: it.state
+      })
+    }
+
+    // 🔄 sustituimos todo el mapa por lo que hay en BD
+    projByAgent.value = map
+
+    // Mantener selección si sigue teniendo rangos
+    if (
+      projSelectedAgentId.value &&
+      map[projSelectedAgentId.value] &&
+      map[projSelectedAgentId.value].length
+    ) {
+      // ok, dejamos la selección como está
+    } else if (agents.value.length) {
+      // Si no, elegimos alguno que tenga algo
+      const withRanges = agents.value.find(a => map[a.id]?.length)
+      projSelectedAgentId.value = withRanges?.id || null
+    }
+  } catch (err) {
+    console.warn('Error cargando proyección existente:', err?.response?.data || err)
+    projByAgent.value = {}
+    projMsg.value =
+      err?.response?.data?.error ||
+      err?.response?.data?.detail ||
+      'No se pudo cargar la proyección existente.'
+    projMsgOk.value = false
+  }
+}
+
+// Devuelve el arreglo reactivo de rangos para el agente actual
+const projCurrentAgentRanges = computed(() => {
+  const id = projSelectedAgentId.value
+  if (!id) return []
+  if (!projByAgent.value[id]) {
+    // inicializa array para ese agente
+    projByAgent.value[id] = []
+  }
+  return projByAgent.value[id]
+})
+
+// Label amigable del agente actual
+const projCurrentAgentLabel = computed(() => {
+  const id = projSelectedAgentId.value
+  if (!id) return ''
+  const a = agents.value.find(x => x.id === id)
+  if (!a) return ''
+  return `${a.code}${a.nickname ? ' — "' + a.nickname + '"' : ''} (${displayCategory(a.category)})`
+})
+
+// Helper: itera días entre dos YYYY-MM-DD (incluye ambos)
+function projEnumerateDays(from, to) {
+  const s = toDate(from)
+  const e = toDate(to)
+  const out = []
+  if (!s || !e || e < s) return out
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    out.push(ymd(d))
+  }
+  return out
+}
+
+// Construye mapa de días -> estado y detecta solapamientos
+function projBuildDayMap(ranges) {
+  const map = new Map()
+  const overlaps = new Set()
+
+  for (const r of ranges) {
+    if (!r.from || !r.to || !r.state) continue
+    const days = projEnumerateDays(r.from, r.to)
+    for (const day of days) {
+      if (map.has(day)) {
+        overlaps.add(day)
+      }
+      map.set(day, r.state)
+    }
+  }
+  return { map, overlaps }
+}
+
+// Set de días sin estado para el agente actual
+const projMissingDaysSet = computed(() => {
+  const missing = new Set()
+  const from = projRange.value.from
+  const to = projRange.value.to
+  if (!from || !to) return missing
+  if (!projSelectedAgentId.value) return missing
+
+  const { map } = projBuildDayMap(projCurrentAgentRanges.value)
+  const days = projEnumerateDays(from, to)
+  for (const d of days) {
+    if (!map.has(d)) missing.add(d)
+  }
+  return missing
+})
+
+// Días de vista previa (horizontal) para agente actual
+const projPreviewDays = computed(() => {
+  const from = projRange.value.from
+  const to = projRange.value.to
+  const id = projSelectedAgentId.value
+  if (!from || !to || !id) return []
+
+  const { map } = projBuildDayMap(projCurrentAgentRanges.value)
+  const days = projEnumerateDays(from, to)
+  return days.map(d => {
+    const state = map.get(d) || null
+    return {
+      date: d,
+      day: Number(d.slice(8, 10)),
+      state,
+      title: state ? `${d} — ${state}` : `${d} — sin estado`
+    }
+  })
+})
+
+// Errores de validación (solo UI, antes del guardado)
+const projErrors = computed(() => {
+  const errors = []
+
+  const from = projRange.value.from
+  const to = projRange.value.to
+  if (!from || !to) {
+    errors.push('Debes definir el rango completo de proyección (desde / hasta).')
+    return errors
+  }
+  const d1 = toDate(from)
+  const d2 = toDate(to)
+  if (!d1 || !d2 || d2 < d1) {
+    errors.push('El rango de proyección es inválido: "hasta" no puede ser menor que "desde".')
+    return errors
+  }
+
+  // Si hay agente seleccionado, mostraremos errores de huecos/solapes de ese agente
+  if (projSelectedAgentId.value) {
+    const ranges = projCurrentAgentRanges.value
+    const { overlaps } = projBuildDayMap(ranges)
+    if (overlaps.size) {
+      errors.push('Este funcionario tiene solapamientos de rangos (mismo día con dos estados distintos).')
+    }
+    if (projMissingDaysSet.value.size) {
+      errors.push('Este funcionario tiene días sin estado dentro del rango proyectado.')
+    }
+  }
+
+  return errors
+})
+
+// Puede guardar si:
+// - hay rango válido
+// - hay al menos un agente en la proyección
+// - no hay errores globales (se validarán de nuevo en saveProjection)
+const projCanSave = computed(() => {
+  const from = projRange.value.from
+  const to = projRange.value.to
+  if (!from || !to) return false
+
+  // ✅ Debe haber al menos UN funcionario con al menos un rango válido
+  const hasAny = agents.value.some(a => {
+    const arr = projByAgent.value[a.id] || []
+    return arr.some(r => r.from && r.to && r.state)
+  })
+
+  return hasAny
+})
+
+// Añadir rango para el agente actual
+function projAddRangeForCurrent() {
+  projDraftError.value = ''
+  const id = projSelectedAgentId.value
+  if (!id) {
+    projDraftError.value = 'Selecciona un funcionario primero.'
+    return
+  }
+
+  const { from, to, state } = projDraft.value
+  if (!from || !to || !state) {
+    projDraftError.value = 'Completa fecha inicio, fin y estado.'
+    return
+  }
+
+  const d1 = toDate(from)
+  const d2 = toDate(to)
+  if (!d1 || !d2 || d2 < d1) {
+    projDraftError.value = 'El rango es inválido: la fecha fin no puede ser menor que la fecha inicio.'
+    return
+  }
+
+  // Validar que caiga dentro del rango global (si está definido)
+  const gFrom = toDate(projRange.value.from)
+  const gTo   = toDate(projRange.value.to)
+  if (gFrom && gTo) {
+    if (d1 < gFrom || d2 > gTo) {
+      projDraftError.value = `El rango debe estar dentro del intervalo global ${projRange.value.from} → ${projRange.value.to}.`
+      return
+    }
+  }
+
+  if (!projByAgent.value[id]) projByAgent.value[id] = []
+  const arr = projByAgent.value[id]
+
+  // Evitar solapes con rangos ya existentes de ese agente
+  for (const r of arr) {
+    const r1 = toDate(r.from)
+    const r2 = toDate(r.to)
+    if (!r1 || !r2) continue
+    // solapan si NO se cumple (nuevo antes de todos) ni (nuevo después de todos)
+    const noOverlap = (d2 < r1) || (d1 > r2)
+    if (!noOverlap) {
+      projDraftError.value = `Este rango se solapa con ${r.from} → ${r.to}.`
+      return
+    }
+  }
+
+  // Añadir rango
+  arr.push({
+    from,
+    to,
+    state
+  })
+
+  // Limpiar formulario
+  projDraft.value = { from: '', to: '', state: '' }
+}
+
+// Quitar rango del agente actual
+function projRemoveRangeForCurrent(idx) {
+  const id = projSelectedAgentId.value
+  if (!id) return
+  const arr = projByAgent.value[id]
+  if (!arr) return
+  arr.splice(idx, 1)
+}
+
+// Validación completa para TODOS los agentes incluidos antes de guardar
+function projValidateAll() {
+  const problems = []
+  const from = projRange.value.from
+  const to = projRange.value.to
+  const d1 = toDate(from)
+  const d2 = toDate(to)
+
+  if (!from || !to || !d1 || !d2 || d2 < d1) {
+    problems.push('Rango de proyección inválido.')
+    return problems
+  }
+
+  const days = projEnumerateDays(from, to)
+
+  // ✅ Solo validamos a los funcionarios que REALMENTE tienen rangos
+  for (const a of agents.value) {
+    const arr = (projByAgent.value[a.id] || []).filter(
+      r => r.from && r.to && r.state
+    )
+
+    if (!arr.length) {
+      // Sin rangos para este agente → no es obligatorio proyectarlo
+      continue
+    }
+
+    const { map, overlaps } = projBuildDayMap(arr)
+
+    if (overlaps.size) {
+      problems.push(`El agente ${a.code} tiene días con dos estados distintos en la proyección.`)
+    }
+
+    const missing = []
+    for (const d of days) {
+      if (!map.has(d)) missing.push(d)
+    }
+    if (missing.length) {
+      problems.push(`El agente ${a.code} tiene días sin estado entre ${from} y ${to} en su proyección.`)
+    }
+  }
+
+  return problems
+}
+
+
+// --- Timeline de proyección para el agente actual ---
+const projTimelineSegments = computed(() => {
+  const id = projSelectedAgentId.value
+  if (!id) return []
+
+  const arr = (projByAgent.value[id] || [])
+    .filter(r => r.from && r.to && r.state)
+    .sort((a, b) => String(a.from).localeCompare(String(b.from)))
+
+  return arr.map(r => ({
+    state: r.state,
+    from: r.from,
+    to:   r.to,
+    count: projEnumerateDays(r.from, r.to).length
+  }))
+})
+
+
+// --- Calendario cuadrado de proyección para el agente actual ---
+const projCalendarCells = computed(() => {
+  const from = projRange.value.from
+  const to   = projRange.value.to
+  const id   = projSelectedAgentId.value
+  if (!from || !to || !id) return []
+
+  const d1 = toDate(from)
+  const d2 = toDate(to)
+  if (!d1 || !d2) return []
+
+  const start = startOfWeekMonday(d1)
+  const end   = endOfWeekSunday(d2)
+
+  const { map } = projBuildDayMap(projCurrentAgentRanges.value)
+  const cells = []
+
+  for (let dt = new Date(start); dt <= end; dt.setDate(dt.getDate() + 1)) {
+    const ymdStr = ymd(dt)
+    const state  = map.get(ymdStr) || null
+    const isOutside = dt < d1 || dt > d2
+
+    cells.push({
+      key: ymdStr,
+      date: ymdStr,
+      day: dt.getDate(),
+      state,
+      isOutside,
+      title: state ? `${ymdStr} — ${state}` : `${ymdStr} — sin estado`
+    })
+  }
+  return cells
+})
+
+const projCalendarLabel = computed(() => {
+  const from = projRange.value.from
+  const to   = projRange.value.to
+  if (!from || !to) return ''
+  if (from === to) return from
+  return `${from} → ${to}`
+})
+
+
+// Guardar proyección
+async function saveProjection() {
+  projMsg.value = ''
+  projMsgOk.value = false
+
+  const allProblems = projValidateAll()
+  if (allProblems.length) {
+    projMsg.value = allProblems.join(' ')
+    projMsgOk.value = false
+    return
+  }
+
+  try {
+    const globalFrom = projRange.value.from
+    const globalTo   = projRange.value.to
+
+    // 🔑 Agentes “involucrados” en la proyección:
+    // - los que ya tenían algo en BD (cargados en projByAgent)
+    // - y los que se les agregó al menos un rango nuevo
+    const involvedIds = new Set(
+      Object.keys(projByAgent.value).map(id => Number(id))
+    )
+
+    // Por seguridad: si por alguna razón agregaste rangos a un agente
+    // que no estaba en projByAgent, lo incluimos también.
+    for (const a of agents.value) {
+      const arr = projByAgent.value[a.id] || []
+      if (arr.some(r => r.from && r.to && r.state)) {
+        involvedIds.add(a.id)
+      }
+    }
+
+    const items = []
+
+    for (const agentId of involvedIds) {
+      const a = agents.value.find(x => x.id === agentId)
+      if (!a) continue
+
+      const raw = projByAgent.value[agentId] || []
+
+      const segments = raw
+        .filter(r => r.from && r.to && r.state)
+        .map(r => ({
+          from: r.from,
+          to:   r.to,
+          state: r.state
+        }))
+
+      // 🔁 IMPORTANTÍSIMO:
+      // - Si segments.length > 0 → guardar/actualizar esos rangos
+      // - Si segments.length === 0 → BORRAR proyección en ese rango global
+      items.push({
+        agentId: agentId,
+        segments
+      })
+    }
+
+    const payload = {
+      from: globalFrom,
+      to:   globalTo,
+      items
+    }
+
+    await axios.post('/rest-planning/bulk', payload, {
+      headers: {
+        Authorization: 'Bearer ' + (localStorage.getItem('token') || '')
+      }
+    })
+
+    projMsg.value = 'Proyección de descanso guardada correctamente. ✅'
+    projMsgOk.value = true
+  } catch (err) {
+    projMsg.value =
+      err?.response?.data?.error ||
+      err?.response?.data?.detail ||
+      err?.message ||
+      'Error al guardar la proyección.'
+    projMsgOk.value = false
+  }
+}
+
+async function loadRestProjection() {
+  if (!restViewer.from || !restViewer.to) return
+
+  restViewer.loading = true
+  restViewer.error = ''
+  try {
+    const { data } = await http.get('/rest-planning', {
+      params: {
+        from: restViewer.from,
+        to:   restViewer.to,
+        // Para líder de unidad NO es obligatorio enviar unitId,
+        // el backend usa req.user.unitId.
+        agentId: restViewer.agentId || undefined
+      }
+    })
+
+    const map = {}
+
+    for (const r of (data.items || [])) {
+      if (!map[r.agentId]) map[r.agentId] = []
+      map[r.agentId].push({
+        from: r.start_date,   // viene así del backend
+        to:   r.end_date,
+        state: r.state
+      })
+    }
+
+    restViewer.byAgent = map
+  } catch (err) {
+    console.error('Error cargando /rest-planning', err)
+    restViewer.error =
+      err?.response?.data?.error ||
+      err?.response?.data?.detail ||
+      'Error al cargar la proyección de descanso'
+  } finally {
+    restViewer.loading = false
+  }
+}
+
+// Quitar un segmento directamente desde la línea de tiempo
+function projRemoveSegment(idx) {
+  const id = projSelectedAgentId.value
+  if (!id) return
+  const arr = projByAgent.value[id]
+  if (!arr) return
+  if (idx < 0 || idx >= arr.length) return
+  if (!confirm('¿Quitar este rango de la proyección?')) return
+  arr.splice(idx, 1)
+}
+
 // ✅ MT: solo dígitos y guiones, opcional, hasta 32 chars
 function isMtInvalid(val) {
   if (!val) return false
@@ -1800,13 +2687,16 @@ watch(reportDate, async () => {
   await checkIfReportExists()
 })
 
-onMounted(async () => {
-  await loadMe()
-  await loadMunicipalities()
-  await loadAgents()
-  await checkIfReportExists()
-})
-
+watch(
+  () => [projRange.value.from, projRange.value.to],
+  async ([from, to]) => {
+    if (!from || !to) return
+    const d1 = toDate(from)
+    const d2 = toDate(to)
+    if (!d1 || !d2 || d2 < d1) return
+    await loadProjectionFromBackend()
+  }
+)
 
 </script>
 
