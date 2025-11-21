@@ -801,6 +801,7 @@
                       <select
                         class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
                         v-model="projDraft.state"
+                        @change="onProjDraftStateChange"
                       >
                         <option disabled value="">Selecciona…</option>
                         <option
@@ -824,7 +825,50 @@
                       </button>
                     </div>
                   </div>
+                  <!-- Grupo y Unidad destino SOLO si es COMISIÓN DEL SERVICIO -->
+                  <div
+                    v-if="projDraft.state === 'COMISIÓN DEL SERVICIO'"
+                    class="mt-2 grid gap-2 sm:grid-cols-2"
+                  >
+                    <div>
+                      <label class="text-[11px] font-medium text-slate-600 mb-1 block">
+                        Grupo destino
+                      </label>
+                      <select
+                        class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
+                        v-model="projDraft.destGroupId"
+                      >
+                        <option :value="null" disabled>Selecciona grupo…</option>
+                        <option
+                          v-for="g in groups"
+                          :key="g.id"
+                          :value="g.id"
+                        >
+                          {{ g.code || g.name }}
+                        </option>
+                      </select>
+                    </div>
 
+                    <div>
+                      <label class="text-[11px] font-medium text-slate-600 mb-1 block">
+                        Unidad destino
+                      </label>
+                      <select
+                        class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
+                        v-model="projDraft.destUnitId"
+                        :disabled="!projDraft.destGroupId"
+                      >
+                        <option :value="null" disabled>Selecciona unidad…</option>
+                        <option
+                          v-for="u in (unitsByGroup[projDraft.destGroupId] || [])"
+                          :key="u.id"
+                          :value="u.id"
+                        >
+                          {{ u.name }}
+                        </option>
+                      </select>
+                    </div>  
+                  </div>
                   <p
                     v-if="projDraftError"
                     class="text-[11px] text-rose-700 mt-1"
@@ -863,9 +907,6 @@
                         class="inline-flex flex-wrap items-center gap-2 px-3 py-1  text-[10px] shadow-sm bg-white border border-slate-200"
                       >
                        
-
-                        
-
                         <!-- Fechas editables -->
                         <div class="flex items-center gap-1">
                           <input
@@ -895,6 +936,12 @@
                               {{ st }}
                             </option>
                           </select>
+                          <span v-if="seg.state === 'COMISIÓN DEL SERVICIO' && seg.destUnitId" class="text-[10px] opacity-80">
+                            → {{ groupById[seg.destGroupId]?.code || groupById[seg.destGroupId]?.name || 'Grupo' }}
+                            /
+                            {{ unitById[seg.destUnitId]?.name || 'Unidad' }}
+                          </span>
+
                         </div>
 
                         <span class="opacity-70">
@@ -1309,6 +1356,30 @@ const agents = ref([])          // [{id, code, category, status, location, munic
 const municipalities = ref([])
 const me = ref(null) // 👈 Para info usuario
 
+const groups = ref([])
+const units = ref([])
+
+const unitsByGroup = computed(() => {
+  const map = {}
+  for (const u of units.value) {
+    if (!u.groupId) continue
+    if (!map[u.groupId]) map[u.groupId] = []
+    map[u.groupId].push(u)
+  }
+  return map
+})
+
+const groupById = computed(() => {
+  const m = {}
+  for (const g of groups.value) m[g.id] = g
+  return m
+})
+const unitById = computed(() => {
+  const m = {}
+  for (const u of units.value) m[u.id] = u
+  return m
+})
+
 const existeReporte = ref(false)
 
 const agentOwnershipMsg = ref('')     // Mensaje "Agente pertenece a XX unidad"
@@ -1367,6 +1438,20 @@ async function loadMunicipalities(q = '') {
     params
   });
   municipalities.value = data || [];
+}
+
+async function loadGroups () {
+  const { data } = await axios.get('/rest-planning/groups', {
+    headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+  })
+  groups.value = Array.isArray(data) ? data : []
+}
+
+async function loadUnits () {
+  const { data } = await axios.get('/rest-planning/units', {
+    headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+  })
+  units.value = Array.isArray(data) ? data : []
 }
 
 function onStateChange(agent) {
@@ -1862,6 +1947,8 @@ const hasDateErrors = computed(() => agents.value.some(agentHasRangeError))
 onMounted(async () => {
   await loadMe() // <--- Carga el usuario y unidad
   await loadMunicipalities();
+   await loadGroups()   
+  await loadUnits()    
   await loadAgents();
   await checkIfReportExists();
 });
@@ -2158,8 +2245,11 @@ const projByAgent = ref({})
 const projDraft = ref({
   from: '',
   to: '',
-  state: ''
+  state: '',
+  destGroupId: null,
+  destUnitId: null
 })
+
 const projDraftError = ref('')
 
 const projCanAddDraft = computed(() => {
@@ -2170,6 +2260,12 @@ const projCanAddDraft = computed(() => {
   const d1 = toDate(f)
   const d2 = toDate(t)
   if (!d1 || !d2 || d2 < d1) return false
+
+  // 👇 Si es COMISIÓN DEL SERVICIO, obligar grupo/unidad destino
+  if (s === 'COMISIÓN DEL SERVICIO') {
+    if (!projDraft.value.destGroupId || !projDraft.value.destUnitId) return false
+  }
+
   return true
 })
 
@@ -2222,9 +2318,11 @@ async function loadProjectionFromBackend () {
 
       if (!map[aid]) map[aid] = []
       map[aid].push({
-        from: String(it.start_date).slice(0, 10), // viene así del backend
+        from: String(it.start_date).slice(0, 10),
         to:   String(it.end_date).slice(0, 10),
-        state: it.state
+        state: it.state,
+        destGroupId: it.destGroupId || null,
+        destUnitId:  it.destUnitId  || null
       })
     }
 
@@ -2272,6 +2370,12 @@ const projCurrentAgentLabel = computed(() => {
   const a = agents.value.find(x => x.id === id)
   if (!a) return ''
   return `${a.code}${a.nickname ? ' — "' + a.nickname + '"' : ''} (${displayCategory(a.category)})`
+})
+
+// Agente actual como objeto completo (para sugerencias de grupo/unidad)
+const projCurrentAgent = computed(() => {
+  if (!projSelectedAgentId.value) return null
+  return agents.value.find(a => a.id === projSelectedAgentId.value) || null
 })
 
 // Helper: itera días entre dos YYYY-MM-DD (incluye ambos)
@@ -2453,11 +2557,31 @@ function projAddRangeForCurrent() {
   arr.push({
     from,
     to,
-    state
+    state,
+    destGroupId: projDraft.value.state === 'COMISIÓN DEL SERVICIO'
+      ? Number(projDraft.value.destGroupId) || null
+      : null,
+    destUnitId: projDraft.value.state === 'COMISIÓN DEL SERVICIO'
+      ? Number(projDraft.value.destUnitId) || null
+      : null
   })
 
   // Limpiar formulario
-  projDraft.value = { from: '', to: '', state: '' }
+  projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null }
+}
+
+function onProjDraftStateChange() {
+  const s = projDraft.value.state
+  if (s === 'COMISIÓN DEL SERVICIO' && projCurrentAgent.value) {
+    // Sugerir grupo y unidad actual del funcionario
+    projDraft.value.destGroupId = projCurrentAgent.value.groupId || null
+    projDraft.value.destUnitId  = projCurrentAgent.value.unitId  || null
+  } else {
+    // Para otros estados, no forzamos destino
+    // (puedes limpiar si quieres)
+    // projDraft.value.destGroupId = null
+    // projDraft.value.destUnitId  = null
+  }
 }
 
 // Quitar rango del agente actual
@@ -2559,11 +2683,13 @@ const projTimelineSegments = computed(() => {
   arr.forEach((r, idx) => {
     if (!r.from || !r.to || !r.state) return
     out.push({
-      index: idx, // índice real dentro de projByAgent[id]
+      index: idx,
       state: r.state,
       from: r.from,
       to:   r.to,
-      count: projEnumerateDays(r.from, r.to).length
+      count: projEnumerateDays(r.from, r.to).length,
+      destGroupId: r.destGroupId || null,
+      destUnitId:  r.destUnitId  || null
     })
   })
 
@@ -2661,8 +2787,15 @@ async function saveProjection() {
         .map(r => ({
           from: r.from,
           to:   r.to,
-          state: r.state
+          state: r.state,
+          destGroupId: r.state === 'COMISIÓN DEL SERVICIO'
+            ? (r.destGroupId || null)
+            : null,
+          destUnitId: r.state === 'COMISIÓN DEL SERVICIO'
+            ? (r.destUnitId || null)
+            : null
         }))
+
 
       // 🔁 IMPORTANTÍSIMO:
       // - Si segments.length > 0 → guardar/actualizar esos rangos

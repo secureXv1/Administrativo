@@ -219,7 +219,15 @@ router.post(
             }
           }
 
-          return { from, to, state, fromDate: d1, toDate: d2 }
+          return { 
+            from, 
+            to, 
+            state, 
+            destGroupId: s.destGroupId ?? null,
+            destUnitId:  s.destUnitId ?? null,
+            fromDate: d1, 
+            toDate: d2 
+          }
         })
 
         // Ordenar por fecha inicio
@@ -286,8 +294,8 @@ router.post(
           await conn.query(
             `
             INSERT INTO rest_plans
-              (agent_id, unit_id, start_date, end_date, state, created_by)
-            VALUES (?,?,?,?,?,?)
+              (agent_id, unit_id, start_date, end_date, state, dest_group_id, dest_unit_id, created_by)
+            VALUES (?,?,?,?,?,?,?,?)
             `,
             [
               agentId,
@@ -295,6 +303,8 @@ router.post(
               seg.from,
               seg.to,
               seg.state,
+              seg.destGroupId || null,
+              seg.destUnitId || null,
               req.user.uid ?? null
             ]
           )
@@ -403,15 +413,28 @@ router.get(
           rp.agent_id AS agentId,
           a.code      AS agentCode,
           a.nickname  AS agentNickname,
-          rp.unit_id  AS unitId,
-          u.name      AS unitName,
+
+          -- Unidad y grupo actual del agente
+          a.unitId      AS agentUnitId,
+          a.groupId     AS agentGroupId,
+
+          -- Unidad actual del rango
+          rp.unit_id    AS unitId,
+          u.name        AS unitName,
+
           DATE_FORMAT(rp.start_date,'%Y-%m-%d') AS start_date,
           DATE_FORMAT(rp.end_date  ,'%Y-%m-%d') AS end_date,
-          rp.state
+          rp.state,
+          rp.dest_group_id AS destGroupId,
+          rp.dest_unit_id  AS destUnitId,
+          g2.name AS destGroupName,
+          u2.name AS destUnitName
         FROM rest_plans rp
         JOIN agent a ON a.id = rp.agent_id
         JOIN unit  u ON u.id = rp.unit_id
-        LEFT JOIN \`group\` g ON g.id = u.groupId
+        LEFT JOIN \`group\` g2 ON g2.id = rp.dest_group_id  
+        LEFT JOIN unit   u2 ON u2.id = rp.dest_unit_id
+        LEFT JOIN \`group\` g  ON g.id = u.groupId
         ${whereSql}
         ORDER BY a.code, rp.start_date
         `,
@@ -431,4 +454,59 @@ router.get(
   }
 )
 
+// === Catálogo de grupos (para proyección de descanso) ===
+router.get(
+  '/groups',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'),
+  async (_req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `
+        SELECT
+          g.id,
+          g.code,
+          g.name
+        FROM \`group\` g
+        ORDER BY g.code, g.name
+        `
+      )
+      res.json(rows)
+    } catch (e) {
+      console.error('[GET /rest-planning/groups] error', e.code, e.sqlMessage || e.message)
+      res.status(500).json({ error: 'CatalogGroupsError', detail: e.message })
+    }
+  }
+)
+
+// === Catálogo de unidades (para proyección de descanso) ===
+router.get(
+  '/units',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'),
+  async (_req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `
+        SELECT
+          u.id,
+          u.groupId,
+          u.name,
+          u.id AS code   -- usamos el id como "code" genérico para no depender de la columna code
+        FROM unit u
+        ORDER BY u.name
+        `
+      )
+      res.json(rows)
+    } catch (e) {
+      console.error('[GET /rest-planning/units] error', e.code, e.sqlMessage || e.message)
+      res.status(500).json({
+        error: 'CatalogUnitsError',
+        detail: e.sqlMessage || e.message
+      })
+    }
+  }
+)
+
 export default router
+
