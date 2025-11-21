@@ -1478,12 +1478,7 @@ function getVehicleFromCatalog (id) {
 async function resolveVehicleForUse(u) {
   if (!u) return null
 
-  // Si el uso ya trae el objeto vehículo completo, úsalo
-  if (u.vehicle && u.vehicle.id) {
-    return u.vehicle
-  }
-
-  // Intentar resolver por id
+  // ID del vehículo
   const vehId =
     u.vehicle?.id ??
     u.vehicle_id ??
@@ -1492,12 +1487,51 @@ async function resolveVehicleForUse(u) {
 
   if (!vehId) return null
 
-  // Aseguramos catálogo
+  // 🚨 Aseguramos catálogo completo
   await ensureVehiclesCatalog()
-  return getVehicleFromCatalog(vehId) || {
-    id: vehId,
-    code: u.vehicle?.code ?? u.vehicle_code ?? u.vehicleCode ?? '—'
+  const catVeh = getVehicleFromCatalog(vehId) || {}
+
+  // 🚨 Mezcla correcta: catálogo → uso
+  const vehFromUse = u.vehicle || {}
+
+  const finalVeh = {
+    ...catVeh,
+    ...vehFromUse,
+
+    // Normalizamos alias usados por los croquis/SVG
+    category:
+      catVeh.category ??
+      catVeh.cat ??
+      catVeh.tipo ??
+      vehFromUse.category ??
+      vehFromUse.cat ??
+      vehFromUse.tipo ??
+      vehFromUse.type ??
+      null,
+
+    type:
+      catVeh.type ??
+      catVeh.tipo ??
+      vehFromUse.type ??
+      vehFromUse.tipo ??
+      null,
+
+    cat:
+      catVeh.category ??
+      catVeh.cat ??
+      vehFromUse.category ??
+      vehFromUse.cat ??
+      null,
+
+    tipo:
+      catVeh.type ??
+      catVeh.tipo ??
+      vehFromUse.type ??
+      vehFromUse.tipo ??
+      null
   }
+
+  return finalVeh
 }
 
 function pickerHideSoon(){ setTimeout(()=> pickerVisible.value = false, 150) }
@@ -2208,28 +2242,53 @@ async function loadMyOpenUses() {
   try {
     await ensureAgentId()
     const agentIdVal = meAgentId.value
-    if (!agentIdVal) { myOpenUses.value = []; return }
+    if (!agentIdVal) {
+      myOpenUses.value = []
+      return
+    }
 
-    // Opción A: endpoint directo
+    // 🔹 Aseguramos catálogo para poder enriquecer ANYWAY
+    await ensureVehiclesCatalog()
+
+    // 🅰 Opción A: endpoint directo /vehicles/uses?agent_id&open=1
     try {
-      const { data } = await apiGet('/vehicles/uses', { params: { agent_id: agentIdVal, open: 1, pageSize: 500 } })
+      const { data } = await apiGet('/vehicles/uses', {
+        params: { agent_id: agentIdVal, open: 1, pageSize: 500 }
+      })
       const items = data?.items ?? data ?? []
-      if (Array.isArray(items)) { myOpenUses.value = items.map(mapUseRow); return }
-    } catch {}
+      if (Array.isArray(items)) {
+        myOpenUses.value = items.map(u => {
+          const rawVehId =
+            u.vehicle?.id ??
+            u.vehicle_id ??
+            u.vehicleId ??
+            null
+          const vehFromCatalog = rawVehId ? getVehicleFromCatalog(rawVehId) || {} : {}
+          return mapUseRow(u, vehFromCatalog)
+        })
+        return
+      }
+    } catch {
+      // si falla, seguimos a fallback B
+    }
 
-    // Fallback por vehículo
+    // 🅱 Fallback por vehículo
     const { data: vehs } = await apiGet('/vehicles', { params: { pageSize: 500 } })
     const vehicles = vehs?.items ?? []
     const out = []
-    await Promise.all(vehicles.map(async v => {
-      try {
-        const { data: usesRes } = await apiGet('/vehicles/uses', {
-          params: { vehicle_id: v.id, agent_id: agentIdVal, open: 1, pageSize: 200 }
-        })
-        const list = usesRes?.items ?? usesRes ?? []
-        list.forEach(u => out.push(mapUseRow(u, v)))
-      } catch {}
-    }))
+    await Promise.all(
+      vehicles.map(async v => {
+        try {
+          const { data: usesRes } = await apiGet('/vehicles/uses', {
+            params: { vehicle_id: v.id, agent_id: agentIdVal, open: 1, pageSize: 200 }
+          })
+          const list = usesRes?.items ?? usesRes ?? []
+          list.forEach(u => out.push(mapUseRow(u, v)))
+        } catch {
+          /* ignore */
+        }
+      })
+    )
     myOpenUses.value = out
   } finally {
     loadingOpenUses.value = false
@@ -2237,14 +2296,8 @@ async function loadMyOpenUses() {
 }
 
 // Normaliza un registro de uso a las columnas que mostramos
-// Normaliza un registro de uso a las columnas que mostramos
 function mapUseRow(u, vehOpt) {
-  const started = u.started_at ?? u.startedAt ?? u.start_date ?? u.startDate ?? u.start ?? ''
-  const odoStart = u.odometer_start ?? u.odometerStart ?? u.km_salida ?? u.kmStart ?? null
-  const notes = u.notes ?? u.note ?? u.observation ?? ''
-
-  // Backend actual devuelve vehicleId / vehicleCode (camelCase)
-  // Además soportamos vehicle_id / vehicle_code (snake_case) y objeto vehicle.
+  // ID básico
   const vId =
     u.vehicle?.id ??
     u.vehicle_id ??
@@ -2252,22 +2305,59 @@ function mapUseRow(u, vehOpt) {
     vehOpt?.id ??
     null
 
+  const vehFromUse = u.vehicle || {}
+  const vehFromCatalog =
+    vehOpt ||
+    (vId ? getVehicleFromCatalog(vId) || {} : {})
+
+  // Mezclamos: catálogo → uso
+  const veh = {
+    ...vehFromCatalog,
+    ...vehFromUse
+  }
+
   const vCode =
-    u.vehicle?.code ??
+    veh.code ??
     u.vehicle_code ??
     u.vehicleCode ??
     vehOpt?.code ??
     ''
 
+  // 🔥 TIPO / CATEGORÍA (para croquis)
+  const vCategory =
+    veh.category ??
+    veh.cat ??
+    veh.tipo ??
+    veh.type ??
+    u.vehicle_category ??
+    u.vehicleCat ??
+    u.vehicle_type ??
+    null
+
+  const vType =
+    veh.type ??
+    veh.tipo ??
+    u.vehicle_type ??
+    null
+
   return {
     id: u.id,
-    started_at: started,
-    odometer_start: odoStart,
-    notes,
-    vehicle: { id: vId, code: vCode }
+    started_at: u.started_at ?? u.startedAt ?? '',
+    odometer_start: u.odometer_start ?? u.odometerStart ?? null,
+    notes: u.notes ?? u.note ?? '',
+
+    vehicle: {
+      id: vId,
+      code: vCode,
+
+      // 👇 lo que va a leer el croquis 3D
+      category: vCategory,
+      type: vType,
+      cat: vCategory, // ej: 'MT', 'CP'
+      tipo: vType
+    }
   }
 }
-
 
 let searchTimer = null
 function searchVehicles(){
