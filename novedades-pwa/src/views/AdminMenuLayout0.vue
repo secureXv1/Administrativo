@@ -47,6 +47,13 @@
               </svg>
             </button>
             <!-- ... submenu ... -->
+            <transition name="fade">
+              <div v-if="openSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                  <SidebarItem to="/admin" icon="dashboard" :collapsed="collapsed" label="Reporte" dark />
+                  <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed" />
+                  <SidebarItem to="/parte" icon="parte" :collapsed="collapsed" label="Parte" />
+                </div>
+              </transition>
           </div>
 
 
@@ -63,7 +70,12 @@
                 <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
               </svg>
             </button>
-            <!-- ... submenu tal cual ... -->
+            <!-- ... submenu ... -->
+            <transition name="fade">
+                <div v-if="openSection === 'funcionarios'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                    <SidebarItem to="/admin/agents" icon="agents" :collapsed="collapsed" label="Funcionarios" dark />
+                </div>
+            </transition>
           </div>
 
             <!-- VEHICULOS: superadmin + leader_vehicles -->
