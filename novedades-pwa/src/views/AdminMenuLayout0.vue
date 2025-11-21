@@ -184,6 +184,7 @@
 
             <!-- Dashboard -->
             <router-link
+              v-if="canSeeDashboard"
               to="/admin/dashboard"
               class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
               :class="route.path.startsWith('/admin/dashboard') ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'"
@@ -194,7 +195,7 @@
             </router-link>
 
             <!-- NOVEDADES -->
-            <div>
+            <div v-if="canSeeNovedades">
               <button
                 class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
                 @click="selectMobileAccordion('novedades')"
@@ -249,7 +250,7 @@
             </div>
 
             <!-- FUNCIONARIOS -->
-            <div>
+            <div v-if="canSeeFuncionarios">
               <button
                 class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
                 @click="selectMobileAccordion('funcionarios')"
@@ -288,8 +289,8 @@
               </transition>
             </div>
 
-            <template v-if="canSee(['superadmin'])">
-              <!-- VEHICULOS -->
+            <!-- VEHICULOS: superadmin + leader_vehicles -->
+            <template v-if="canSee(['superadmin','leader_vehicles'])">              
               <div>
                 <button
                   class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
@@ -328,6 +329,10 @@
                   </div>
                 </transition>
               </div>
+            </template>
+
+            <template v-if="canSee(['superadmin'])">
+              
 
               <!-- SERVICIOS -->
               <div>
