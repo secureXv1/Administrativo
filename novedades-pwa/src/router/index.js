@@ -12,18 +12,20 @@ import MainDashboard from '../views/MainDashboard.vue'
 import VehiclesView from '../views/VehiclesView.vue'
 import AgentDashboard from '../views/AgentDashboard.vue'
 import Parte from '../views/Parte.vue'
+import ExpensesView from '../views/ExpensesView.vue' // 👈 NUEVO
 
 // ⬇️ Usa el layout con sidebar:
 import AdminMenuLayout0 from '../views/AdminMenuLayout0.vue'
 
 const AdminReportDetail = () => import('../views/AdminReportDetail.vue')
 import { http } from '../lib/http'
+
 // Helper: redirigir por rol
 function homeByRole(role) {
   const r = String(role || '').toLowerCase()
   if (r === 'leader_unit') return '/report'
-  if (r === 'agent') return '/agent'  
-  // superadmin / supervision / leader_group
+  if (r === 'agent') return '/agent'
+  // superadmin / supervision / leader_group / leader_vehicles
   return '/admin'
 }
 
@@ -31,43 +33,126 @@ function homeByRole(role) {
 const routes = [
   { path: '/', redirect: '/login' },
   { path: '/login', component: LoginView },
-  { path: '/agent', component: AgentDashboard, meta: { requiresAuth: true, roles: ['agent'] } }, 
+  { path: '/agent', component: AgentDashboard, meta: { requiresAuth: true, roles: ['agent'] } },
 
   // Vista simple para líder de unidad
   { path: '/report', component: ReportView, meta: { requiresAuth: true, roles: ['leader_unit'] } },
 
-  // Perfil accesible para cualquier rol autenticado
+  // Perfil accesible para cualquier rol autenticado (admin-side)
   {
     path: '/perfil',
     component: Perfil,
-    meta: { requiresAuth: true, roles: ['superadmin','supervision','leader_group','leader_unit'] }
+    meta: { requiresAuth: true, roles: ['superadmin', 'supervision', 'leader_group', 'leader_unit'] }
   },
 
-  // Todo lo de admin bajo el layout
-  {
-  path: '/admin',
-  component: AdminMenuLayout0, // ⬅️ aquí el cambio
-  meta: { requiresAuth: true },
-  children: [
-    { path: '', name: 'AdminHome', component: AdminDashboard, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-    { path: 'groups', name: 'AdminGroups', component: AdminGroups, meta: { roles: ['superadmin', 'supervision'] } },
-    { path: 'units',  name: 'AdminUnits',  component: AdminUnits,  meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-    { path: 'users',  name: 'AdminUsers',  component: AdminUsers,  meta: { roles: ['superadmin'] } },
-    { path: 'agents', name: 'AdminAgents', component: AdminAgents, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-    { path: 'perfil', name: 'PerfilAdmin', component: Perfil, meta: { roles: ['superadmin','supervision','leader_group','leader_unit'] } },
-    { path: 'report/:id', name: 'ReportUnit', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-    { path: 'report',     name: 'ReportGroup', component: AdminReportDetail, meta: { roles: ['superadmin', 'supervision', 'leader_group'] } },
-    { path: 'audit', name: 'AuditLog', component: () => import('@/views/AdminAuditLog.vue'), meta: { roles: ['superadmin'] } },
-    { path: '/admin/dashboard',  name: 'MainDashboard',  component: MainDashboard,  meta: { roles: ['superadmin', 'supervision', 'leader_group'] }},
-    { path: '/parte', name: 'Parte', component: Parte },
-  ]
-  },
+  // Todo lo de admin bajo el layout con sidebar
   {
     path: '/admin',
     component: AdminMenuLayout0,
+    meta: { requiresAuth: true },
     children: [
-      // ...
-      { path: 'vehicles', component: VehiclesView }, // 👈
+      // Home del admin
+      {
+        path: '',
+        name: 'AdminHome',
+        component: AdminDashboard,
+        meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
+      },
+
+      // Dashboard principal
+      {
+        path: 'dashboard',              // 👈 sin /admin delante
+        name: 'MainDashboard',
+        component: MainDashboard,
+        meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
+      },
+
+      // Grupos
+      {
+        path: 'groups',
+        name: 'AdminGroups',
+        component: AdminGroups,
+        meta: { roles: ['superadmin', 'supervision'] }
+      },
+
+      // Unidades
+      {
+        path: 'units',
+        name: 'AdminUnits',
+        component: AdminUnits,
+        meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
+      },
+
+      // Usuarios
+      {
+        path: 'users',
+        name: 'AdminUsers',
+        component: AdminUsers,
+        meta: { roles: ['superadmin'] }
+      },
+
+      // Funcionarios
+      {
+        path: 'agents',
+        name: 'AdminAgents',
+        component: AdminAgents,
+        meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
+      },
+
+      // Perfil dentro del layout admin (si lo usas)
+      {
+        path: 'perfil',
+        name: 'PerfilAdmin',
+        component: Perfil,
+        meta: { roles: ['superadmin', 'supervision', 'leader_group', 'leader_unit'] }
+      },
+
+      // Detalle de reportes
+      {
+        path: 'report/:id',
+        name: 'ReportUnit',
+        component: AdminReportDetail,
+        meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
+      },
+      {
+        path: 'report',
+        name: 'ReportGroup',
+        component: AdminReportDetail,
+        meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
+      },
+
+      // Log de eventos
+      {
+        path: 'audit',
+        name: 'AuditLog',
+        component: () => import('@/views/AdminAuditLog.vue'),
+        meta: { roles: ['superadmin'] }
+      },
+
+      // Parte
+      { 
+        path: 'parte',
+        name: 'Parte',
+        component: Parte,
+        meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
+      },
+
+
+      // Vehículos
+      {
+        path: 'vehicles',
+        name: 'AdminVehicles',
+        component: VehiclesView,
+        meta: { roles: ['superadmin', 'leader_vehicles'] }
+      },
+
+      // 💰 GASTOS (aquí se ve tu tabla de proyección para COMISIÓN DEL SERVICIO)
+      {
+        path: 'expenses',
+        name: 'AdminExpenses',
+        component: ExpensesView,
+        meta: { roles: ['superadmin'] }
+      }
     ]
   },
 
@@ -75,7 +160,10 @@ const routes = [
   { path: '/:pathMatch(.*)*', redirect: '/admin' }
 ]
 
-const router = createRouter({ history: createWebHistory('/login/'), routes })
+const router = createRouter({
+  history: createWebHistory('/login/'),
+  routes
+})
 
 // ====== Guarda de navegación ======
 async function getMe() {
@@ -156,7 +244,6 @@ router.beforeEach(async (to, from, next) => {
         if (to.path.startsWith('/admin/vehicles')) {
           return next()
         }
-        // si intenta otro /admin/* lo mandamos a /admin/vehicles
         if (to.path !== '/admin/vehicles') {
           return next('/admin/vehicles')
         }
@@ -166,7 +253,6 @@ router.beforeEach(async (to, from, next) => {
       if (role === 'leader_unit') return next('/report')
       if (role === 'agent') return next('/agent')
 
-      // Otro rol desconocido → login
       return next('/login')
     }
 
@@ -182,6 +268,5 @@ router.beforeEach(async (to, from, next) => {
   // 5) Rutas que no requieren nada especial
   return next()
 })
-
 
 export default router

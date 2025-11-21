@@ -693,28 +693,18 @@
           v-show="section==='proyeccion'"
           class="bg-white rounded-2xl shadow border border-slate-200 overflow-hidden"
         >
+        <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <div>
+              <h2 class="text-slate-900 font-semibold">Proyección de descanso</h2>
+              <p class="text-xs text-slate-500 -mt-0.5"> Define rangos de fechas y estado para cada funcionario de la unidad.</p>
+            </div>
+            
+          </div>
           <!-- ===================================================== -->
           <!-- PROYECCIÓN DE DESCANSO (por unidad / agente / rango) -->
           <!-- ===================================================== -->
           <div class="mt-6 rounded-2xl p-4 space-y-4">
-            <div class="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <h3 class="text-sm font-semibold text-indigo-900">
-                  Proyección de descanso
-                </h3>
-                <p class="text-xs text-indigo-800/80 max-w-xl">
-                  Define rangos de fechas y estado para cada funcionario de la unidad.
-                  No se permitirá guardar si hay días sin estado dentro del rango proyectado.
-                </p>
-              </div>
-              <span
-                class="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200"
-              >
-                🧭 Vista de planificación
-              </span>
-            </div>
-
-            <!-- Rango de proyección (obligatorio) + funcionario -->
+           <!-- Rango de proyección (obligatorio) + funcionario -->
             <div
               class="grid gap-3 sm:grid-cols-[repeat(2,minmax(0,1fr))_minmax(0,1.2fr)] items-end"
             >
@@ -860,31 +850,62 @@
                   >
                     <div class="absolute left-2 top-0 bottom-0 w-px bg-slate-300" />
                     <div
-                      v-for="(seg, i) in projTimelineSegments"
-                      :key="i"
-                      class="flex items-center gap-2 pl-4"
+                      v-for="seg in projTimelineSegments"
+                      :key="seg.index"
+                      class="flex flex-wrap items-center gap-2 pl-4"
                     >
                       <div
                         class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200"
                         :class="colorClass(seg.state)?.dot || 'bg-slate-400'"
                       />
+
                       <div
-                        class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[11px] shadow-sm"
-                        :class="colorClass(seg.state)?.pill || 'bg-slate-100 text-slate-700'"
+                        class="inline-flex flex-wrap items-center gap-2 px-3 py-1  text-[10px] shadow-sm bg-white border border-slate-200"
                       >
-                        <span>{{ iconFor(seg.state) }}</span>
-                        <span>{{ shortState(seg.state) }}</span>
-                        <span class="opacity-70">
-                          ({{ seg.from }} → {{ seg.to }})
-                        </span>
+                       
+
+                        
+
+                        <!-- Fechas editables -->
+                        <div class="flex items-center gap-1">
+                          <input
+                            type="date"
+                            class="rounded-md border border-slate-300 px-1 py-0.5"
+                            :value="seg.from"
+                            @change="projUpdateSegmentField(seg.index, 'from', $event.target.value)"
+                          />
+                          <span>→</span>
+                          <input
+                            type="date"
+                            class="rounded-md border border-slate-300 px-1 py-0.5"
+                            :value="seg.to"
+                            @change="projUpdateSegmentField(seg.index, 'to', $event.target.value)"
+                          />
+                          <!-- Estado editable -->
+                          <select
+                            class="rounded-md border border-slate-300 px-1 py-0.5 bg-white"
+                            :value="seg.state"
+                            @change="projUpdateSegmentField(seg.index, 'state', $event.target.value)"
+                          >
+                            <option
+                              v-for="st in STATUS_ORDER"
+                              :key="st"
+                              :value="st"
+                            >
+                              {{ st }}
+                            </option>
+                          </select>
+                        </div>
+
                         <span class="opacity-70">
                           • {{ seg.count }} día(s)
                         </span>
                       </div>
+
                       <button
                         type="button"
                         class="ml-1 text-[11px] text-rose-700 hover:underline"
-                        @click="projRemoveSegment(i)"
+                        @click="projRemoveSegment(seg.index)"
                       >
                         Quitar
                       </button>
@@ -1000,12 +1021,11 @@
                 Guardar proyección de descanso
               </button>
               <div class="text-[11px] text-slate-500">
-                Se validará que todos los días entre
-                <strong>{{ projRange.from || '____' }}</strong>
-                y
-                <strong>{{ projRange.to || '____' }}</strong>
-                tengan estado
-                para cada funcionario que tenga rangos en la proyección.
+                Se validará que, para cada funcionario que tenga rangos,
+                no haya días sin estado dentro del intervalo que tenga proyectado
+                (entre su primera y última fecha de proyección dentro de
+                <strong>{{ projRange.from || '____' }}</strong> y
+                <strong>{{ projRange.to || '____' }}</strong>).
               </div>
             </div>
           </div>
@@ -2287,13 +2307,24 @@ function projBuildDayMap(ranges) {
 // Set de días sin estado para el agente actual
 const projMissingDaysSet = computed(() => {
   const missing = new Set()
-  const from = projRange.value.from
-  const to = projRange.value.to
-  if (!from || !to) return missing
-  if (!projSelectedAgentId.value) return missing
+  const id = projSelectedAgentId.value
+  if (!id) return missing
 
-  const { map } = projBuildDayMap(projCurrentAgentRanges.value)
-  const days = projEnumerateDays(from, to)
+  const ranges = projCurrentAgentRanges.value
+  if (!ranges.length) return missing
+
+  // Rango real de proyección de ESTE agente (no el global)
+  let agentFrom = null
+  let agentTo = null
+  for (const r of ranges) {
+    if (!r.from || !r.to) continue
+    if (!agentFrom || r.from < agentFrom) agentFrom = r.from
+    if (!agentTo || r.to > agentTo)       agentTo   = r.to
+  }
+  if (!agentFrom || !agentTo) return missing
+
+  const { map } = projBuildDayMap(ranges)
+  const days = projEnumerateDays(agentFrom, agentTo)
   for (const d of days) {
     if (!map.has(d)) missing.add(d)
   }
@@ -2438,6 +2469,31 @@ function projRemoveRangeForCurrent(idx) {
   arr.splice(idx, 1)
 }
 
+function projUpdateSegmentField(segIndex, field, value) {
+  const id = projSelectedAgentId.value
+  if (!id) return
+  const arr = projByAgent.value[id]
+  if (!arr || !arr[segIndex]) return
+
+  // Pequeña validación de fechas si quieres ser estricto
+  if (field === 'from' || field === 'to') {
+    const otherField = field === 'from' ? 'to' : 'from'
+    const tmp = { ...arr[segIndex], [field]: value }
+    const d1 = toDate(tmp.from)
+    const d2 = toDate(tmp.to)
+    if (d1 && d2 && d2 < d1) {
+      projMsg.value = 'La fecha fin no puede ser menor que la fecha inicio en ese rango.'
+      projMsgOk.value = false
+      return
+    }
+  }
+
+  arr[segIndex] = {
+    ...arr[segIndex],
+    [field]: value
+  }
+}
+
 // Validación completa para TODOS los agentes incluidos antes de guardar
 function projValidateAll() {
   const problems = []
@@ -2450,8 +2506,6 @@ function projValidateAll() {
     problems.push('Rango de proyección inválido.')
     return problems
   }
-
-  const days = projEnumerateDays(from, to)
 
   // ✅ Solo validamos a los funcionarios que REALMENTE tienen rangos
   for (const a of agents.value) {
@@ -2470,36 +2524,54 @@ function projValidateAll() {
       problems.push(`El agente ${a.code} tiene días con dos estados distintos en la proyección.`)
     }
 
+    // 🔎 Rango propio de este agente (lo que él sí tiene proyectado)
+    let agentFrom = null
+    let agentTo = null
+    for (const r of arr) {
+      if (!agentFrom || r.from < agentFrom) agentFrom = r.from
+      if (!agentTo   || r.to   > agentTo)   agentTo   = r.to
+    }
+    if (!agentFrom || !agentTo) continue
+
     const missing = []
-    for (const d of days) {
+    const agentDays = projEnumerateDays(agentFrom, agentTo)
+    for (const d of agentDays) {
       if (!map.has(d)) missing.push(d)
     }
     if (missing.length) {
-      problems.push(`El agente ${a.code} tiene días sin estado entre ${from} y ${to} en su proyección.`)
+      problems.push(
+        `El agente ${a.code} tiene días sin estado entre ${agentFrom} y ${agentTo} en su proyección.`
+      )
     }
   }
 
   return problems
 }
 
-
 // --- Timeline de proyección para el agente actual ---
 const projTimelineSegments = computed(() => {
   const id = projSelectedAgentId.value
   if (!id) return []
 
-  const arr = (projByAgent.value[id] || [])
-    .filter(r => r.from && r.to && r.state)
-    .sort((a, b) => String(a.from).localeCompare(String(b.from)))
+  const arr = projByAgent.value[id] || []
+  const out = []
 
-  return arr.map(r => ({
-    state: r.state,
-    from: r.from,
-    to:   r.to,
-    count: projEnumerateDays(r.from, r.to).length
-  }))
+  arr.forEach((r, idx) => {
+    if (!r.from || !r.to || !r.state) return
+    out.push({
+      index: idx, // índice real dentro de projByAgent[id]
+      state: r.state,
+      from: r.from,
+      to:   r.to,
+      count: projEnumerateDays(r.from, r.to).length
+    })
+  })
+
+  // Opcional: ordenar por fecha inicio, pero manteniendo index real
+  out.sort((a, b) => String(a.from).localeCompare(String(b.from)))
+
+  return out
 })
-
 
 // --- Calendario cuadrado de proyección para el agente actual ---
 const projCalendarCells = computed(() => {

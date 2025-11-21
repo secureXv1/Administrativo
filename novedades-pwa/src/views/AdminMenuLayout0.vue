@@ -32,39 +32,90 @@
               <span class="flex-1 text-left">Dashboard</span>
             </router-link>
 
+            <!-- NOVEDADES -->
+            <div v-if="canSeeNovedades">
+              <button
+                class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                @click="selectAccordion('novedades')"
+                :class="openSection === 'novedades' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+              >
+                <Newspaper class="w-5 h-5" />
+                <span class="flex-1 text-left">Novedades</span>
+                <svg
+                  :class="['size-4 transition-transform', openSection === 'novedades' ? 'rotate-180' : '']"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <path
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
 
-           <!-- NOVEDADES -->
-          <div v-if="canSeeNovedades">
-            <button
-              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-              @click="selectAccordion('novedades')"
-              :class="openSection === 'novedades' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-            >
-              <Newspaper class="w-5 h-5" />
-              <span class="flex-1 text-left">Novedades</span>
-              <svg :class="['size-4 transition-transform', openSection === 'novedades' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-              </svg>
-            </button>
-            <!-- ... submenu tal cual lo tienes ... -->
-          </div>
-
+              <transition name="fade">
+                <div v-if="openSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                  <SidebarItem
+                    to="/admin"
+                    icon="dashboard"
+                    :collapsed="collapsed"
+                    label="Reporte"
+                    :exact="true"
+                  />
+                  <SidebarItem
+                    :to="{ path: '/admin/report', query: { date: today } }"
+                    label="Detalle"
+                    icon="dashboard"
+                    :collapsed="collapsed"
+                  />
+                  <SidebarItem
+                    to="/admin/parte"
+                    icon="parte"
+                    :collapsed="collapsed"
+                    label="Parte"
+                  />
+                </div>
+              </transition>
+            </div>
 
             <!-- FUNCIONARIOS -->
-          <div v-if="canSeeFuncionarios">
-            <button
-              class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-              @click="selectAccordion('funcionarios')"
-              :class="openSection === 'funcionarios' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-            >
-              <Users class="w-5 h-5" />
-              <span class="flex-1 text-left">Funcionarios</span>
-              <svg :class="['size-4 transition-transform', openSection === 'funcionarios' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
-              </svg>
-            </button>
-            <!-- ... submenu tal cual ... -->
-          </div>
+            <div v-if="canSeeFuncionarios">
+              <button
+                class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                @click="selectAccordion('funcionarios')"
+                :class="openSection === 'funcionarios' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
+              >
+                <Users class="w-5 h-5" />
+                <span class="flex-1 text-left">Funcionarios</span>
+                <svg
+                  :class="['size-4 transition-transform', openSection === 'funcionarios' ? 'rotate-180' : '']"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <path
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
+
+              <transition name="fade">
+                <div v-if="openSection === 'funcionarios'" class="pl-4 flex flex-col gap-0.5 mt-1">
+                  <SidebarItem
+                    to="/admin/agents"
+                    icon="agents"
+                    :collapsed="collapsed"
+                    label="Funcionarios"
+                  />
+                </div>
+              </transition>
+            </div>
 
             <!-- VEHICULOS: superadmin + leader_vehicles -->
             <template v-if="canSee(['superadmin','leader_vehicles'])">
@@ -193,42 +244,89 @@
                 <span class="flex-1 text-left">Dashboard</span>
                 </router-link>
 
-                <!-- NOVEDADES -->
-                <div>
-                <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                        @click="selectMobileAccordion('novedades')"
-                        :class="openMobileSection === 'novedades' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
+                <!-- NOVEDADES (móvil) -->
+                <div v-if="canSeeNovedades">
+                  <button
+                    class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                    @click="selectMobileAccordion('novedades')"
+                    :class="openMobileSection === 'novedades' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'"
+                  >
                     <Newspaper class="w-5 h-5" />
                     <span class="flex-1 text-left">Novedades</span>
-                    <svg :class="['size-4 transition-transform', openMobileSection === 'novedades' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    <svg
+                      :class="['size-4 transition-transform', openMobileSection === 'novedades' ? 'rotate-180' : '']"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <path
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M19 9l-7 7-7-7"
+                      />
                     </svg>
-                </button>
-                <transition name="fade">
+                  </button>
+
+                  <transition name="fade">
                     <div v-if="openMobileSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin" icon="dashboard" :collapsed="collapsed" label="Reporte" :exact="true" />
-                    <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed"/>
-                    <SidebarItem to="/parte" icon="parte" :collapsed="collapsed" label="Parte" />
-                  </div>
-                </transition>
+                      <SidebarItem
+                        to="/admin"
+                        icon="dashboard"
+                        :collapsed="collapsed"
+                        label="Reporte"
+                        :exact="true"
+                      />
+                      <SidebarItem
+                        :to="{ path: '/admin/report', query: { date: today } }"
+                        label="Detalle"
+                        icon="dashboard"
+                        :collapsed="collapsed"
+                      />
+                      <SidebarItem
+                        to="/admin/parte"
+                        icon="parte"
+                        :collapsed="collapsed"
+                        label="Parte"
+                      />
+                    </div>
+                  </transition>
                 </div>
 
-                <!-- FUNCIONARIOS -->
-                <div>
-                <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                        @click="selectMobileAccordion('funcionarios')"
-                        :class="openMobileSection === 'funcionarios' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
+                <!-- FUNCIONARIOS (móvil) -->
+                <div v-if="canSeeFuncionarios">
+                  <button
+                    class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                    @click="selectMobileAccordion('funcionarios')"
+                    :class="openMobileSection === 'funcionarios' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'"
+                  >
                     <Users class="w-5 h-5" />
                     <span class="flex-1 text-left">Funcionarios</span>
-                    <svg :class="['size-4 transition-transform', openMobileSection === 'funcionarios' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                    <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    <svg
+                      :class="['size-4 transition-transform', openMobileSection === 'funcionarios' ? 'rotate-180' : '']"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <path
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M19 9l-7 7-7-7"
+                      />
                     </svg>
-                </button>
-                <transition name="fade">
+                  </button>
+
+                  <transition name="fade">
                     <div v-if="openMobileSection === 'funcionarios'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                    <SidebarItem to="/admin/agents" icon="agents" :collapsed="collapsed" label="Funcionarios" />
+                      <SidebarItem
+                        to="/admin/agents"
+                        icon="agents"
+                        :collapsed="collapsed"
+                        label="Funcionarios"
+                      />
                     </div>
-                </transition>
+                  </transition>
                 </div>
                 
                 <template v-if="canSee(['superadmin'])">
@@ -418,14 +516,6 @@ const isSuperadmin = computed(() => canSee(['superadmin']))
 const canSeeDashboard   = computed(() => !isLeaderVehicles.value)
 const canSeeNovedades   = computed(() => !isLeaderVehicles.value)
 const canSeeFuncionarios = computed(() => !isLeaderVehicles.value)
-
-// Estados de acordeón para cada sección
-const openNovedades = ref(true)
-const openFuncionarios = ref(false)
-const openServicios = ref(false)
-const openGastos = ref(false)
-const openDespliegue = ref(false)
-const openConfiguracion = ref(false) // solo para superadmin
 
 const route = useRoute()
 const router = useRouter()
