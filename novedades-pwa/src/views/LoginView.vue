@@ -141,7 +141,7 @@ async function login () {
     } else if (e?.response?.status === 423) {
       msg.value = err.detail || 'Cuenta bloqueada. Contacte al administrador.'
     } else {
-      msg.value = err.detail || 'Credenciales inválidas'
+      msg.value = err.detail || 'Problema de conexión con el servidor'
     }
   } finally {
     loading.value = false
