@@ -164,23 +164,50 @@
                 
                 <!-- GASTOS -->
                 <div>
-                    <button
+                  <button
                     class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
                     @click="selectAccordion('gastos')"
                     :class="openSection === 'gastos' ? 'bg-white/10 text-sky-400' : 'text-white hover:bg-white/5'"
-                    >
+                  >
                     <Wallet class="w-5 h-5" />
                     <span class="flex-1 text-left">Gastos</span>
-                    <svg :class="['size-4 transition-transform', openSection === 'gastos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                        <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    <svg
+                      :class="['size-4 transition-transform', openSection === 'gastos' ? 'rotate-180' : '']"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <path
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        d="M19 9l-7 7-7-7"
+                      />
                     </svg>
-                    </button>
-                    <transition name="fade">
+                  </button>
+
+                  <transition name="fade">
                     <div v-if="openSection === 'gastos'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                        <SidebarItem to="/admin/expenses" icon="expenses" :collapsed="collapsed" label="Gastos" dark />
+                      <!-- Gastos generales -->
+                      <SidebarItem
+                        to="/admin/expenses"
+                        icon="expenses"
+                        :collapsed="collapsed"
+                        label="Gastos"
+                        dark
+                      />
+                      <!-- NUEVO: Comisiones de servicio (derivado de proyección) -->
+                      <SidebarItem
+                        to="/admin/service-commissions"
+                        icon="expenses"
+                        :collapsed="collapsed"
+                        label="Comisiones servicio"
+                        dark
+                      />
                     </div>
-                    </transition>
+                  </transition>
                 </div>
+
 
                 <!-- CONFIGURACIÓN -->
                 <div>
@@ -369,20 +396,46 @@
 
                   <!-- GASTOS -->
                   <div>
-                  <button class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
-                          @click="selectMobileAccordion('gastos')"
-                          :class="openMobileSection === 'gastos' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'">
+                    <button
+                      class="w-full flex items-center gap-2 px-2 py-2 rounded-lg font-semibold transition group"
+                      @click="selectMobileAccordion('gastos')"
+                      :class="openMobileSection === 'gastos' ? 'bg-slate-100 text-brand-600' : 'text-slate-700 hover:bg-slate-100'"
+                    >
                       <Wallet class="w-5 h-5" />
                       <span class="flex-1 text-left">Gastos</span>
-                      <svg :class="['size-4 transition-transform', openMobileSection === 'gastos' ? 'rotate-180' : '']" viewBox="0 0 24 24" fill="none">
-                      <path stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                      <svg
+                        :class="['size-4 transition-transform', openMobileSection === 'gastos' ? 'rotate-180' : '']"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                      >
+                        <path
+                          stroke="currentColor"
+                          stroke-width="2"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          d="M19 9l-7 7-7-7"
+                        />
                       </svg>
-                  </button>
-                  <transition name="fade">
+                    </button>
+
+                    <transition name="fade">
                       <div v-if="openMobileSection === 'gastos'" class="pl-4 flex flex-col gap-0.5 mt-1">
-                      <SidebarItem to="/admin/expenses" icon="expenses" :collapsed="collapsed" label="Gastos" />
+                        <!-- Gastos generales -->
+                        <SidebarItem
+                          to="/admin/expenses"
+                          icon="expenses"
+                          :collapsed="collapsed"
+                          label="Gastos"
+                        />
+                        <!-- NUEVO: Comisiones de servicio -->
+                        <SidebarItem
+                          to="/admin/service-commissions"
+                          icon="expenses"
+                          :collapsed="collapsed"
+                          label="Comisiones servicio"
+                        />
                       </div>
-                  </transition>
+                    </transition>
                   </div>
 
                   <!-- CONFIGURACIÓN (solo superadmin) -->
