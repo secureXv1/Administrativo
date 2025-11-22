@@ -24,6 +24,8 @@ export default defineConfig({
     '/vehicles': 'http://localhost:8080',
     '/agents': 'http://localhost:8080',
     '/uploads': 'http://localhost:8080', 
+    '/rest-planning': 'http://localhost:8080',
+    '/service-commissions': 'http://localhost:8080',
     '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,

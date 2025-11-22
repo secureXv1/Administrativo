@@ -11,6 +11,8 @@ import { computeNovelties } from './utils.js';
 import { logEvent, Actions } from './audit.js';
 import { requireSuperadmin } from './middlewares.js';
 import vehiclesRouter from './routes/vehiculos.js';
+import restPlanning from './routes/rest_planning.js';
+import serviceCommissionsRouter from './routes/service-commissions.js';
 
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
@@ -128,6 +130,8 @@ async function main() {
 
   // ...otros routers
   app.use('/vehicles', vehiclesRouter);
+  app.use('/rest-planning', restPlanning) 
+  app.use('/service-commissions', serviceCommissionsRouter)
 
   function isStrongPassword(pw) {
   // >=8, al menos 1 minúscula, 1 mayúscula, 1 dígito y 1 especial
