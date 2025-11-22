@@ -12,7 +12,8 @@ import MainDashboard from '../views/MainDashboard.vue'
 import VehiclesView from '../views/VehiclesView.vue'
 import AgentDashboard from '../views/AgentDashboard.vue'
 import Parte from '../views/Parte.vue'
-import ExpensesView from '../views/ExpensesView.vue' // 👈 NUEVO
+import ExpensesView from '../views/ExpensesView.vue' 
+import ServiceCommissionsView from '@/views/ServiceCommissionsView.vue'
 
 // ⬇️ Usa el layout con sidebar:
 import AdminMenuLayout0 from '../views/AdminMenuLayout0.vue'
@@ -152,6 +153,13 @@ const routes = [
         name: 'AdminExpenses',
         component: ExpensesView,
         meta: { roles: ['superadmin'] }
+      },
+      // 🧾 Comisiones de servicio (derivadas de la proyección)
+      {
+        path: 'service-commissions',
+        name: 'ServiceCommissions',
+        component: ServiceCommissionsView,
+        meta: { roles: ['superadmin', 'supervision', 'gastos'] }
       }
     ]
   },

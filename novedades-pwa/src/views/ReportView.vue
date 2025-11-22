@@ -937,15 +937,13 @@
                             </option>
                           </select>
                           <span v-if="seg.state === 'COMISIÓN DEL SERVICIO' && seg.destUnitId" class="text-[10px] opacity-80">
-                            → {{ groupById[seg.destGroupId]?.code || groupById[seg.destGroupId]?.name || 'Grupo' }}
-                            /
                             {{ unitById[seg.destUnitId]?.name || 'Unidad' }}
                           </span>
 
                         </div>
 
                         <span class="opacity-70">
-                          • {{ seg.count }} día(s)
+                          {{ seg.count }} día(s)
                         </span>
                       </div>
 
