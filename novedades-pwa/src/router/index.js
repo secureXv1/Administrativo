@@ -138,7 +138,6 @@ const routes = [
         meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
       },
 
-
       // Vehículos
       {
         path: 'vehicles',

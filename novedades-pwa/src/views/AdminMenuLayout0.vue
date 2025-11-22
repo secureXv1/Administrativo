@@ -51,7 +51,7 @@
               <div v-if="openSection === 'novedades'" class="pl-4 flex flex-col gap-0.5 mt-1">
                   <SidebarItem to="/admin" icon="dashboard" :collapsed="collapsed" label="Reporte" dark />
                   <SidebarItem :to="{ path: '/admin/report/detail', query: { date: today } }" label="Detalle" icon="dashboard" :collapsed="collapsed" />
-                  <SidebarItem to="/parte" icon="parte" :collapsed="collapsed" label="Parte" />
+                  <SidebarItem to="/admin/parte" icon="parte" :collapsed="collapsed" label="Parte" />
                 </div>
               </transition>
           </div>
@@ -154,7 +154,7 @@
                         to="/admin/expenses"
                         icon="expenses"
                         :collapsed="collapsed"
-                        label="Gastos"
+                        label="Proyección"
                         dark
                       />
                       <!-- NUEVO: Comisiones de servicio (derivado de proyección) -->
@@ -162,7 +162,7 @@
                         to="/admin/service-commissions"
                         icon="expenses"
                         :collapsed="collapsed"
-                        label="Comisiones servicio"
+                        label="Vigencias"
                         dark
                       />
                     </div>
@@ -277,7 +277,7 @@
                     @click="onMobileNavigate"
                   />
                   <SidebarItem
-                    to="/parte"
+                    to="/admin/parte"
                     icon="parte"
                     :collapsed="collapsed"
                     label="Parte"
@@ -444,7 +444,7 @@
                       to="/admin/expenses"
                       icon="expenses"
                       :collapsed="collapsed"
-                      label="Gastos"
+                      label="Proyección"
                       @click="onMobileNavigate"
                     />
                     <!-- NUEVO: Comisiones de servicio -->
@@ -452,7 +452,7 @@
                       to="/admin/service-commissions"
                       icon="expenses"
                       :collapsed="collapsed"
-                      label="Comisiones servicio"
+                      label="Vigencias"
                       @click="onMobileNavigate"
                       />
                   </div>
