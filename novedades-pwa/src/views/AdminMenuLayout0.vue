@@ -74,6 +74,7 @@
             <transition name="fade">
                 <div v-if="openSection === 'funcionarios'" class="pl-4 flex flex-col gap-0.5 mt-1">
                     <SidebarItem to="/admin/agents" icon="agents" :collapsed="collapsed" label="Funcionarios" dark />
+                    <SidebarItem to="/admin/rest-projection" icon="expenses" :collapsed="collapsed" label="Proyección general"/>
                 </div>
             </transition>
           </div>

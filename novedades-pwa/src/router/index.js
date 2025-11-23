@@ -100,6 +100,15 @@ const routes = [
         meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
       },
 
+      // Proyección general de descanso (admin / supervision / leader_group)
+      {
+        path: 'rest-projection',
+        name: 'RestProjectionAdmin',
+        component: () => import('@/views/RestProjectionAdmin.vue'),
+        meta: { roles: ['superadmin', 'supervision', 'leader_group'] }
+      },
+
+
       // Perfil dentro del layout admin (si lo usas)
       {
         path: 'perfil',

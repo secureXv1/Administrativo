@@ -95,6 +95,84 @@ function addDays(d, n) {
   return x
 }
 
+/* -------------------------------------------------------
+   VIGENCIAS (projection_periods)
+   - POST /rest-planning/periods  → crear vigencia
+   - GET  /rest-planning/periods  → listar vigencias
+------------------------------------------------------- */
+
+router.post(
+  '/periods',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos'),
+  async (req, res) => {
+    try {
+      const { from, to } = req.body || {}
+
+      const d1 = toDate(from)
+      const d2 = toDate(to)
+
+      if (!d1 || !d2 || d2 < d1) {
+        return res.status(422).json({ error: 'Rango de fechas inválido para la vigencia' })
+      }
+
+      const fromYMD = formatYMD(d1)
+      const toYMD   = formatYMD(d2)
+
+      const [result] = await pool.query(
+        `
+        INSERT INTO projection_periods (from_date, to_date, created_by)
+        VALUES (?,?,?)
+        `,
+        [fromYMD, toYMD, req.user.uid ?? null]
+      )
+
+      const newId = result.insertId
+
+      try {
+        await logEvent({
+          req,
+          userId: req.user.uid,
+          action: Actions.REST_PLAN_PERIOD_CREATE ?? 'REST_PLAN_PERIOD_CREATE',
+          details: { id: newId, from: fromYMD, to: toYMD }
+        })
+      } catch { }
+
+      res.json({ ok: true, id: newId })
+    } catch (e) {
+      console.error('[POST /rest-planning/periods] error', e)
+      res.status(500).json({ error: 'PeriodCreateError', detail: e.message })
+    }
+  }
+)
+
+router.get(
+  '/periods',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos'),
+  async (_req, res) => {
+    try {
+      const [rows] = await pool.query(
+        `
+        SELECT
+          id,
+          DATE_FORMAT(from_date,'%Y-%m-%d') AS from_date,
+          DATE_FORMAT(to_date  ,'%Y-%m-%d') AS to_date,
+          created_by,
+          created_at
+        FROM projection_periods
+        ORDER BY created_at DESC, id DESC
+        `
+      )
+
+      res.json({ items: rows })
+    } catch (e) {
+      console.error('[GET /rest-planning/periods] error', e)
+      res.status(500).json({ error: 'PeriodListError', detail: e.message })
+    }
+  }
+)
+
 // Valida que un usuario pueda tocar info de un agente
 async function validateAgentScope(req, agentId) {
   const role = String(req.user?.role || '').toLowerCase()
@@ -128,10 +206,14 @@ async function validateAgentScope(req, agentId) {
 /* -------------------------------------------------------
    POST /rest-planning/bulk
    Guarda/actualiza proyección en bloque por unidad
+   AHORA PUEDE USAR vigenciaId (projection_periods.id)
 ------------------------------------------------------- */
 /**
  * Body esperado:
  * {
+ *   vigenciaId: 7,           // OPCIONAL, pero recomendado
+ *   from: "2025-12-01",      // usado sólo si NO se envía vigenciaId
+ *   to:   "2025-12-25",
  *   items: [
  *     {
  *       agentId: 123,
@@ -166,6 +248,55 @@ router.post(
     try {
       await conn.beginTransaction()
 
+      const { from: bodyFrom, to: bodyTo, vigenciaId } = req.body || {}
+
+      // ===== RANGO GLOBAL (gStart / gEnd) Y VIGENCIA =====
+      let gStart, gEnd, usedVigenciaId = null
+
+      if (vigenciaId) {
+        const idV = Number(vigenciaId)
+        if (!idV) {
+          throw { status: 422, message: 'vigenciaId inválido' }
+        }
+
+        const [[period]] = await conn.query(
+          `
+          SELECT
+            id,
+            DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
+            DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
+          FROM projection_periods
+          WHERE id=? LIMIT 1
+          `,
+          [idV]
+        )
+
+        if (!period) {
+          throw { status: 404, message: 'Vigencia no encontrada' }
+        }
+
+        const d1 = toDate(period.fromYmd)
+        const d2 = toDate(period.toYmd)
+        if (!d1 || !d2 || d2 < d1) {
+          throw { status: 500, message: 'Rango inválido en la vigencia' }
+        }
+
+        gStart = d1
+        gEnd   = d2
+        usedVigenciaId = period.id
+
+      } else {
+        // Comportamiento anterior: se usa from/to enviados en el body
+        const d1 = toDate(bodyFrom)
+        const d2 = toDate(bodyTo)
+        if (!d1 || !d2 || d2 < d1) {
+          throw { status: 422, message: 'Rango global from/to inválido' }
+        }
+        gStart = d1
+        gEnd   = d2
+        usedVigenciaId = null
+      }
+
       for (const item of items) {
         const agentId = Number(item.agentId)
         const segments = Array.isArray(item.segments) ? item.segments : []
@@ -193,8 +324,7 @@ router.post(
           throw { status: 403, message: `Agente ${agentId} no pertenece a su unidad` }
         }
 
-        // Normalizar y validar segmentos
-                // Normalizar y validar segmentos
+        // ================== Normalizar y validar segmentos ==================
         const normSegs = segments.map((s, idx) => {
           const d1raw = toDate(s.from)
           const d2raw = toDate(s.to)
@@ -219,83 +349,88 @@ router.post(
             }
           }
 
-          return { 
-            from, 
-            to, 
-            state, 
+          return {
+            from,
+            to,
+            state,
             destGroupId: s.destGroupId ?? null,
             destUnitId:  s.destUnitId ?? null,
-            fromDate: d1, 
-            toDate: d2 
+            fromDate: d1,
+            toDate: d2
           }
         })
 
         // Ordenar por fecha inicio
         normSegs.sort((a, b) => a.fromDate - b.fromDate)
 
-        // ===========================================================
-        // VALIDACIÓN REAL: NO solapes y NO días sin estado
-        // ===========================================================
-
         // 1) Revisar solapes entre segmentos
         for (let i = 1; i < normSegs.length; i++) {
-        const prev = normSegs[i - 1]
-        const curr = normSegs[i]
-        if (curr.fromDate <= prev.toDate) {
+          const prev = normSegs[i - 1]
+          const curr = normSegs[i]
+          if (curr.fromDate <= prev.toDate) {
             throw {
-            status: 422,
-            message: `Solapamiento de rangos para agente ${agentId}: ${prev.from}→${prev.to} con ${curr.from}→${curr.to}`
+              status: 422,
+              message: `Solapamiento de rangos para agente ${agentId}: ${prev.from}→${prev.to} con ${curr.from}→${curr.to}`
             }
-        }
+          }
         }
 
         // 2) Construir mapa día → estado
         let dayMap = new Map()
         for (const seg of normSegs) {
-        for (let d = new Date(seg.fromDate); d <= seg.toDate; d.setDate(d.getDate() + 1)) {
+          for (let d = new Date(seg.fromDate); d <= seg.toDate; d.setDate(d.getDate() + 1)) {
             dayMap.set(formatYMD(d), seg.state)
-        }
+          }
         }
 
-        // 3) Validar días faltantes usando el rango global
+        // 3) Validar días faltantes usando el rango global gStart/gEnd
         let missing = []
-        let gStart = toDate(req.body.from)
-        let gEnd   = toDate(req.body.to)
-
         for (let d = new Date(gStart); d <= gEnd; d.setDate(d.getDate() + 1)) {
-        const y = formatYMD(d)
-        if (!dayMap.has(y)) missing.push(y)
+          const y = formatYMD(d)
+          if (!dayMap.has(y)) missing.push(y)
         }
 
         if (missing.length) {
-        throw {
+          throw {
             status: 422,
-            message: `El agente ${agentId} tiene días sin estado: ${missing[0]} → ${missing[missing.length - 1]}`
+            message: `El agente ${agentId} tiene días sin estado en el rango global: ${missing[0]} → ${missing[missing.length - 1]}`
+          }
         }
-        }
-
 
         // Rango completo a limpiar (primer inicio → última fin)
         const firstFrom = normSegs[0].from
         const lastTo = normSegs[normSegs.length - 1].to
 
         // Borrar proyección anterior que se solape con ese rango
-        await conn.query(
-          `
-          DELETE FROM rest_plans
-          WHERE agent_id = ?
-            AND NOT (end_date < ? OR start_date > ?)
-          `,
-          [agentId, firstFrom, lastTo]
-        )
+        if (usedVigenciaId) {
+          await conn.query(
+            `
+            DELETE FROM rest_plans
+            WHERE agent_id = ?
+              AND vigencia_id = ?
+              AND NOT (end_date < ? OR start_date > ?)
+            `,
+            [agentId, usedVigenciaId, firstFrom, lastTo]
+          )
+        } else {
+          await conn.query(
+            `
+            DELETE FROM rest_plans
+            WHERE agent_id = ?
+              AND NOT (end_date < ? OR start_date > ?)
+            `,
+            [agentId, firstFrom, lastTo]
+          )
+        }
 
         // Insertar nuevos rangos
         for (const seg of normSegs) {
           await conn.query(
             `
             INSERT INTO rest_plans
-              (agent_id, unit_id, start_date, end_date, state, dest_group_id, dest_unit_id, created_by)
-            VALUES (?,?,?,?,?,?,?,?)
+              (agent_id, unit_id, start_date, end_date, state,
+               dest_group_id, dest_unit_id, created_by, vigencia_id)
+            VALUES (?,?,?,?,?,?,?,?,?)
             `,
             [
               agentId,
@@ -305,7 +440,8 @@ router.post(
               seg.state,
               seg.destGroupId || null,
               seg.destUnitId || null,
-              req.user.uid ?? null
+              req.user.uid ?? null,
+              usedVigenciaId || null
             ]
           )
         }
@@ -319,6 +455,7 @@ router.post(
             details: {
               agentId,
               unitId: agentRow.unitId,
+              vigenciaId: usedVigenciaId || null,
               from: firstFrom,
               to: lastTo,
               segments: normSegs.map(s => ({
@@ -328,11 +465,11 @@ router.post(
               }))
             }
           })
-        } catch {}
+        } catch { }
       }
 
       await conn.commit()
-      res.json({ ok: true })
+      res.json({ ok: true, vigenciaId: usedVigenciaId || null })
     } catch (e) {
       await conn.rollback()
       const status = e?.status || 500
@@ -346,12 +483,14 @@ router.post(
 
 /* -------------------------------------------------------
    GET /rest-planning
-   Consulta proyección (para otros roles: líder grupo, central, etc.)
+   Consulta proyección
+   AHORA SOPORTA ?vigenciaId=ID
 ------------------------------------------------------- */
 /**
  * Query params:
- * - from=YYYY-MM-DD (opcional pero recomendado)
- * - to=YYYY-MM-DD
+ * - vigenciaId (opcional; si viene, se usa la vigencia)
+ * - from=YYYY-MM-DD (si NO hay vigenciaId, requerido)
+ * - to=YYYY-MM-DD   (si NO hay vigenciaId, requerido)
  * - unitId (opcional; para líder_unidad se fuerza a su unitId)
  * - agentId (opcional; para rol agent se fuerza a su propio agente)
  */
@@ -361,22 +500,63 @@ router.get(
   requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'agent'),
   async (req, res) => {
     try {
-      let { from, to, unitId, agentId } = req.query
+      let { from, to, unitId, agentId, vigenciaId } = req.query
       const role = String(req.user.role || '').toLowerCase()
 
-      if (!from || !to) {
-        return res.status(400).json({ error: 'Parámetros from y to son requeridos' })
+      let d1, d2
+      let usedVigenciaId = null
+
+      if (vigenciaId) {
+        const idV = Number(vigenciaId)
+        if (!idV) {
+          return res.status(400).json({ error: 'vigenciaId inválido' })
+        }
+
+        const [[period]] = await pool.query(
+          `
+          SELECT
+            id,
+            DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
+            DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
+          FROM projection_periods
+          WHERE id=? LIMIT 1
+          `,
+          [idV]
+        )
+        if (!period) {
+          return res.status(404).json({ error: 'Vigencia no encontrada' })
+        }
+
+        d1 = toDate(period.fromYmd)
+        d2 = toDate(period.toYmd)
+        if (!d1 || !d2 || d2 < d1) {
+          return res.status(500).json({ error: 'Rango inválido en la vigencia' })
+        }
+
+        from = period.fromYmd   // ya vienen YYYY-MM-DD
+        to   = period.toYmd
+        usedVigenciaId = idV
+
+      } else {
+        if (!from || !to) {
+          return res.status(400).json({ error: 'Parámetros from y to son requeridos si no se especifica vigenciaId' })
+        }
+        d1 = toDate(from)
+        d2 = toDate(to)
+        if (!d1 || !d2 || d2 < d1) {
+          return res.status(400).json({ error: 'Rango de fechas inválido' })
+        }
+        from = formatYMD(d1)
+        to   = formatYMD(d2)
       }
-      const d1 = toDate(from)
-      const d2 = toDate(to)
-      if (!d1 || !d2 || d2 < d1) {
-        return res.status(400).json({ error: 'Rango de fechas inválido' })
-      }
-      from = formatYMD(d1)
-      to = formatYMD(d2)
 
       const where = ['NOT (rp.end_date < ? OR rp.start_date > ?)']
       const args = [from, to]
+
+      if (usedVigenciaId) {
+        where.push('rp.vigencia_id = ?')
+        args.push(usedVigenciaId)
+      }
 
       // Ámbito por rol
       if (role === 'leader_unit') {
@@ -428,7 +608,8 @@ router.get(
           rp.dest_group_id AS destGroupId,
           rp.dest_unit_id  AS destUnitId,
           g2.name AS destGroupName,
-          u2.name AS destUnitName
+          u2.name AS destUnitName,
+          rp.vigencia_id   AS vigenciaId
         FROM rest_plans rp
         JOIN agent a ON a.id = rp.agent_id
         JOIN unit  u ON u.id = rp.unit_id
@@ -453,6 +634,7 @@ router.get(
     }
   }
 )
+
 
 // === Catálogo de grupos (para proyección de descanso) ===
 router.get(

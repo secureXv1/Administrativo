@@ -71,15 +71,16 @@
             Funcionarios con COMISIÓN DEL SERVICIO en el rango
           </h2>
           <p class="text-xs text-slate-500">
-            Los filtros de grupo y unidad se aplican sobre la proyección ya consultada.
+            Los filtros de grupo y unidad se aplican sobre la proyección
+            <strong>de destino</strong> (destino proyectado).
           </p>
         </div>
 
         <div class="flex flex-wrap items-end gap-3">
-          <!-- Grupo (filtro local) -->
+          <!-- Grupo (filtro local sobre grupo destino) -->
           <div>
             <label class="text-[11px] font-medium text-slate-700 mb-1 block">
-              Grupo
+              Grupo destino
             </label>
             <select
               v-model="filters.groupId"
@@ -93,10 +94,10 @@
             </select>
           </div>
 
-          <!-- Unidad (filtro local) -->
+          <!-- Unidad (filtro local sobre unidad destino) -->
           <div>
             <label class="text-[11px] font-medium text-slate-700 mb-1 block">
-              Unidad
+              Unidad destino
             </label>
             <select
               v-model="filters.unitId"
@@ -130,9 +131,7 @@
             <tr>
               <th class="text-left py-2 px-3 font-semibold">Código</th>
               <th class="text-left py-2 px-3 font-semibold">Nickname</th>
-              <th class="text-left py-2 px-3 font-semibold">Categoría</th>
-              <th class="text-left py-2 px-3 font-semibold">Grupo</th>
-              <th class="text-left py-2 px-3 font-semibold">Unidad</th>
+              <th class="text-left py-2 px-3 font-semibold">Unidad destino</th>
               <th class="text-left py-2 px-3 font-semibold">Inicio vigencia</th>
               <th class="text-left py-2 px-3 font-semibold">Fin vigencia</th>
               <th class="text-left py-2 px-3 font-semibold">Días en vigencia</th>
@@ -152,13 +151,8 @@
                 {{ r.nickname || '—' }}
               </td>
               <td class="py-2 px-3 text-slate-700">
-                {{ r.category || '—' }}
-              </td>
-              <td class="py-2 px-3 text-slate-700">
-                {{ r.groupCode || r.groupName || '—' }}
-              </td>
-              <td class="py-2 px-3 text-slate-700">
-                {{ r.unitName || '—' }}
+                <!-- Unidad proyectada: intentamos primero la de destino -->
+                {{ r.destUnitName || r.unitName || '—' }}
               </td>
               <td class="py-2 px-3 text-slate-900">
                 {{ r.start }}
@@ -170,13 +164,21 @@
                 {{ r.days }}
               </td>
               <td class="py-2 px-3 text-right">
+                <!-- Si ya fue validada en esta sesión, no mostramos botón -->
                 <button
+                  v-if="!r.validated"
                   type="button"
                   class="px-3 py-1 rounded-lg text-[11px] font-medium bg-indigo-600 text-white hover:bg-indigo-700"
                   @click="validarComision(r)"
                 >
                   Validar comisión
                 </button>
+                <span
+                  v-else
+                  class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200"
+                >
+                  ✔ Validada
+                </span>
               </td>
             </tr>
           </tbody>
@@ -208,8 +210,8 @@ const COMMISSION_STATE = 'COMISIÓN DEL SERVICIO'
 const filters = ref({
   from: '',
   to: '',
-  groupId: null,   // filtro local
-  unitId: null     // filtro local
+  groupId: null,   // filtro local sobre GRUPO DESTINO
+  unitId: null     // filtro local sobre UNIDAD DESTINO
 })
 
 const groups = ref([])
@@ -221,6 +223,11 @@ const rows = ref([])
 
 const msg = ref('')
 const msgOk = ref(false)
+
+// Vigencias (projection_periods)
+const periods = ref([])         // { id, from, to, created_at, ... }
+const currentVigenciaId = ref(null)
+const loadingPeriods = ref(false)
 
 // ==== Helpers de fecha ====
 function toDate (s) {
@@ -259,11 +266,94 @@ function clipRange (segFrom, segTo, periodFrom, periodTo) {
   return { from: fromStr, to: toStr, days }
 }
 
+/* =======================
+   VIGENCIAS (frontend)
+   - fetchPeriods() carga /rest-planning/periods
+   - ensureVigenciaForRange(from,to) busca o crea
+========================== */
+
+async function fetchPeriods () {
+  loadingPeriods.value = true
+  try {
+    const { data } = await http.get('/rest-planning/periods')
+    const items = Array.isArray(data?.items) ? data.items : []
+    periods.value = items.map(p => ({
+        id: p.id,
+        from: String(p.from_date).slice(0, 10),
+        to: String(p.to_date).slice(0, 10),
+        created_at: p.created_at || null
+    }))
+
+  } catch (e) {
+    console.error('Error cargando vigencias:', e)
+    periods.value = []
+  } finally {
+    loadingPeriods.value = false
+  }
+}
+
 /**
- * Construye las filas para la tabla de gastos.
- * items = data.items del /rest-planning (segmentos crudos).
+ * Asegura que exista una vigencia para [from,to]:
+ * - si ya existe en periods → usa esa
+ * - si no, hace POST /rest-planning/periods y la crea
  */
-function buildRows (items, periodFrom, periodTo) {
+async function ensureVigenciaForRange (from, to) {
+  if (!from || !to) {
+    throw new Error('Rango de fechas requerido para la vigencia')
+  }
+
+  if (!periods.value.length && !loadingPeriods.value) {
+    await fetchPeriods()
+  }
+
+  // ¿Ya existe una vigencia con exactamente ese rango?
+  const existing = periods.value.find(
+    p => p.from === from && p.to === to
+  )
+  if (existing) {
+    currentVigenciaId.value = existing.id
+    return existing.id
+  }
+
+  // Crear nueva vigencia
+  const { data } = await http.post('/rest-planning/periods', { from, to })
+  const newId = data?.id
+  if (!newId) {
+    throw new Error('No se pudo crear vigencia')
+  }
+
+  const newPeriod = {
+    id: newId,
+    from,
+    to,
+    created_at: new Date().toISOString()
+  }
+  periods.value.unshift(newPeriod)
+  currentVigenciaId.value = newId
+  return newId
+}
+
+/* =======================
+   buildRows
+   - items: segmentos de /rest-planning
+   - periodFrom / periodTo: rango de la vigencia
+   - commissions: comisiones reales /service-commissions
+========================== */
+
+function buildRows (items, periodFrom, periodTo, commissions = []) {
+  // Agrupar comisiones reales por agente para marcar "validated"
+  const commByAgent = new Map()
+  for (const c of commissions) {
+    const agentId = c.agentId || c.agent_id
+    if (!agentId) continue
+    const arr = commByAgent.get(agentId) || []
+    arr.push({
+      start: String(c.start_date).slice(0, 10),
+      end:   String(c.end_date).slice(0, 10)
+    })
+    commByAgent.set(agentId, arr)
+  }
+
   const byAgent = new Map()
 
   for (const it of items) {
@@ -289,18 +379,20 @@ function buildRows (items, periodFrom, periodTo) {
         it.agent_code ||
         '',
       nickname: it.nickname || it.agentNickname || it.agent_nickname || '',
-      category: it.category || it.agentCategory || it.agent_category || '',
-      groupCode: it.groupCode || it.group_code || '',
-      groupName: it.groupName || it.group_name || '',
-      groupId: it.groupId || it.group_id || null,
+      // grupo / unidad ORIGEN (por si quieres verlos luego)
+      groupIdOrigin: it.agentGroupId || it.groupId || it.group_id || null,
+      unitIdOrigin: it.agentUnitId || it.unitId || it.unit_id || null,
       unitName: it.unitName || it.unit_name || '',
-      unitId: it.unitId || it.unit_id || null,
+      // grupo / unidad DESTINO (proyectada)
       destGroupId: it.destGroupId || it.dest_group_id || null,
+      destGroupName: it.destGroupName || it.dest_group_name || '',
       destUnitId: it.destUnitId || it.dest_unit_id || null,
+      destUnitName: it.destUnitName || it.dest_unit_name || '',
       municipalityId: it.municipalityId || it.municipality_id || null,
       start: clipped.from,
       end: clipped.to,
-      days: clipped.days
+      days: clipped.days,
+      validated: false // se recalcula después
     }
 
     const current = byAgent.get(key)
@@ -317,12 +409,20 @@ function buildRows (items, periodFrom, periodTo) {
     }
   }
 
-  return Array.from(byAgent.values()).sort((a, b) => {
-    // Orden por grupo, luego por código
-    const gA = (a.groupCode || a.groupName || '').localeCompare(b.groupCode || b.groupName || '')
+  let out = Array.from(byAgent.values()).sort((a, b) => {
+    // Orden por grupo DESTINO (nombre) y luego por código
+    const gA = (a.destGroupName || '').localeCompare(b.destGroupName || '')
     if (gA !== 0) return gA
     return String(a.code || '').localeCompare(String(b.code || ''))
   })
+
+  // Marcar como "validated" si ya existe una comisión real con ese mismo rango
+  for (const r of out) {
+    const arr = commByAgent.get(r.agentId) || []
+    r.validated = arr.some(c => c.start === r.start && c.end === r.end)
+  }
+
+  return out
 }
 
 // ==== Carga de catálogos ====
@@ -345,6 +445,10 @@ async function loadUnits () {
 }
 
 // ==== Acción principal: cargar proyección para gastos ====
+// AHORA:
+// 1) Asegura vigencia (from/to) → vigenciaId
+// 2) GET /rest-planning?vigenciaId
+// 3) GET /service-commissions?from&to para saber qué ya está certificado
 async function loadExpenses () {
   error.value = ''
   msg.value = ''
@@ -366,32 +470,45 @@ async function loadExpenses () {
 
   loading.value = true
   try {
-    const { data } = await http.get('/rest-planning', {
-      params: {
-        from,
-        to,
-        state: COMMISSION_STATE   // 👈 se filtra en backend por COMISIÓN DEL SERVICIO
-      }
-    })
+    // 1) Asegurar vigencia
+    const vigId = await ensureVigenciaForRange(from, to)
 
-    const items = Array.isArray(data?.items) ? data.items : []
-    rows.value = buildRows(items, from, to)
+    // 2) Traer proyección + comisiones reales en paralelo
+    const [planningRes, commissionsRes] = await Promise.all([
+      http.get('/rest-planning', {
+        params: {
+          vigenciaId: vigId
+        }
+      }),
+      http.get('/service-commissions', {
+        params: {
+          from,
+          to
+        }
+      })
+    ])
 
-    // No reinicio filtros locales; puedes dejarlos como estén o resetear:
+    const items = Array.isArray(planningRes?.data?.items) ? planningRes.data.items : []
+    const commissions = Array.isArray(commissionsRes?.data?.items) ? commissionsRes.data.items : []
+
+    rows.value = buildRows(items, from, to, commissions)
+
+    // Reset de filtros locales al hacer nueva consulta
     filters.value.groupId = null
     filters.value.unitId = null
   } catch (err) {
-    console.error('Error /rest-planning (gastos):', err)
+    console.error('Error al cargar datos de proyección para gastos:', err)
     error.value =
       err?.response?.data?.error ||
       err?.response?.data?.detail ||
+      err?.message ||
       'No se pudo cargar la proyección de descanso para gastos.'
   } finally {
     loading.value = false
   }
 }
 
-// ==== Filtro local por grupo / unidad ====
+// ==== Filtro local por grupo / unidad (DESTINO) ====
 const filteredRows = computed(() => {
   let out = rows.value || []
 
@@ -399,11 +516,11 @@ const filteredRows = computed(() => {
   const unitId = filters.value.unitId
 
   if (groupId) {
-    out = out.filter(r => Number(r.groupId || 0) === Number(groupId))
+    out = out.filter(r => Number(r.destGroupId || 0) === Number(groupId))
   }
 
   if (unitId) {
-    out = out.filter(r => Number(r.unitId || 0) === Number(unitId))
+    out = out.filter(r => Number(r.destUnitId || 0) === Number(unitId))
   }
 
   return out
@@ -417,8 +534,9 @@ async function validarComision (row) {
   try {
     const payload = {
       agentId: row.agentId,
-      unitId: row.unitId || null,
-      restPlanId: null, // aquí no lo amarramos a un id específico de rest_plans
+      // para gastos es más interesante la unidad destino; si no hay, caemos a la de origen
+      unitId: row.destUnitId || row.unitIdOrigin || null,
+      restPlanId: null, // backend ya valida que haya proyección COMISIÓN DEL SERVICIO
       start_date: row.start,
       end_date: row.end,
       state: COMMISSION_STATE,
@@ -429,6 +547,7 @@ async function validarComision (row) {
 
     await http.post('/service-commissions', payload)
 
+    row.validated = true // 👈 oculta botón y muestra chip "Validada"
     msg.value = `Comisión creada para ${row.code}`
     msgOk.value = true
   } catch (e) {
@@ -451,8 +570,9 @@ onMounted(async () => {
   filters.value.from = fmt(first)
   filters.value.to = fmt(last)
 
-  await Promise.all([loadGroups(), loadUnits()])
-  // Si quieres cargar al entrar, descomenta:
+  await Promise.all([loadGroups(), loadUnits(), fetchPeriods()])
+  // Si quieres cargar al entrar:
   // await loadExpenses()
 })
 </script>
+

@@ -79,25 +79,62 @@ function toDate(s) {
 // ================== GET /service-commissions/projection ==================
 // Lista proyección (rest_plans) SOLO con COMISIÓN DEL SERVICIO
 // para que gastos tenga la "base sugerida".
+// AHORA SOPORTA ?vigenciaId=ID
 router.get(
   '/projection',
   requireAuth,
   requireRole('superadmin', 'supervision', 'gastos'),
   async (req, res) => {
     try {
-      let { from, to, unitId, groupId, agentId } = req.query
+      let { from, to, unitId, groupId, agentId, vigenciaId } = req.query
 
-      if (!from || !to) {
-        return res.status(400).json({ error: 'Parámetros from y to son requeridos' })
-      }
-      const d1 = toDate(from)
-      const d2 = toDate(to)
-      if (!d1 || !d2 || d2 < d1) {
-        return res.status(400).json({ error: 'Rango de fechas inválido' })
+      let d1, d2
+      let usedVigenciaId = null
+
+      if (vigenciaId) {
+        const idV = Number(vigenciaId)
+        if (!idV) {
+          return res.status(400).json({ error: 'vigenciaId inválido' })
+        }
+
+        const [[period]] = await pool.query(
+          'SELECT id, from_date, to_date FROM projection_periods WHERE id=? LIMIT 1',
+          [idV]
+        )
+        if (!period) {
+          return res.status(404).json({ error: 'Vigencia no encontrada' })
+        }
+
+        d1 = toDate(period.from_date)
+        d2 = toDate(period.to_date)
+        if (!d1 || !d2 || d2 < d1) {
+          return res.status(500).json({ error: 'Rango inválido en la vigencia' })
+        }
+
+        from = period.from_date
+        to   = period.to_date
+        usedVigenciaId = idV
+      } else {
+        if (!from || !to) {
+          return res.status(400).json({ error: 'Parámetros from y to son requeridos si no se especifica vigenciaId' })
+        }
+        d1 = toDate(from)
+        d2 = toDate(to)
+        if (!d1 || !d2 || d2 < d1) {
+          return res.status(400).json({ error: 'Rango de fechas inválido' })
+        }
       }
 
-      const where = ['rp.state = "COMISIÓN DEL SERVICIO"', 'NOT (rp.end_date < ? OR rp.start_date > ?)']
+      const where = [
+        'rp.state = "COMISIÓN DEL SERVICIO"',
+        'NOT (rp.end_date < ? OR rp.start_date > ?)'
+      ]
       const args = [from, to]
+
+      if (usedVigenciaId) {
+        where.push('rp.vigencia_id = ?')
+        args.push(usedVigenciaId)
+      }
 
       if (unitId) {
         where.push('rp.unit_id = ?')
@@ -130,7 +167,8 @@ router.get(
           rp.dest_group_id AS destGroupId,
           rp.dest_unit_id  AS destUnitId,
           g2.name AS destGroupName,
-          u2.name AS destUnitName
+          u2.name AS destUnitName,
+          rp.vigencia_id   AS vigenciaId
         FROM rest_plans rp
         JOIN agent a ON a.id = rp.agent_id
         JOIN unit  u ON u.id = rp.unit_id
@@ -155,6 +193,7 @@ router.get(
     }
   }
 )
+
 
 // ================== GET /service-commissions ==================
 // Lista comisiones reales (tabla service_commissions)
