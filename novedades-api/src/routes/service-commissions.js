@@ -98,21 +98,28 @@ router.get(
         }
 
         const [[period]] = await pool.query(
-          'SELECT id, from_date, to_date FROM projection_periods WHERE id=? LIMIT 1',
+          `
+          SELECT
+            id,
+            DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
+            DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
+          FROM projection_periods
+          WHERE id=? LIMIT 1
+          `,
           [idV]
         )
         if (!period) {
           return res.status(404).json({ error: 'Vigencia no encontrada' })
         }
 
-        d1 = toDate(period.from_date)
-        d2 = toDate(period.to_date)
+        d1 = toDate(period.fromYmd)
+        d2 = toDate(period.toYmd)
         if (!d1 || !d2 || d2 < d1) {
           return res.status(500).json({ error: 'Rango inválido en la vigencia' })
         }
 
-        from = period.from_date
-        to   = period.to_date
+        from = period.fromYmd
+        to   = period.toYmd
         usedVigenciaId = idV
       } else {
         if (!from || !to) {
@@ -181,7 +188,6 @@ router.get(
         args
       )
 
-       // 🔓 DESCIFRAR nickname
       for (const r of rows) {
         r.agentNickname = decNullable(r.agentNickname)
       }
@@ -194,7 +200,6 @@ router.get(
   }
 )
 
-
 // ================== GET /service-commissions ==================
 // Lista comisiones reales (tabla service_commissions)
 router.get(
@@ -203,11 +208,16 @@ router.get(
   requireRole('superadmin', 'supervision', 'gastos'),
   async (req, res) => {
     try {
-      let { from, to, unitId, agentId, status } = req.query
+      let { from, to, unitId, agentId, status, vigenciaId } = req.query
       const where = ['1=1']
       const args = []
 
-      if (from && to) {
+      if (vigenciaId) {
+        // filtramos directito por vigencia
+        where.push('sc.vigencia_id = ?')
+        args.push(Number(vigenciaId))
+      } else if (from && to) {
+        // compatibilidad antigua: filtro por fechas
         where.push('NOT (sc.end_date < ? OR sc.start_date > ?)')
         args.push(from, to)
       }
@@ -249,6 +259,7 @@ router.get(
           u2.name AS destUnitName,
           sc.status,
           sc.rest_plan_id AS restPlanId,
+          sc.vigencia_id  AS vigenciaId,
           sc.created_by,
           sc.created_at,
           sc.updated_by,
@@ -264,7 +275,6 @@ router.get(
         args
       )
 
-      // 🔓 DESCIFRAR nickname
       for (const r of rows) {
         r.agentNickname = decNullable(r.agentNickname)
       }
@@ -287,13 +297,14 @@ router.post(
     const {
       agentId,
       unitId,
-      restPlanId,
+      restPlanId,           
       start_date,
       end_date,
       state = 'COMISIÓN DEL SERVICIO',
       municipalityId = null,
       destGroupId = null,
-      destUnitId = null
+      destUnitId = null,
+      vigenciaId = null 
     } = req.body || {}
 
     if (!agentId || !unitId || !start_date || !end_date) {
@@ -307,33 +318,74 @@ router.post(
     }
 
     try {
-      // Validar respaldo por proyección de COMISIÓN DEL SERVICIO
-      const [rows] = await pool.query(
-        `
-        SELECT id
-        FROM rest_plans
-        WHERE agent_id = ?
-          AND state = 'COMISIÓN DEL SERVICIO'
-          AND NOT (end_date < ? OR start_date > ?)
-        LIMIT 1
-        `,
-        [agentId, start_date, end_date]
-      )
+      let usedRestPlanId = null
 
-      if (!rows.length) {
-        return res.status(422).json({
-          error: 'No hay proyección de COMISIÓN DEL SERVICIO que soporte este rango'
-        })
+      // 1) Si el frontend nos manda explícitamente el restPlanId de la proyección usada,
+      //    lo validamos y lo usamos DIRECTO.
+      if (restPlanId) {
+        const [[rp]] = await pool.query(
+          `
+          SELECT id, agent_id, state, start_date, end_date
+          FROM rest_plans
+          WHERE id = ?
+          LIMIT 1
+          `,
+          [restPlanId]
+        )
+
+        if (!rp) {
+          return res.status(422).json({ error: 'La proyección asociada (restPlanId) no existe' })
+        }
+
+        if (Number(rp.agent_id) !== Number(agentId)) {
+          return res.status(422).json({ error: 'La proyección no corresponde al agente indicado' })
+        }
+
+        if (String(rp.state || '').toUpperCase() !== 'COMISIÓN DEL SERVICIO') {
+          return res.status(422).json({ error: 'La proyección no es de COMISIÓN DEL SERVICIO' })
+        }
+
+        // Opcional: comprobar que el rango real está DENTRO del rango proyectado
+        const rpStart = toDate(rp.start_date)
+        const rpEnd   = toDate(rp.end_date)
+        if (rpStart && rpEnd && (d1 < rpStart || d2 > rpEnd)) {
+          return res.status(422).json({
+            error: 'El rango de la comisión no está contenido dentro de la proyección seleccionada'
+          })
+        }
+
+        usedRestPlanId = rp.id
+      } else {
+        // 2) MODO COMPATIBILIDAD: si no llega restPlanId, buscamos cualquier proyección
+        //    de COMISIÓN DEL SERVICIO que se SOLAPE con el rango dado.
+        const [rows] = await pool.query(
+          `
+          SELECT id
+          FROM rest_plans
+          WHERE agent_id = ?
+            AND state = 'COMISIÓN DEL SERVICIO'
+            AND NOT (end_date < ? OR start_date > ?)
+          LIMIT 1
+          `,
+          [agentId, start_date, end_date]
+        )
+
+        if (!rows.length) {
+          return res.status(422).json({
+            error: 'No hay proyección de COMISIÓN DEL SERVICIO que soporte este rango'
+          })
+        }
+
+        usedRestPlanId = rows[0].id
       }
 
-      const usedRestPlanId = restPlanId || rows[0].id
-
+      // 3) Insertar la comisión real, ya enlazada al rest_plans
       const [result] = await pool.query(
         `
         INSERT INTO service_commissions
           (agent_id, unit_id, rest_plan_id, start_date, end_date, state,
-           municipality_id, dest_group_id, dest_unit_id, status, created_by)
-        VALUES (?,?,?,?,?,?,?,?,?,'DRAFT',?)
+          municipality_id, dest_group_id, dest_unit_id, vigencia_id, status, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,'DRAFT',?)
         `,
         [
           agentId,
@@ -345,9 +397,11 @@ router.post(
           municipalityId || null,
           destGroupId || null,
           destUnitId || null,
+          vigenciaId || null,         
           req.user.uid ?? null
         ]
       )
+
 
       const newId = result.insertId
 
@@ -356,7 +410,7 @@ router.post(
           req,
           userId: req.user.uid,
           action: Actions.SERVICE_COMMISSION_CREATE ?? 'SERVICE_COMMISSION_CREATE',
-          details: { id: newId, agentId, unitId, start_date, end_date, state }
+          details: { id: newId, agentId, unitId, start_date, end_date, state, restPlanId: usedRestPlanId }
         })
       } catch {}
 
@@ -367,6 +421,7 @@ router.post(
     }
   }
 )
+
 
 // ================== PUT /service-commissions/:id ==================
 // Editar fechas, destino, etc. (sin cambiar status)
@@ -398,9 +453,9 @@ router.put(
     }
 
     try {
-      // Tomar registro actual
+      // Tomar registro actual (incluyendo vigencia)
       const [[current]] = await pool.query(
-        'SELECT agent_id AS agentId FROM service_commissions WHERE id=? LIMIT 1',
+        'SELECT agent_id AS agentId, vigencia_id AS vigenciaId FROM service_commissions WHERE id=? LIMIT 1',
         [id]
       )
       if (!current) {
@@ -408,23 +463,52 @@ router.put(
       }
 
       const agentId = current.agentId
+      const vigenciaId = current.vigenciaId
 
-      // Validar contra proyección
-      const [rows] = await pool.query(
-        `
+      // Validar contra vigencia (si existe)
+      if (vigenciaId) {
+        const [[period]] = await pool.query(
+          `
+          SELECT
+            id,
+            DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
+            DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
+          FROM projection_periods
+          WHERE id=? LIMIT 1
+          `,
+          [vigenciaId]
+        )
+        if (!period) {
+          return res.status(404).json({ error: 'Vigencia asociada no encontrada' })
+        }
+
+        const v1 = toDate(period.fromYmd)
+        const v2 = toDate(period.toYmd)
+        if (!v1 || !v2 || d1 < v1 || d2 > v2) {
+          return res.status(422).json({ error: 'El nuevo rango debe estar dentro de la vigencia asociada' })
+        }
+      }
+
+      // Validar contra proyección (COMISIÓN DEL SERVICIO)
+      const params = [agentId, start_date, end_date]
+      let sql = `
         SELECT id
         FROM rest_plans
         WHERE agent_id = ?
           AND state = 'COMISIÓN DEL SERVICIO'
           AND NOT (end_date < ? OR start_date > ?)
-        LIMIT 1
-        `,
-        [agentId, start_date, end_date]
-      )
+      `
+      if (vigenciaId) {
+        sql += ' AND vigencia_id = ?'
+        params.push(vigenciaId)
+      }
+      sql += ' LIMIT 1'
+
+      const [rows] = await pool.query(sql, params)
 
       if (!rows.length) {
         return res.status(422).json({
-          error: 'El nuevo rango no está cubierto por la proyección de COMISIÓN DEL SERVICIO'
+          error: 'El nuevo rango no está cubierto por la proyección de COMISIÓN DEL SERVICIO en la vigencia asociada'
         })
       }
 
@@ -460,6 +544,37 @@ router.put(
     } catch (e) {
       console.error('[PUT /service-commissions/:id] error', e)
       res.status(500).json({ error: 'ServiceCommissionUpdateError', detail: e.message })
+    }
+  }
+)
+
+router.delete(
+  '/:id',
+  requireAuth,
+  requireRole('superadmin', 'gastos'),
+  async (req, res) => {
+    const id = Number(req.params.id)
+    if (!id) return res.status(400).json({ error: 'ID inválido' })
+
+    try {
+      await pool.query(
+        'DELETE FROM service_commissions WHERE id=?',
+        [id]
+      )
+
+      try {
+        await logEvent({
+          req,
+          userId: req.user.uid,
+          action: Actions.SERVICE_COMMISSION_DELETE ?? 'SERVICE_COMMISSION_DELETE',
+          details: { id }
+        })
+      } catch {}
+
+      res.json({ ok: true })
+    } catch (e) {
+      console.error('[DELETE /service-commissions/:id] error', e)
+      res.status(500).json({ error: 'ServiceCommissionDeleteError', detail: e.message })
     }
   }
 )

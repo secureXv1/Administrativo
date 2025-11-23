@@ -8,39 +8,115 @@
             Comisiones de servicio certificadas
           </h1>
           <p class="text-slate-300 text-sm mt-1">
-            Aquí ves y editas las comisiones de servicio que ya fueron validadas desde gastos.
+            Administra las comisiones de servicio validadas por vigencia (ej. DIC25), ajusta fechas
+            dentro de la vigencia y cambia su estado.
           </p>
         </div>
       </div>
     </div>
 
     <div class="max-w-[1500px] mx-auto px-4 -mt-6 pb-10">
-      <!-- Filtros -->
-      <div class="bg-white rounded-2xl shadow border border-slate-200 p-4 mb-4">
-        <div class="grid gap-3 md:grid-cols-[repeat(3,minmax(0,1fr))] items-end">
-          <div>
-            <label class="text-xs font-medium text-slate-700 mb-1 block">Desde</label>
-            <input
-              type="date"
-              v-model="filtro.from"
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+      <!-- Panel de vigencias + estado -->
+      <div class="bg-white rounded-2xl shadow border border-slate-200 p-4 mb-4 space-y-4">
+        <!-- Fila 1: seleccionar vigencia + estado -->
+        <div class="flex flex-wrap items-end justify-between gap-4">
+          <div class="flex-1 min-w-[220px]">
+            <label class="text-xs font-medium text-slate-700 mb-1 block">
+              Vigencia
+            </label>
+            <select
+              v-model="selectedVigenciaId"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200 bg-white"
             >
+              <option value="">Selecciona una vigencia…</option>
+              <option
+                v-for="p in periods"
+                :key="p.id"
+                :value="p.id"
+              >
+                {{ p.name }} — {{ p.from }} → {{ p.to }}
+              </option>
+            </select>
+            <p v-if="loadingPeriods" class="text-[11px] text-slate-400 mt-1">
+              Cargando vigencias…
+            </p>
+            <p v-else-if="currentPeriod" class="text-[11px] text-slate-500 mt-1">
+              Rango: <strong>{{ currentPeriod.from }}</strong> → <strong>{{ currentPeriod.to }}</strong>
+            </p>
           </div>
-          <div>
-            <label class="text-xs font-medium text-slate-700 mb-1 block">Hasta</label>
-            <input
-              type="date"
-              v-model="filtro.to"
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
-            >
-          </div>
-          <div class="flex gap-2 justify-end">
+
+          <div class="flex items-end gap-3">
+            <div>
+              <label class="text-xs font-medium text-slate-700 mb-1 block">
+                Estado
+              </label>
+              <select
+                v-model="statusFilter"
+                class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
+              >
+                <option value="">Todos los estados</option>
+                <option value="DRAFT">Borrador</option>
+                <option value="APROBADA">Aprobadas</option>
+                <option value="ANULADA">Anuladas</option>
+              </select>
+            </div>
+
             <button
-              class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-800 hover:bg-slate-900"
+              class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-800 hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed"
               @click="loadCommissions"
+              :disabled="loadingCommissions || !selectedVigenciaId"
             >
-              Actualizar
+              {{ loadingCommissions ? 'Cargando…' : 'Actualizar' }}
             </button>
+          </div>
+        </div>
+
+        <!-- Fila 2: crear nueva vigencia -->
+        <div class="border-t border-slate-200 pt-4">
+          <h3 class="text-xs font-semibold text-slate-700 mb-2">
+            Crear nueva vigencia
+          </h3>
+          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr),repeat(3,minmax(0,1fr))] items-end">
+            <div>
+              <label class="text-xs font-medium text-slate-700 mb-1 block">
+                Nombre (ej: DIC25)
+              </label>
+              <input
+                type="text"
+                v-model="newPeriod.name"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+                placeholder="DIC25"
+              >
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-700 mb-1 block">
+                Desde
+              </label>
+              <input
+                type="date"
+                v-model="newPeriod.from"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+              >
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-700 mb-1 block">
+                Hasta
+              </label>
+              <input
+                type="date"
+                v-model="newPeriod.to"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+              >
+            </div>
+            <div class="flex justify-end">
+              <button
+                class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                @click="createVigencia"
+                :disabled="creatingPeriod"
+              >
+                {{ creatingPeriod ? 'Creando…' : 'Crear vigencia' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -49,26 +125,26 @@
       <section class="bg-white rounded-2xl shadow border border-slate-200">
         <header class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
           <div>
-            <h2 class="text-slate-900 font-semibold text-sm">Comisiones certificadas (gastos)</h2>
+            <h2 class="text-slate-900 font-semibold text-sm">
+              Comisiones certificadas (gastos)
+            </h2>
             <p class="text-xs text-slate-500">
-              Rango real que se reconocerá como comisión de servicio. Aquí puedes ajustar fechas y estado.
+              Rango real que se reconocerá como comisión de servicio dentro de la vigencia seleccionada.
+              Puedes ajustar fechas (subvigencias) siempre que se mantengan dentro de la vigencia y la proyección,
+              y cambiar su estado.
             </p>
           </div>
-          <select
-            v-model="statusFilter"
-            class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
-          >
-            <option value="">Todos los estados</option>
-            <option value="DRAFT">Borrador</option>
-            <option value="APROBADA">Aprobadas</option>
-            <option value="ANULADA">Anuladas</option>
-          </select>
         </header>
 
         <div class="p-3">
-          <div v-if="loadingCommissions" class="text-sm text-slate-500">Cargando comisiones…</div>
+          <div v-if="!selectedVigenciaId" class="text-sm text-slate-500">
+            Selecciona una vigencia para ver las comisiones certificadas.
+          </div>
+          <div v-else-if="loadingCommissions" class="text-sm text-slate-500">
+            Cargando comisiones…
+          </div>
           <div v-else-if="!commissions.length" class="text-sm text-slate-500">
-            No hay comisiones registradas en el rango seleccionado.
+            No hay comisiones registradas para la vigencia seleccionada y el estado filtrado.
           </div>
           <div v-else class="overflow-auto rounded-xl border border-slate-200">
             <table class="min-w-full text-xs">
@@ -174,42 +250,79 @@
 
 <script setup>
 import axios from 'axios'
-import { ref, onMounted, watch } from 'vue'
-
-const filtro = ref({
-  from: '',
-  to: ''
-})
+import { ref, onMounted, watch, computed } from 'vue'
 
 const commissions = ref([])
-
 const loadingCommissions = ref(false)
 
 const statusFilter = ref('')
 const msg = ref('')
 const msgOk = ref(false)
 
-function displayCategory(c) {
+// Vigencias
+const periods = ref([])              // { id, name, from, to, created_at }
+const selectedVigenciaId = ref('')
+const loadingPeriods = ref(false)
+
+const newPeriod = ref({
+  name: '',
+  from: '',
+  to: ''
+})
+const creatingPeriod = ref(false)
+
+function displayCategory (c) {
   return String(c || '') === 'SO' ? 'ME' : c
 }
 
-function countDays(start, end) {
+function countDays (start, end) {
   if (!start || !end) return 0
   const d1 = new Date(start + 'T00:00:00')
-  const d2 = new Date(end   + 'T00:00:00')
+  const d2 = new Date(end + 'T00:00:00')
   const ms = d2.getTime() - d1.getTime()
   if (ms < 0) return 0
   return Math.floor(ms / (24 * 60 * 60 * 1000)) + 1
 }
 
-function statusPillClass(status) {
-  if (status === 'APROBADA') return 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-  if (status === 'ANULADA')  return 'bg-rose-100 text-rose-800 border border-rose-200'
+function statusPillClass (status) {
+  if (status === 'APROBADA') { return 'bg-emerald-100 text-emerald-800 border border-emerald-200' }
+  if (status === 'ANULADA') { return 'bg-rose-100 text-rose-800 border border-rose-200' }
   return 'bg-slate-100 text-slate-800 border border-slate-200'
 }
 
-async function loadCommissions() {
-  if (!filtro.value.from || !filtro.value.to) {
+const currentPeriod = computed(() =>
+  periods.value.find(p => p.id === selectedVigenciaId.value) || null
+)
+
+async function fetchPeriods () {
+  loadingPeriods.value = true
+  try {
+    const { data } = await axios.get('/rest-planning/periods', {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+    const items = Array.isArray(data?.items) ? data.items : []
+    periods.value = items.map(p => ({
+      id: p.id,
+      name: p.name || `Vigencia #${p.id}`,
+      from: String(p.from_date).slice(0, 10),
+      to: String(p.to_date).slice(0, 10),
+      created_at: p.created_at || null
+    }))
+
+    // autoseleccionar la más reciente si no hay ninguna
+    if (!selectedVigenciaId.value && periods.value.length) {
+      selectedVigenciaId.value = periods.value[0].id
+    }
+  } catch (e) {
+    console.error('[fetchPeriods] error', e)
+    periods.value = []
+  } finally {
+    loadingPeriods.value = false
+  }
+}
+
+async function loadCommissions () {
+  if (!selectedVigenciaId.value) {
     commissions.value = []
     return
   }
@@ -218,8 +331,7 @@ async function loadCommissions() {
   try {
     const { data } = await axios.get('/service-commissions', {
       params: {
-        from: filtro.value.from,
-        to: filtro.value.to,
+        vigenciaId: selectedVigenciaId.value,
         status: statusFilter.value || undefined
       },
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
@@ -228,7 +340,7 @@ async function loadCommissions() {
       ? data.items.map(c => ({
           ...c,
           start_date: String(c.start_date).slice(0, 10),
-          end_date:   String(c.end_date).slice(0, 10)
+          end_date: String(c.end_date).slice(0, 10)
         }))
       : []
   } catch (e) {
@@ -242,13 +354,13 @@ async function loadCommissions() {
 }
 
 // Guardar cambios de una fila (fechas, destino, etc.)
-async function saveRow(c) {
+async function saveRow (c) {
   msg.value = ''
   msgOk.value = false
   try {
     await axios.put(`/service-commissions/${c.id}`, {
       start_date: c.start_date,
-      end_date:   c.end_date,
+      end_date: c.end_date,
       state: c.state || 'COMISIÓN DEL SERVICIO',
       destGroupId: c.destGroupId || null,
       destUnitId: c.destUnitId || null,
@@ -267,7 +379,7 @@ async function saveRow(c) {
 }
 
 // Cambiar status (DRAFT / APROBADA / ANULADA)
-async function changeStatus(c, newStatus) {
+async function changeStatus (c, newStatus) {
   if (c.status === newStatus) return
   msg.value = ''
   msgOk.value = false
@@ -287,25 +399,85 @@ async function changeStatus(c, newStatus) {
   }
 }
 
-// Inicializar con un rango por defecto (ej: mes actual)
-function initRange() {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = now.getMonth() + 1
-  const first = `${y}-${String(m).padStart(2, '0')}-01`
-  const lastDate = new Date(y, m, 0).getDate()
-  const last = `${y}-${String(m).padStart(2, '0')}-${String(lastDate).padStart(2, '0')}`
-  filtro.value.from = first
-  filtro.value.to = last
+// Crear nueva vigencia
+async function createVigencia () {
+  msg.value = ''
+  msgOk.value = false
+
+  const name = String(newPeriod.value.name || '').trim()
+  const from = newPeriod.value.from
+  const to = newPeriod.value.to
+
+  if (!name || !from || !to) {
+    msg.value = 'Nombre, desde y hasta son requeridos para crear una vigencia.'
+    msgOk.value = false
+    return
+  }
+
+  if (to < from) {
+    msg.value = 'La fecha final no puede ser menor que la inicial.'
+    msgOk.value = false
+    return
+  }
+
+  creatingPeriod.value = true
+  try {
+    const { data } = await axios.post('/rest-planning/periods', {
+      name,
+      from,
+      to
+    }, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+
+    const newId = data?.id
+    if (newId) {
+      // recargar lista de vigencias o inyectar la nueva
+      await fetchPeriods()
+      selectedVigenciaId.value = newId
+      await loadCommissions()
+      msg.value = `Vigencia ${name} creada correctamente.`
+      msgOk.value = true
+
+      // limpiar formulario
+      newPeriod.value.name = ''
+      newPeriod.value.from = ''
+      newPeriod.value.to = ''
+    } else {
+      msg.value = 'No se pudo crear la vigencia.'
+      msgOk.value = false
+    }
+  } catch (e) {
+    console.error('[createVigencia] error', e)
+    msg.value = e?.response?.data?.error || 'Error al crear vigencia'
+    msgOk.value = false
+  } finally {
+    creatingPeriod.value = false
+  }
 }
 
 onMounted(async () => {
-  initRange()
-  await loadCommissions()
+  await fetchPeriods()
+  if (selectedVigenciaId.value) {
+    await loadCommissions()
+  }
 })
 
 // Refiltrar comisiones cuando cambie el statusFilter
 watch(statusFilter, async () => {
-  await loadCommissions()
+  if (selectedVigenciaId.value) {
+    await loadCommissions()
+  }
+})
+
+// Cuando cambie la vigencia seleccionada, recargar comisiones
+watch(selectedVigenciaId, async () => {
+  msg.value = ''
+  msgOk.value = false
+  if (selectedVigenciaId.value) {
+    await loadCommissions()
+  } else {
+    commissions.value = []
+  }
 })
 </script>

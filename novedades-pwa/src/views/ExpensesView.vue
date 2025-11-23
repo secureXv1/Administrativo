@@ -7,58 +7,67 @@
           Gastos — Proyección de comisiones del servicio
         </h1>
         <p class="text-sm text-slate-500">
-          Consulta qué funcionarios tienen proyección de
-          <strong>COMISIÓN DEL SERVICIO</strong> en un rango de fechas y valida las comisiones que se certificarán en gastos.
+          Selecciona una <strong>vigencia</strong> (ej. DIC25), consulta qué funcionarios
+          tienen proyección de <strong>COMISIÓN DEL SERVICIO</strong> y valida las
+          comisiones que se certificarán en gastos.
         </p>
       </div>
     </header>
 
-    <!-- SECCIÓN 1: Solo fechas + consultar -->
+    <!-- SECCIÓN 1: seleccionar vigencia + consultar -->
     <section class="bg-white rounded-2xl shadow border border-slate-200 p-4 space-y-4">
-      <div class="grid gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))]">
-        <!-- Desde -->
+      <div class="grid gap-3 md:grid-cols-[minmax(0,1.5fr),minmax(0,1fr)] items-end">
+        <!-- Vigencia -->
         <div>
           <label class="text-xs font-medium text-slate-700 mb-1 block">
-            Desde
+            Vigencia
           </label>
-          <input
-            type="date"
-            v-model="filters.from"
+          <select
+            v-model="currentVigenciaId"
             class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
-          />
+          >
+            <option value="">Selecciona una vigencia…</option>
+            <option
+              v-for="p in periods"
+              :key="p.id"
+              :value="p.id"
+            >
+              {{ p.name }} — {{ p.from }} → {{ p.to }}
+            </option>
+          </select>
+          <p v-if="loadingPeriods" class="text-[11px] text-slate-400 mt-1">
+            Cargando vigencias…
+          </p>
         </div>
 
-        <!-- Hasta -->
-        <div>
-          <label class="text-xs font-medium text-slate-700 mb-1 block">
-            Hasta
-          </label>
-          <input
-            type="date"
-            v-model="filters.to"
-            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
-          />
+        <!-- Info y botón -->
+        <div class="flex flex-col items-start md:items-end gap-2">
+          <div class="text-[11px] text-slate-500 w-full md:text-right">
+            <template v-if="currentPeriod">
+              Vigencia seleccionada:
+              <strong>{{ currentPeriod.name }}</strong>
+              ({{ currentPeriod.from }} → {{ currentPeriod.to }})
+            </template>
+            <template v-else>
+              Selecciona una vigencia para consultar la proyección.
+            </template>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-300 disabled:opacity-60 disabled:cursor-not-allowed"
+              @click="loadExpenses"
+              :disabled="loading || !currentVigenciaId"
+            >
+              {{ loading ? 'Consultando…' : 'Consultar proyección para gastos' }}
+            </button>
+
+            <p v-if="error" class="text-xs text-rose-700">
+              {{ error }}
+            </p>
+          </div>
         </div>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-3 pt-2">
-        <button
-          type="button"
-          class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-300 disabled:opacity-60 disabled:cursor-not-allowed"
-          @click="loadExpenses"
-          :disabled="loading"
-        >
-          {{ loading ? 'Consultando…' : 'Consultar proyección para gastos' }}
-        </button>
-
-        <p v-if="error" class="text-xs text-rose-700">
-          {{ error }}
-        </p>
-
-        <p v-else-if="filters.from && filters.to" class="text-xs text-slate-500">
-          Ventana de vigencia seleccionada:
-          <strong>{{ filters.from }}</strong> → <strong>{{ filters.to }}</strong>
-        </p>
       </div>
     </section>
 
@@ -68,7 +77,7 @@
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h2 class="text-sm font-semibold text-slate-900">
-            Funcionarios con COMISIÓN DEL SERVICIO en el rango
+            Funcionarios con COMISIÓN DEL SERVICIO en la vigencia seleccionada
           </h2>
           <p class="text-xs text-slate-500">
             Los filtros de grupo y unidad se aplican sobre la proyección
@@ -122,7 +131,7 @@
       </div>
 
       <div v-else-if="!filteredRows.length" class="text-sm text-slate-500 py-8 text-center">
-        No hay funcionarios con COMISIÓN DEL SERVICIO en el rango / filtros seleccionados.
+        No hay funcionarios con COMISIÓN DEL SERVICIO en la vigencia / filtros seleccionados.
       </div>
 
       <div v-else class="overflow-x-auto rounded-xl border border-slate-200">
@@ -151,7 +160,6 @@
                 {{ r.nickname || '—' }}
               </td>
               <td class="py-2 px-3 text-slate-700">
-                <!-- Unidad proyectada: intentamos primero la de destino -->
                 {{ r.destUnitName || r.unitName || '—' }}
               </td>
               <td class="py-2 px-3 text-slate-900">
@@ -164,7 +172,7 @@
                 {{ r.days }}
               </td>
               <td class="py-2 px-3 text-right">
-                <!-- Si ya fue validada en esta sesión, no mostramos botón -->
+                <!-- Si ya fue validada, solo chip -->
                 <button
                   v-if="!r.validated"
                   type="button"
@@ -188,9 +196,9 @@
       <p class="text-[11px] text-slate-500 mt-3">
         Ejemplo: si el agente S069 tiene proyección
         01–05 COMISIÓN DEL SERVICIO, 06–10 PERMISO, 11–27 COMISIÓN DEL SERVICIO
-        y consultas del 01/12/25 al 25/12/25, se mostrará:
-        <strong>inicio 11/12/25, fin 25/12/25</strong> (se toma la comisión que
-        cubre más días dentro del rango).
+        y la vigencia va del 01/12/25 al 25/12/25, se mostrará:
+        <strong>inicio 11/12/25, fin 25/12/25</strong>
+        (se toma la comisión que cubre más días dentro del rango).
       </p>
 
       <p v-if="msg" class="mt-3 text-xs" :class="msgOk ? 'text-emerald-700' : 'text-rose-700'">
@@ -208,8 +216,6 @@ const COMMISSION_STATE = 'COMISIÓN DEL SERVICIO'
 
 // === Estado local ===
 const filters = ref({
-  from: '',
-  to: '',
   groupId: null,   // filtro local sobre GRUPO DESTINO
   unitId: null     // filtro local sobre UNIDAD DESTINO
 })
@@ -225,8 +231,8 @@ const msg = ref('')
 const msgOk = ref(false)
 
 // Vigencias (projection_periods)
-const periods = ref([])         // { id, from, to, created_at, ... }
-const currentVigenciaId = ref(null)
+const periods = ref([])              // { id, name, from, to, created_at }
+const currentVigenciaId = ref('')
 const loadingPeriods = ref(false)
 
 // ==== Helpers de fecha ====
@@ -244,6 +250,10 @@ function diffDaysInclusive (from, to) {
   const ms = d2.getTime() - d1.getTime()
   return Math.floor(ms / 86400000) + 1
 }
+
+const currentPeriod = computed(() =>
+  periods.value.find(p => p.id === currentVigenciaId.value) || null
+)
 
 /**
  * Recorta un rango [segFrom, segTo] al periodo [periodFrom, periodTo].
@@ -269,7 +279,6 @@ function clipRange (segFrom, segTo, periodFrom, periodTo) {
 /* =======================
    VIGENCIAS (frontend)
    - fetchPeriods() carga /rest-planning/periods
-   - ensureVigenciaForRange(from,to) busca o crea
 ========================== */
 
 async function fetchPeriods () {
@@ -278,12 +287,17 @@ async function fetchPeriods () {
     const { data } = await http.get('/rest-planning/periods')
     const items = Array.isArray(data?.items) ? data.items : []
     periods.value = items.map(p => ({
-        id: p.id,
-        from: String(p.from_date).slice(0, 10),
-        to: String(p.to_date).slice(0, 10),
-        created_at: p.created_at || null
+      id: p.id,
+      name: p.name || `Vigencia #${p.id}`,
+      from: String(p.from_date).slice(0, 10),
+      to: String(p.to_date).slice(0, 10),
+      created_at: p.created_at || null
     }))
 
+    // Seleccionar la más reciente por defecto, si no hay seleccionada
+    if (!currentVigenciaId.value && periods.value.length) {
+      currentVigenciaId.value = periods.value[0].id
+    }
   } catch (e) {
     console.error('Error cargando vigencias:', e)
     periods.value = []
@@ -292,56 +306,15 @@ async function fetchPeriods () {
   }
 }
 
-/**
- * Asegura que exista una vigencia para [from,to]:
- * - si ya existe en periods → usa esa
- * - si no, hace POST /rest-planning/periods y la crea
- */
-async function ensureVigenciaForRange (from, to) {
-  if (!from || !to) {
-    throw new Error('Rango de fechas requerido para la vigencia')
-  }
-
-  if (!periods.value.length && !loadingPeriods.value) {
-    await fetchPeriods()
-  }
-
-  // ¿Ya existe una vigencia con exactamente ese rango?
-  const existing = periods.value.find(
-    p => p.from === from && p.to === to
-  )
-  if (existing) {
-    currentVigenciaId.value = existing.id
-    return existing.id
-  }
-
-  // Crear nueva vigencia
-  const { data } = await http.post('/rest-planning/periods', { from, to })
-  const newId = data?.id
-  if (!newId) {
-    throw new Error('No se pudo crear vigencia')
-  }
-
-  const newPeriod = {
-    id: newId,
-    from,
-    to,
-    created_at: new Date().toISOString()
-  }
-  periods.value.unshift(newPeriod)
-  currentVigenciaId.value = newId
-  return newId
-}
-
 /* =======================
    buildRows
    - items: segmentos de /rest-planning
    - periodFrom / periodTo: rango de la vigencia
-   - commissions: comisiones reales /service-commissions
+   - commissions: comisiones reales /service-commissions (para marcar validated)
 ========================== */
 
 function buildRows (items, periodFrom, periodTo, commissions = []) {
-  // Agrupar comisiones reales por agente para marcar "validated"
+  // Agrupar comisiones reales por agente+rango para marcar "validated"
   const commByAgent = new Map()
   for (const c of commissions) {
     const agentId = c.agentId || c.agent_id
@@ -379,7 +352,10 @@ function buildRows (items, periodFrom, periodTo, commissions = []) {
         it.agent_code ||
         '',
       nickname: it.nickname || it.agentNickname || it.agent_nickname || '',
-      // grupo / unidad ORIGEN (por si quieres verlos luego)
+      // 👇 NUEVO: id de la fila de rest_plans
+      planId: it.id || it.restPlanId || it.rest_plan_id || null,
+
+      // grupo / unidad ORIGEN
       groupIdOrigin: it.agentGroupId || it.groupId || it.group_id || null,
       unitIdOrigin: it.agentUnitId || it.unitId || it.unit_id || null,
       unitName: it.unitName || it.unit_name || '',
@@ -392,7 +368,7 @@ function buildRows (items, periodFrom, periodTo, commissions = []) {
       start: clipped.from,
       end: clipped.to,
       days: clipped.days,
-      validated: false // se recalcula después
+      validated: false
     }
 
     const current = byAgent.get(key)
@@ -445,19 +421,39 @@ async function loadUnits () {
 }
 
 // ==== Acción principal: cargar proyección para gastos ====
-// AHORA:
-// 1) Asegura vigencia (from/to) → vigenciaId
-// 2) GET /rest-planning?vigenciaId
-// 3) GET /service-commissions?from&to para saber qué ya está certificado
+// LÓGICA:
+// 1) Si hay vigencia seleccionada → usar sus fechas (from/to de la vigencia)
+// 2) Si NO hay vigencia → usar filtros de fecha manuales
+// 3) Asegurar vigencia (si no había) solo para poder guardar vigenciaId en service_commissions
+// 4) /rest-planning y /service-commissions se consultan POR FECHAS
 async function loadExpenses () {
   error.value = ''
   msg.value = ''
   rows.value = []
 
-  const { from, to } = filters.value
+  let from = ''
+  let to = ''
 
+  // 1) Si ya hay vigencia seleccionada, usamos sus fechas
+  if (currentVigenciaId.value) {
+    const vig = periods.value.find(
+      p => Number(p.id) === Number(currentVigenciaId.value)
+    )
+    if (!vig) {
+      error.value = 'La vigencia seleccionada no existe o no se pudo cargar.'
+      return
+    }
+    from = vig.from
+    to = vig.to
+  } else {
+    // 2) Si NO hay vigencia, usamos lo que haya en los inputs de fecha
+    from = filters.value.from
+    to = filters.value.to
+  }
+
+  // Validación básica
   if (!from || !to) {
-    error.value = 'Debes seleccionar fecha desde y hasta.'
+    error.value = 'Debes seleccionar una vigencia o un rango de fechas.'
     return
   }
 
@@ -470,20 +466,26 @@ async function loadExpenses () {
 
   loading.value = true
   try {
-    // 1) Asegurar vigencia
-    const vigId = await ensureVigenciaForRange(from, to)
+    // 3) Asegurar vigencia SOLO si aún no hay (cuando vino por fechas manuales)
+    let vigId = currentVigenciaId.value
+    if (!vigId) {
+      vigId = await ensureVigenciaForRange(from, to)
+      currentVigenciaId.value = vigId
+    }
 
-    // 2) Traer proyección + comisiones reales en paralelo
+    // 4) Traer proyección y comisiones reales POR FECHA
     const [planningRes, commissionsRes] = await Promise.all([
       http.get('/rest-planning', {
         params: {
-          vigenciaId: vigId
+          from,
+          to
         }
       }),
       http.get('/service-commissions', {
         params: {
           from,
           to
+          // si luego backend acepta vigenciaId, podrías agregar: vigenciaId: vigId
         }
       })
     ])
@@ -491,9 +493,10 @@ async function loadExpenses () {
     const items = Array.isArray(planningRes?.data?.items) ? planningRes.data.items : []
     const commissions = Array.isArray(commissionsRes?.data?.items) ? commissionsRes.data.items : []
 
+    // buildRows recorta por fechas (periodFrom / periodTo)
     rows.value = buildRows(items, from, to, commissions)
 
-    // Reset de filtros locales al hacer nueva consulta
+    // Reset filtros locales grupo/unidad
     filters.value.groupId = null
     filters.value.unitId = null
   } catch (err) {
@@ -507,6 +510,7 @@ async function loadExpenses () {
     loading.value = false
   }
 }
+
 
 // ==== Filtro local por grupo / unidad (DESTINO) ====
 const filteredRows = computed(() => {
@@ -531,23 +535,32 @@ async function validarComision (row) {
   msg.value = ''
   msgOk.value = false
 
+  if (!currentVigenciaId.value) {
+    msg.value = 'No se encontró la vigencia actual para esta proyección.'
+    msgOk.value = false
+    return
+  }
+
   try {
     const payload = {
       agentId: row.agentId,
-      // para gastos es más interesante la unidad destino; si no hay, caemos a la de origen
+      // unidad: destino si existe, si no la de origen
       unitId: row.destUnitId || row.unitIdOrigin || null,
-      restPlanId: null, // backend ya valida que haya proyección COMISIÓN DEL SERVICIO
+      restPlanId: row.planId || null,      // ya lo estás usando
       start_date: row.start,
       end_date: row.end,
       state: COMMISSION_STATE,
       destGroupId: row.destGroupId || null,
       destUnitId: row.destUnitId || null,
-      municipalityId: row.municipalityId || null
+      municipalityId: row.municipalityId || null,
+
+      // 👇 NUEVO: amarrar la comisión a la vigencia actual
+      vigenciaId: currentVigenciaId.value
     }
 
     await http.post('/service-commissions', payload)
 
-    row.validated = true // 👈 oculta botón y muestra chip "Validada"
+    row.validated = true
     msg.value = `Comisión creada para ${row.code}`
     msgOk.value = true
   } catch (e) {
@@ -559,20 +572,7 @@ async function validarComision (row) {
 
 // ==== Inicialización ====
 onMounted(async () => {
-  // Rango por defecto (mes actual)
-  const today = new Date()
-  const y = today.getFullYear()
-  const m = today.getMonth() + 1
-  const first = new Date(y, m - 1, 1)
-  const last = new Date(y, m, 0)
-
-  const fmt = d => d.toISOString().slice(0, 10)
-  filters.value.from = fmt(first)
-  filters.value.to = fmt(last)
-
   await Promise.all([loadGroups(), loadUnits(), fetchPeriods()])
-  // Si quieres cargar al entrar:
-  // await loadExpenses()
+  // No cargamos automáticamente; el usuario elige vigencia y da "Consultar"
 })
 </script>
-

@@ -104,10 +104,16 @@ function addDays(d, n) {
 router.post(
   '/periods',
   requireAuth,
-  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos'),
+  // aquí decides quién puede crear vigencias; yo dejé superadmin + supervision + gastos
+  requireRole('superadmin', 'supervision', 'gastos'),
   async (req, res) => {
     try {
-      const { from, to } = req.body || {}
+      const { name, from, to } = req.body || {}
+
+      const nombre = String(name || '').trim().toUpperCase()
+      if (!nombre) {
+        return res.status(422).json({ error: 'Nombre de vigencia requerido (ej: DIC25)' })
+      }
 
       const d1 = toDate(from)
       const d2 = toDate(to)
@@ -121,10 +127,10 @@ router.post(
 
       const [result] = await pool.query(
         `
-        INSERT INTO projection_periods (from_date, to_date, created_by)
-        VALUES (?,?,?)
+        INSERT INTO projection_periods (name, from_date, to_date, created_by)
+        VALUES (?,?,?,?)
         `,
-        [fromYMD, toYMD, req.user.uid ?? null]
+        [nombre, fromYMD, toYMD, req.user.uid ?? null]
       )
 
       const newId = result.insertId
@@ -134,9 +140,9 @@ router.post(
           req,
           userId: req.user.uid,
           action: Actions.REST_PLAN_PERIOD_CREATE ?? 'REST_PLAN_PERIOD_CREATE',
-          details: { id: newId, from: fromYMD, to: toYMD }
+          details: { id: newId, name: nombre, from: fromYMD, to: toYMD }
         })
-      } catch { }
+      } catch {}
 
       res.json({ ok: true, id: newId })
     } catch (e) {
@@ -156,6 +162,7 @@ router.get(
         `
         SELECT
           id,
+          name,
           DATE_FORMAT(from_date,'%Y-%m-%d') AS from_date,
           DATE_FORMAT(to_date  ,'%Y-%m-%d') AS to_date,
           created_by,
