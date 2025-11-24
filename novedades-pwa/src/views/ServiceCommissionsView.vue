@@ -1,15 +1,18 @@
 <template>
   <div class="max-w-6xl mx-auto space-y-6">
     <!-- HEADER estilo Expenses -->
-     <!-- HEADER -->
     <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
       <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">G</div>
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">
+            G
+          </div>
           <div>
             <h2 class="font-semibold text-slate-900">Gastos — Comisiones de servicio</h2>
-            <p class="text-slate-500 text-xs">  Administra las comisiones de servicio validadas por
-          <strong>vigencia</strong></p>
+            <p class="text-slate-500 text-xs">
+              Administra las comisiones de servicio validadas por
+              <strong>vigencia</strong> y sus subvigencias.
+            </p>
           </div>
         </div>
         <button
@@ -21,15 +24,16 @@
         </button>
       </div>
     </div>
+
     <!-- SECCIÓN 1: Vigencia + filtros (estilo tarjeta blanca) -->
     <section class="bg-white rounded-2xl shadow border border-slate-200 p-4 space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 class="text-sm font-semibold text-slate-900">
-            Vigencia y filtros de comisiones
+            Vigencia, subvigencias y filtros
           </h2>
           <p class="text-xs text-slate-500">
-            Selecciona una vigencia y filtra por estado y unidad para ver las comisiones certificadas.
+            Selecciona una vigencia, crea subvigencias dentro de su rango y filtra por estado y unidad para ver las comisiones certificadas.
           </p>
         </div>
       </div>
@@ -58,6 +62,9 @@
           </p>
           <p v-else-if="currentPeriod" class="text-[11px] text-slate-500 mt-1">
             Rango: <strong>{{ currentPeriod.from }}</strong> → <strong>{{ currentPeriod.to }}</strong>
+          </p>
+          <p v-if="currentPeriod && subperiods.length" class="text-[11px] text-slate-500 mt-1">
+            Subvigencias: <strong>{{ subperiods.length }}</strong>
           </p>
         </div>
 
@@ -98,14 +105,22 @@
           </select>
         </div>
 
-        <!-- Botón actualizar -->
-        <div class="flex justify-end">
+        <!-- Botones derecha -->
+        <div class="flex flex-col items-end gap-2">
           <button
             class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-800 hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed"
             @click="loadCommissions"
             :disabled="loadingCommissions || !selectedVigenciaId"
           >
             {{ loadingCommissions ? 'Cargando…' : 'Actualizar' }}
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-[11px] font-medium border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            @click="openSubModal"
+            :disabled="!selectedVigenciaId || !currentPeriod"
+          >
+            Crear subvigencia
           </button>
         </div>
       </div>
@@ -120,7 +135,7 @@
           </h2>
           <p class="text-xs text-slate-500">
             Rango real que se reconocerá como comisión de servicio dentro de la vigencia seleccionada.
-            Puedes ajustar fechas (subvigencias) y cambiar su estado.
+            Puedes ajustar fechas, asignar subvigencias y cambiar su estado.
           </p>
         </div>
         <div class="text-[11px] text-slate-500" v-if="currentPeriod">
@@ -143,6 +158,7 @@
             <tr>
               <th class="text-left px-3 py-2 font-semibold">Agente</th>
               <th class="text-left px-3 py-2 font-semibold">Rango real</th>
+              <th class="text-left px-3 py-2 font-semibold">Subvigencia</th>
               <th class="text-left px-3 py-2 font-semibold">Destino</th>
               <th class="text-left px-3 py-2 font-semibold">Días</th>
               <th class="text-left px-3 py-2 font-semibold">Estado</th>
@@ -155,6 +171,7 @@
               :key="c.id"
               class="border-t border-slate-100 hover:bg-slate-50"
             >
+              <!-- Agente -->
               <td class="px-3 py-2 align-top">
                 <div class="font-semibold text-slate-900">
                   {{ c.agentCode }}
@@ -170,6 +187,7 @@
                 </div>
               </td>
 
+              <!-- Rango real (fechas editables) -->
               <td class="px-3 py-2 align-top">
                 <div class="flex flex-col gap-1">
                   <div class="flex items-center gap-1">
@@ -185,9 +203,35 @@
                       class="w-28 rounded-md border border-slate-300 px-2 py-1 text-[11px] focus:ring-1 focus:ring-indigo-200"
                     >
                   </div>
+                  <p v-if="c.subperiodId && c.subperiodName" class="text-[10px] text-slate-400">
+                    Ajustada por: {{ c.subperiodName }}
+                  </p>
                 </div>
               </td>
 
+              <!-- Subvigencia (selector) -->
+              <td class="px-3 py-2 text-[11px] align-top">
+                <div v-if="subperiods.length">
+                  <select
+                    v-model="c.subperiodId"
+                    class="w-40 rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] focus:ring-1 focus:ring-indigo-200"
+                  >
+                    <option :value="null">Sin subvigencia</option>
+                    <option
+                      v-for="sp in subperiods"
+                      :key="sp.id"
+                      :value="sp.id"
+                    >
+                      {{ sp.name }} ({{ sp.from }} → {{ sp.to }})
+                    </option>
+                  </select>
+                </div>
+                <div v-else class="text-slate-400">
+                  No hay subvigencias definidas.
+                </div>
+              </td>
+
+              <!-- Destino -->
               <td class="px-3 py-2 text-[11px] align-top">
                 <div v-if="c.destGroupName || c.destUnitName">
                   {{ c.destGroupName || 'Grupo' }} / {{ c.destUnitName || 'Unidad' }}
@@ -195,10 +239,12 @@
                 <div v-else class="text-slate-400">Sin destino explícito</div>
               </td>
 
+              <!-- Días -->
               <td class="px-3 py-2 text-[11px] align-top">
                 {{ countDays(c.start_date, c.end_date) }}
               </td>
 
+              <!-- Estado + botones -->
               <td class="px-3 py-2 align-top">
                 <span
                   class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
@@ -222,6 +268,7 @@
                 </div>
               </td>
 
+              <!-- Guardar -->
               <td class="px-3 py-2 text-right align-top">
                 <button
                   class="px-3 py-1 rounded-lg text-[11px] font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 mr-1"
@@ -323,6 +370,88 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal crear subvigencia -->
+    <div
+      v-if="showSubModal"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40"
+    >
+      <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-5">
+        <header class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-900">
+              Crear subvigencia
+            </h3>
+            <p class="text-xs text-slate-500" v-if="currentPeriod">
+              Dentro de la vigencia
+              <strong>{{ currentPeriod.name }}</strong>
+              ({{ currentPeriod.from }} → {{ currentPeriod.to }}).
+            </p>
+          </div>
+          <button
+            type="button"
+            class="text-slate-400 hover:text-slate-600 text-lg leading-none"
+            @click="closeSubModal"
+          >
+            ×
+          </button>
+        </header>
+
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs font-medium text-slate-700 mb-1 block">
+              Nombre (ej: SEM1, SEM2, D1-D10)
+            </label>
+            <input
+              type="text"
+              v-model="newSubperiod.name"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+              placeholder="SEM1"
+            >
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs font-medium text-slate-700 mb-1 block">
+                Desde
+              </label>
+              <input
+                type="date"
+                v-model="newSubperiod.from"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+              >
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-700 mb-1 block">
+                Hasta
+              </label>
+              <input
+                type="date"
+                v-model="newSubperiod.to"
+                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+              >
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            class="px-3 py-2 rounded-lg text-xs font-medium border border-slate-300 text-slate-700 hover:bg-slate-50"
+            @click="closeSubModal"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            @click="createSubvigencia"
+            :disabled="creatingSubperiod"
+          >
+            {{ creatingSubperiod ? 'Creando…' : 'Crear subvigencia' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -344,6 +473,16 @@ const msgOk = ref(false)
 const periods = ref([])              // { id, name, from, to, created_at }
 const selectedVigenciaId = ref('')
 const loadingPeriods = ref(false)
+
+// Subvigencias
+const subperiods = ref([])           // { id, name, from, to, periodId }
+const showSubModal = ref(false)
+const newSubperiod = ref({
+  name: '',
+  from: '',
+  to: ''
+})
+const creatingSubperiod = ref(false)
 
 // Modal crear vigencia
 const showCreateModal = ref(false)
@@ -431,6 +570,30 @@ async function loadUnits () {
   }
 }
 
+async function loadSubperiods () {
+  if (!selectedVigenciaId.value) {
+    subperiods.value = []
+    return
+  }
+  try {
+    const { data } = await axios.get('/rest-planning/subperiods', {
+      params: { vigenciaId: selectedVigenciaId.value },
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+    const items = Array.isArray(data?.items) ? data.items : []
+    subperiods.value = items.map(sp => ({
+      id: sp.id,
+      periodId: sp.periodId || sp.period_id || null,
+      name: sp.name,
+      from: String(sp.from_date).slice(0, 10),
+      to: String(sp.to_date).slice(0, 10)
+    }))
+  } catch (e) {
+    console.error('[loadSubperiods] error', e)
+    subperiods.value = []
+  }
+}
+
 async function loadCommissions () {
   if (!selectedVigenciaId.value) {
     commissions.value = []
@@ -463,7 +626,7 @@ async function loadCommissions () {
   }
 }
 
-// Guardar cambios de una fila (fechas, destino, etc.)
+// Guardar cambios de una fila (fechas, destino, subvigencia, etc.)
 async function saveRow (c) {
   msg.value = ''
   msgOk.value = false
@@ -474,7 +637,8 @@ async function saveRow (c) {
       state: c.state || 'COMISIÓN DEL SERVICIO',
       destGroupId: c.destGroupId || null,
       destUnitId: c.destUnitId || null,
-      municipalityId: c.municipalityId || null
+      municipalityId: c.municipalityId || null,
+      subperiodId: c.subperiodId || null
     }, {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     })
@@ -509,7 +673,7 @@ async function changeStatus (c, newStatus) {
   }
 }
 
-// Modal helpers
+// Modal helpers - vigencia
 function openCreateModal () {
   msg.value = ''
   msgOk.value = false
@@ -559,6 +723,7 @@ async function createVigencia () {
     if (newId) {
       await fetchPeriods()
       selectedVigenciaId.value = String(newId)
+      await loadSubperiods()
       await loadCommissions()
       msg.value = `Vigencia ${name} creada correctamente.`
       msgOk.value = true
@@ -576,30 +741,117 @@ async function createVigencia () {
   }
 }
 
+// Modal helpers - subvigencia
+function openSubModal () {
+  msg.value = ''
+  msgOk.value = false
+  if (!currentPeriod.value) return
+  // por defecto, toda la vigencia
+  newSubperiod.value.name = ''
+  newSubperiod.value.from = currentPeriod.value.from
+  newSubperiod.value.to = currentPeriod.value.to
+  showSubModal.value = true
+}
+
+function closeSubModal () {
+  if (creatingSubperiod.value) return
+  showSubModal.value = false
+  newSubperiod.value.name = ''
+  newSubperiod.value.from = ''
+  newSubperiod.value.to = ''
+}
+
+// Crear nueva subvigencia
+async function createSubvigencia () {
+  msg.value = ''
+  msgOk.value = false
+
+  if (!selectedVigenciaId.value || !currentPeriod.value) {
+    msg.value = 'Debes seleccionar una vigencia antes de crear una subvigencia.'
+    msgOk.value = false
+    return
+  }
+
+  const name = String(newSubperiod.value.name || '').trim()
+  const from = newSubperiod.value.from
+  const to = newSubperiod.value.to
+
+  if (!name || !from || !to) {
+    msg.value = 'Nombre, desde y hasta son requeridos para crear una subvigencia.'
+    msgOk.value = false
+    return
+  }
+
+  if (to < from) {
+    msg.value = 'La fecha final de la subvigencia no puede ser menor que la inicial.'
+    msgOk.value = false
+    return
+  }
+
+  // Validar que quede dentro de la vigencia
+  if (from < currentPeriod.value.from || to > currentPeriod.value.to) {
+    msg.value = `La subvigencia debe estar dentro del rango de la vigencia (${currentPeriod.value.from} → ${currentPeriod.value.to}).`
+    msgOk.value = false
+    return
+  }
+
+  creatingSubperiod.value = true
+  try {
+    const { data } = await axios.post('/rest-planning/subperiods', {
+      periodId: Number(selectedVigenciaId.value),
+      name,
+      from,
+      to
+    }, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+
+    if (data?.id) {
+      await loadSubperiods()
+      await loadCommissions()
+      msg.value = `Subvigencia ${name} creada correctamente.`
+      msgOk.value = true
+      closeSubModal()
+    } else {
+      msg.value = 'No se pudo crear la subvigencia.'
+      msgOk.value = false
+    }
+  } catch (e) {
+    console.error('[createSubvigencia] error', e)
+    msg.value = e?.response?.data?.error || 'Error al crear subvigencia'
+    msgOk.value = false
+  } finally {
+    creatingSubperiod.value = false
+  }
+}
+
 onMounted(async () => {
   await Promise.all([
     fetchPeriods(),
     loadUnits()
   ])
   if (selectedVigenciaId.value) {
+    await loadSubperiods()
     await loadCommissions()
   }
 })
 
-// Refiltrar comisiones cuando cambie el statusFilter
+// Refiltrar/recargar comisiones cuando cambie el statusFilter
 watch(statusFilter, async () => {
   if (selectedVigenciaId.value) {
     await loadCommissions()
   }
 })
 
-// Cuando cambie la vigencia seleccionada, recargar comisiones
+// Cuando cambie la vigencia seleccionada, recargar subvigencias y comisiones
 watch(selectedVigenciaId, async () => {
   msg.value = ''
   msgOk.value = false
   if (selectedVigenciaId.value) {
+    await loadSubperiods()
     await loadCommissions()
   } else {
+    subperiods.value = []
     commissions.value = []
   }
 })

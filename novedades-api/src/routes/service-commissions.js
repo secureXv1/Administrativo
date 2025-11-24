@@ -259,7 +259,8 @@ router.get(
           u2.name AS destUnitName,
           sc.status,
           sc.rest_plan_id AS restPlanId,
-          sc.vigencia_id  AS vigenciaId,
+          sc.subperiod_id AS subperiodId,       -- 👈 NUEVO
+          s.name          AS subperiodName,     -- 👈 NUEVO
           sc.created_by,
           sc.created_at,
           sc.updated_by,
@@ -269,6 +270,7 @@ router.get(
         JOIN unit  u ON u.id = sc.unit_id
         LEFT JOIN \`group\` g2 ON g2.id = sc.dest_group_id  
         LEFT JOIN unit   u2 ON u2.id = sc.dest_unit_id
+        LEFT JOIN projection_subperiods s ON s.id = sc.subperiod_id   -- 👈 NUEVO
         ${whereSql}
         ORDER BY a.code, sc.start_date
         `,
@@ -424,7 +426,7 @@ router.post(
 
 
 // ================== PUT /service-commissions/:id ==================
-// Editar fechas, destino, etc. (sin cambiar status)
+// Editar fechas, destino, subvigencia, etc. (sin cambiar status)
 router.put(
   '/:id',
   requireAuth,
@@ -433,99 +435,203 @@ router.put(
     const id = Number(req.params.id)
     if (!id) return res.status(400).json({ error: 'ID inválido' })
 
-    const {
+    let {
       start_date,
       end_date,
       state,
       municipalityId = null,
       destGroupId = null,
-      destUnitId = null
+      destUnitId = null,
+      subperiodId = null   // 👈 subvigencia opcional
     } = req.body || {}
 
-    if (!start_date || !end_date) {
-      return res.status(422).json({ error: 'start_date y end_date son requeridos' })
-    }
-
-    const d1 = toDate(start_date)
-    const d2 = toDate(end_date)
-    if (!d1 || !d2 || d2 < d1) {
-      return res.status(422).json({ error: 'Rango de fechas inválido' })
-    }
-
     try {
-      // Tomar registro actual (incluyendo vigencia)
+      // 1) Traer registro actual para conocer:
+      //    - agente
+      //    - rango original
+      //    - rest_plan_id asociado
       const [[current]] = await pool.query(
-        'SELECT agent_id AS agentId, vigencia_id AS vigenciaId FROM service_commissions WHERE id=? LIMIT 1',
+        `
+        SELECT
+          sc.agent_id AS agentId,
+          DATE_FORMAT(sc.start_date,'%Y-%m-%d') AS origStart,
+          DATE_FORMAT(sc.end_date  ,'%Y-%m-%d') AS origEnd,
+          sc.rest_plan_id AS restPlanId
+        FROM service_commissions sc
+        WHERE sc.id = ?
+        LIMIT 1
+        `,
         [id]
       )
+
       if (!current) {
         return res.status(404).json({ error: 'Comisión no encontrada' })
       }
 
-      const agentId = current.agentId
-      const vigenciaId = current.vigenciaId
+      const agentId   = current.agentId
+      const origStart = toDate(current.origStart)
+      const origEnd   = toDate(current.origEnd)
 
-      // Validar contra vigencia (si existe)
-      if (vigenciaId) {
-        const [[period]] = await pool.query(
+      // 2) Determinar el rango "solicitado": viene de subvigencia o del body
+      let reqStart, reqEnd
+
+      if (subperiodId) {
+        const idSub = Number(subperiodId)
+        if (!idSub) {
+          return res.status(422).json({ error: 'subperiodId inválido' })
+        }
+
+        const [[sp]] = await pool.query(
+          `
+          SELECT
+            s.id,
+            DATE_FORMAT(s.from_date,'%Y-%m-%d') AS fromYmd,
+            DATE_FORMAT(s.to_date  ,'%Y-%m-%d') AS toYmd
+          FROM projection_subperiods s
+          WHERE s.id = ?
+          LIMIT 1
+          `,
+          [idSub]
+        )
+
+        if (!sp) {
+          return res.status(404).json({ error: 'Subvigencia no encontrada' })
+        }
+
+        reqStart = toDate(sp.fromYmd)
+        reqEnd   = toDate(sp.toYmd)
+      } else {
+        if (!start_date || !end_date) {
+          return res.status(422).json({ error: 'start_date y end_date son requeridos' })
+        }
+        reqStart = toDate(start_date)
+        reqEnd   = toDate(end_date)
+      }
+
+      if (!reqStart || !reqEnd || reqEnd < reqStart) {
+        return res.status(422).json({ error: 'Rango de fechas inválido' })
+      }
+
+      // 3) Construir rango PERMITIDO (original comisión + proyección si existe)
+      if (!origStart || !origEnd || origEnd < origStart) {
+        return res.status(500).json({ error: 'Rango original de la comisión inválido' })
+      }
+
+      let allowedMin = origStart
+      let allowedMax = origEnd
+
+      // Si la comisión está amarrada a un rest_plan, respetar también ese rango
+      if (current.restPlanId) {
+        const [[rp]] = await pool.query(
           `
           SELECT
             id,
-            DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
-            DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
-          FROM projection_periods
-          WHERE id=? LIMIT 1
+            state,
+            DATE_FORMAT(start_date,'%Y-%m-%d') AS rpStart,
+            DATE_FORMAT(end_date  ,'%Y-%m-%d') AS rpEnd
+          FROM rest_plans
+          WHERE id = ?
+          LIMIT 1
           `,
-          [vigenciaId]
+          [current.restPlanId]
         )
-        if (!period) {
-          return res.status(404).json({ error: 'Vigencia asociada no encontrada' })
+
+        if (!rp || String(rp.state || '').toUpperCase() !== 'COMISIÓN DEL SERVICIO') {
+          return res.status(422).json({
+            error: 'La proyección asociada a esta comisión ya no es válida o no es de COMISIÓN DEL SERVICIO.'
+          })
         }
 
-        const v1 = toDate(period.fromYmd)
-        const v2 = toDate(period.toYmd)
-        if (!v1 || !v2 || d1 < v1 || d2 > v2) {
-          return res.status(422).json({ error: 'El nuevo rango debe estar dentro de la vigencia asociada' })
+        const rpStart = toDate(rp.rpStart)
+        const rpEnd   = toDate(rp.rpEnd)
+
+        if (!rpStart || !rpEnd || rpEnd < rpStart) {
+          return res.status(500).json({ error: 'Rango de la proyección asociado es inválido' })
+        }
+
+        // El rango permitido es la intersección entre:
+        //  - rango original de la comisión
+        //  - rango de la proyección rest_plans
+        if (rpStart > allowedMin) allowedMin = rpStart
+        if (rpEnd   < allowedMax) allowedMax = rpEnd
+      } else {
+        // Fallback: asegurarnos al menos de que haya ALGUNA proyección que cubra algo
+        const [rows] = await pool.query(
+          `
+          SELECT
+            DATE_FORMAT(start_date,'%Y-%m-%d') AS rpStart,
+            DATE_FORMAT(end_date  ,'%Y-%m-%d') AS rpEnd
+          FROM rest_plans
+          WHERE agent_id = ?
+            AND state = 'COMISIÓN DEL SERVICIO'
+            AND NOT (end_date < ? OR start_date > ?)
+          LIMIT 1
+          `,
+          [agentId, current.origStart, current.origEnd]
+        )
+
+        if (rows.length) {
+          const rpStart = toDate(rows[0].rpStart)
+          const rpEnd   = toDate(rows[0].rpEnd)
+          if (rpStart && rpEnd && rpEnd >= rpStart) {
+            if (rpStart > allowedMin) allowedMin = rpStart
+            if (rpEnd   < allowedMax) allowedMax = rpEnd
+          }
         }
       }
 
-      // Validar contra proyección (COMISIÓN DEL SERVICIO)
-      const params = [agentId, start_date, end_date]
-      let sql = `
-        SELECT id
-        FROM rest_plans
-        WHERE agent_id = ?
-          AND state = 'COMISIÓN DEL SERVICIO'
-          AND NOT (end_date < ? OR start_date > ?)
-      `
-      if (vigenciaId) {
-        sql += ' AND vigencia_id = ?'
-        params.push(vigenciaId)
-      }
-      sql += ' LIMIT 1'
-
-      const [rows] = await pool.query(sql, params)
-
-      if (!rows.length) {
+      if (allowedMax < allowedMin) {
+        // Teóricamente no debería pasar si datos están coherentes
         return res.status(422).json({
-          error: 'El nuevo rango no está cubierto por la proyección de COMISIÓN DEL SERVICIO en la vigencia asociada'
+          error: 'No hay días válidos de COMISIÓN DEL SERVICIO para esta comisión.'
         })
       }
 
+      // 4️⃣ Ajustar automáticamente el rango solicitado al rango permitido
+      let finalStart = reqStart
+      let finalEnd   = reqEnd
+
+      if (finalStart < allowedMin) finalStart = allowedMin
+      if (finalEnd   > allowedMax) finalEnd   = allowedMax
+
+      if (finalEnd < finalStart) {
+        return res.status(422).json({
+          error: 'El rango solicitado no coincide con días en COMISIÓN DEL SERVICIO dentro de la vigencia.'
+        })
+      }
+
+      // 5) Formatear fechas finales a YYYY-MM-DD
+      const pad = n => String(n).padStart(2, '0')
+      const fmt = d =>
+        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+      const finalStartStr = fmt(finalStart)
+      const finalEndStr   = fmt(finalEnd)
+
+      // 6) Actualizar comisión
       await pool.query(
         `
         UPDATE service_commissions
-        SET start_date = ?, end_date = ?, state = ?, municipality_id = ?,
-            dest_group_id = ?, dest_unit_id = ?, updated_by = ?, updated_at = NOW()
+        SET
+          start_date      = ?,
+          end_date        = ?,
+          state           = ?,
+          municipality_id = ?,
+          dest_group_id   = ?,
+          dest_unit_id    = ?,
+          subperiod_id    = ?,   -- guardamos la subvigencia si aplica
+          updated_by      = ?,
+          updated_at      = NOW()
         WHERE id = ?
         `,
         [
-          start_date,
-          end_date,
+          finalStartStr,
+          finalEndStr,
           state || 'COMISIÓN DEL SERVICIO',
           municipalityId || null,
           destGroupId || null,
           destUnitId || null,
+          subperiodId ? Number(subperiodId) : null,
           req.user.uid ?? null,
           id
         ]
@@ -536,17 +642,30 @@ router.put(
           req,
           userId: req.user.uid,
           action: Actions.SERVICE_COMMISSION_UPDATE ?? 'SERVICE_COMMISSION_UPDATE',
-          details: { id, start_date, end_date, state }
+          details: {
+            id,
+            requested_start: start_date,
+            requested_end: end_date,
+            final_start: finalStartStr,
+            final_end: finalEndStr,
+            state,
+            subperiodId: subperiodId || null
+          }
         })
       } catch {}
 
-      res.json({ ok: true })
+      res.json({
+        ok: true,
+        start_date: finalStartStr,
+        end_date: finalEndStr
+      })
     } catch (e) {
       console.error('[PUT /service-commissions/:id] error', e)
       res.status(500).json({ error: 'ServiceCommissionUpdateError', detail: e.message })
     }
   }
 )
+
 
 router.delete(
   '/:id',
@@ -578,6 +697,7 @@ router.delete(
     }
   }
 )
+
 
 // ================== PATCH /service-commissions/:id/status ==================
 router.patch(

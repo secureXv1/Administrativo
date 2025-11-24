@@ -1,18 +1,20 @@
 <template>
-  <div class="min-h-screen bg-slate-50">
-    <!-- Topbar -->
-    <header class="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-slate-200">
+  <div class="max-w-6xl mx-auto space-y-6">
+    <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
       <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="h-9 w-9 rounded-xl bg-brand-600 flex items-center justify-center text-white font-bold">U</div>
-          <div class="text-slate-900 font-semibold">Unidades</div>
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">C</div>
+          <div>
+            <h2 class="font-semibold text-slate-900">Unidades</h2>
+            <p class="text-slate-500 text-xs">Gestión de unidades.</p>
+          </div>
         </div>
         <div class="text-sm text-slate-600">
           Rol: <b>{{ me?.role || '—' }}</b>
         </div>
       </div>
-    </header>
-
+    </div>
     <main class="max-w-6xl mx-auto py-6 px-4 space-y-6">
       <!-- Encabezado + filtro por grupo -->
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

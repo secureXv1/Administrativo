@@ -180,6 +180,127 @@ router.get(
   }
 )
 
+// Helpers que ya tienes:
+ // toDate, formatYMD...
+
+router.post(
+  '/subperiods',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos'),
+  async (req, res) => {
+    try {
+      const { periodId, name, from, to } = req.body || {}
+
+      const idP = Number(periodId)
+      const nameClean = String(name || '').trim()
+
+      if (!idP || !nameClean || !from || !to) {
+        return res.status(422).json({
+          error: 'periodId, name, from y to son requeridos para crear una subvigencia'
+        })
+      }
+
+      const d1 = toDate(from)
+      const d2 = toDate(to)
+      if (!d1 || !d2 || d2 < d1) {
+        return res.status(422).json({ error: 'Rango de fechas inválido para la subvigencia' })
+      }
+
+      // Traer vigencia padre para validar que el rango cae dentro
+      const [[period]] = await pool.query(
+        `
+        SELECT
+          id,
+          DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
+          DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
+        FROM projection_periods
+        WHERE id=? LIMIT 1
+        `,
+        [idP]
+      )
+
+      if (!period) {
+        return res.status(404).json({ error: 'Vigencia no encontrada para la subvigencia' })
+      }
+
+      if (from < period.fromYmd || to > period.toYmd) {
+        return res.status(422).json({
+          error: `La subvigencia debe quedar dentro del rango de la vigencia (${period.fromYmd} → ${period.toYmd})`
+        })
+      }
+
+      const fromYMD = formatYMD(d1)
+      const toYMD   = formatYMD(d2)
+
+      const [result] = await pool.query(
+        `
+        INSERT INTO projection_subperiods
+          (period_id, name, from_date, to_date, created_by)
+        VALUES (?,?,?,?,?)
+        `,
+        [idP, nameClean, fromYMD, toYMD, req.user.uid ?? null]
+      )
+
+      const newId = result.insertId
+
+      try {
+        await logEvent({
+          req,
+          userId: req.user.uid,
+          action: Actions.REST_PLAN_SUBPERIOD_CREATE ?? 'REST_PLAN_SUBPERIOD_CREATE',
+          details: { id: newId, periodId: idP, name: nameClean, from: fromYMD, to: toYMD }
+        })
+      } catch {}
+
+      res.json({ ok: true, id: newId })
+    } catch (e) {
+      console.error('[POST /rest-planning/subperiods] error', e)
+      res.status(500).json({ error: 'SubperiodCreateError', detail: e.message })
+    }
+  }
+)
+router.get(
+  '/subperiods',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos'),
+  async (req, res) => {
+    try {
+      const { vigenciaId } = req.query
+      const where = []
+      const args = []
+
+      if (vigenciaId) {
+        where.push('period_id = ?')
+        args.push(Number(vigenciaId))
+      }
+
+      const whereSql = where.length ? ('WHERE ' + where.join(' AND ')) : ''
+
+      const [rows] = await pool.query(
+        `
+        SELECT
+          id,
+          period_id AS periodId,
+          name,
+          DATE_FORMAT(from_date,'%Y-%m-%d') AS from_date,
+          DATE_FORMAT(to_date  ,'%Y-%m-%d') AS to_date,
+          created_by,
+          created_at
+        FROM projection_subperiods
+        ${whereSql}
+        ORDER BY from_date ASC, id ASC
+        `,
+        args
+      )
+
+      res.json({ items: rows })
+    } catch (e) {
+      console.error('[GET /rest-planning/subperiods] error', e)
+      res.status(500).json({ error: 'SubperiodListError', detail: e.message })
+    }
+  }
+)
+
 // Valida que un usuario pueda tocar info de un agente
 async function validateAgentScope(req, agentId) {
   const role = String(req.user?.role || '').toLowerCase()
@@ -479,6 +600,17 @@ router.post(
       res.json({ ok: true, vigenciaId: usedVigenciaId || null })
     } catch (e) {
       await conn.rollback()
+
+      // Detectar error de clave foránea al intentar borrar rest_plans con service_commissions existentes
+      // ER_ROW_IS_REFERENCED_2 = 1451 → "Cannot delete or update a parent row..."
+      if (e && (e.code === 'ER_ROW_IS_REFERENCED_2' || e.errno === 1451)) {
+        return res.status(409).json({
+          error: 'Ya existe una vigencia de gastos aprobada para esta proyección',
+          detail: 'No se puede modificar la proyección porque tiene comisiones de servicio asociadas.'
+        })
+      }
+
+      console.error('[POST /rest-planning/bulk] error', e)
       const status = e?.status || 500
       const message = e?.message || e?.detail || 'Error al guardar proyección de descanso'
       return res.status(status).json({ error: message })

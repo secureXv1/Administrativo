@@ -1,145 +1,152 @@
 <template>
-  <div class="min-h-screen bg-slate-50">
-    <header class="sticky top-0 z-10 backdrop-blur bg-white/70 border-b border-slate-200">
+  <div class="max-w-6xl mx-auto space-y-6">
+    <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
       <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-        <h1 class="text-slate-900 font-semibold text-lg sm:text-2xl">Log de eventos</h1>
-        <div class="text-sm text-slate-600">Solo superadmin</div>
-      </div>
-    </header>
-
-    <main class="max-w-6xl mx-auto px-2 sm:px-4 py-6 space-y-4">
-      <!-- Filtros (mismo layout) -->
-      <div class="card">
-        <div class="card-body grid grid-cols-1 sm:grid-cols-6 gap-3">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">C</div>
           <div>
-            <label class="label">Desde</label>
-            <input type="date" v-model="filters.from" class="input" />
-          </div>
-          <div>
-            <label class="label">Hasta</label>
-            <input type="date" v-model="filters.to" class="input" />
-          </div>
-          <div>
-            <label class="label">Acción</label>
-            <select v-model="filters.action" class="input">
-              <option value="">Todas</option>
-              <option v-for="a in actions" :key="a" :value="a">{{ a }}</option>
-            </select>
-          </div>
-          <div>
-            <label class="label">Usuario</label>
-            <input type="text" v-model="filters.username" class="input" placeholder="Usuario a buscar" />
-          </div>
-
-          <div class="sm:col-span-6 flex gap-2">
-            <button class="btn-primary" @click="fetchData(1)">Aplicar filtros</button>
-            <button class="btn-ghost" @click="resetFilters">Limpiar</button>
+            <h2 class="font-semibold text-slate-900">Log de Eventos</h2>
+            <p class="text-slate-500 text-xs">Historial de eventos en el sistema.</p>
           </div>
         </div>
       </div>
-
-      <!-- Tabla -->
-      <div class="card">
-        <div class="card-body p-0 overflow-x-auto">
-          <table class="table w-full">
-            <thead>
-              <tr>
-                <th class="whitespace-nowrap">Fecha/Hora</th>
-                <th>Acción</th>
-                <th>Resumen</th>
-                <th>Usuario</th>
-                <th>IP</th>
-                <th class="whitespace-nowrap">User Agent</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-  <tr v-for="item in items" :key="item.id">
-    <td class="align-top text-slate-700">
-      {{ formatDate(item.created_at_ts ?? item.created_at) }}
-            </td>
-
-            <td class="align-top">
-            <span :class="['badge', actionStyle(item.action)]">
-                <span class="mr-1">{{ actionIcon(item.action) }}</span>
-                {{ mapAction(item.action).label }}
-            </span>
-            </td>
-
-            <td class="align-top">
-            <!-- Resumen principal -->
-            <div class="text-slate-900">{{ summarize(item) }}</div>
-
-            <!-- Pill con agente (si viene en details) -->
-            <div v-if="details(item)?.agentCode" class="mt-1">
-                <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200">
-                <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 10a4 4 0 100-8 4 4 0 000 8zm-7 8a7 7 0 1114 0H3z"/></svg>
-                Agente: {{ details(item).agentCode }}
-                <span v-if="details(item).agentCategory" class="opacity-70">· {{ details(item).agentCategory }}</span>
-                </span>
+    </div>
+    <div class="min-h-screen bg-slate-50">
+      <main class="max-w-6xl mx-auto px-2 sm:px-4 py-6 space-y-4">
+        <!-- Filtros (mismo layout) -->
+        <div class="card">
+          <div class="card-body grid grid-cols-1 sm:grid-cols-6 gap-3">
+            <div>
+              <label class="label">Desde</label>
+              <input type="date" v-model="filters.from" class="input" />
+            </div>
+            <div>
+              <label class="label">Hasta</label>
+              <input type="date" v-model="filters.to" class="input" />
+            </div>
+            <div>
+              <label class="label">Acción</label>
+              <select v-model="filters.action" class="input">
+                <option value="">Todas</option>
+                <option v-for="a in actions" :key="a" :value="a">{{ a }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="label">Usuario</label>
+              <input type="text" v-model="filters.username" class="input" placeholder="Usuario a buscar" />
             </div>
 
-            <!-- Chips con contexto del reporte (opcionales) -->
-            <div
-                v-if="details(item)?.reportDate || details(item)?.groupId || details(item)?.unitId"
-                class="mt-1 flex flex-wrap gap-1.5"
-            >
-                <span v-if="details(item).reportDate" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
-                Fecha: {{ details(item).reportDate }}
-                </span>
-                <span v-if="details(item).groupId != null" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
-                Grupo: {{ details(item).groupId }}
-                </span>
-                <span v-if="details(item).unitId != null" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
-                Unidad: {{ details(item).unitId }}
-                </span>
+            <div class="sm:col-span-6 flex gap-2">
+              <button class="btn-primary" @click="fetchData(1)">Aplicar filtros</button>
+              <button class="btn-ghost" @click="resetFilters">Limpiar</button>
             </div>
-
-            <!-- Línea extra específica (tu lógica actual) -->
-            <div class="text-xs text-slate-500 mt-1" v-if="extraLine(item)">{{ extraLine(item) }}</div>
-            </td>
-
-            <td class="align-top">
-            <div class="text-slate-900">{{ item.username || '—' }}</div>
-            <div class="text-xs text-slate-500">Rol: {{ item.userRole || '—' }}</div>
-            </td>
-
-            <td class="align-top">{{ item.ip || '—' }}</td>
-            <td class="align-top truncate max-w-[220px]">{{ item.user_agent || '—' }}</td>
-
-            <td class="align-top text-right">
-            <button class="btn-ghost" @click="openDetails(item)">Ver</button>
-            </td>
-        </tr>
-
-        <tr v-if="!loading && !items.length">
-            <td colspan="7" class="text-center py-6 text-slate-500">Sin resultados</td>
-        </tr>
-</tbody>
-
-          </table>
-        </div>
-
-        <!-- Paginación -->
-        <div class="p-3 flex items-center justify-between text-sm text-slate-600">
-          <div>Total: <b>{{ total }}</b></div>
-          <div class="flex items-center gap-2">
-            <button class="btn-ghost" :disabled="page<=1" @click="fetchData(page-1)">«</button>
-            <div>Página <b>{{ page }}</b></div>
-            <button class="btn-ghost" :disabled="page*pageSize>=total" @click="fetchData(page+1)">»</button>
           </div>
         </div>
-      </div>
-    </main>
 
-    <!-- Modal detalles -->
-    <div v-if="detailsItem" class="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
-      <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full p-4">
-        <div class="flex items-center justify-between mb-2">
-          <div class="font-semibold">Detalles ({{ mapAction(detailsItem.action).label }})</div>
-          <button class="btn-ghost" @click="detailsItem=null">Cerrar</button>
+        <!-- Tabla -->
+        <div class="card">
+          <div class="card-body p-0 overflow-x-auto">
+            <table class="table w-full">
+              <thead>
+                <tr>
+                  <th class="whitespace-nowrap">Fecha/Hora</th>
+                  <th>Acción</th>
+                  <th>Resumen</th>
+                  <th>Usuario</th>
+                  <th>IP</th>
+                  <th class="whitespace-nowrap">User Agent</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+    <tr v-for="item in items" :key="item.id">
+      <td class="align-top text-slate-700">
+        {{ formatDate(item.created_at_ts ?? item.created_at) }}
+              </td>
+
+              <td class="align-top">
+              <span :class="['badge', actionStyle(item.action)]">
+                  <span class="mr-1">{{ actionIcon(item.action) }}</span>
+                  {{ mapAction(item.action).label }}
+              </span>
+              </td>
+
+              <td class="align-top">
+              <!-- Resumen principal -->
+              <div class="text-slate-900">{{ summarize(item) }}</div>
+
+              <!-- Pill con agente (si viene en details) -->
+              <div v-if="details(item)?.agentCode" class="mt-1">
+                  <span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+                  <svg class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 10a4 4 0 100-8 4 4 0 000 8zm-7 8a7 7 0 1114 0H3z"/></svg>
+                  Agente: {{ details(item).agentCode }}
+                  <span v-if="details(item).agentCategory" class="opacity-70">· {{ details(item).agentCategory }}</span>
+                  </span>
+              </div>
+
+              <!-- Chips con contexto del reporte (opcionales) -->
+              <div
+                  v-if="details(item)?.reportDate || details(item)?.groupId || details(item)?.unitId"
+                  class="mt-1 flex flex-wrap gap-1.5"
+              >
+                  <span v-if="details(item).reportDate" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+                  Fecha: {{ details(item).reportDate }}
+                  </span>
+                  <span v-if="details(item).groupId != null" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+                  Grupo: {{ details(item).groupId }}
+                  </span>
+                  <span v-if="details(item).unitId != null" class="inline-flex text-[11px] px-2 py-0.5 rounded-full bg-slate-50 text-slate-600 ring-1 ring-slate-200">
+                  Unidad: {{ details(item).unitId }}
+                  </span>
+              </div>
+
+              <!-- Línea extra específica (tu lógica actual) -->
+              <div class="text-xs text-slate-500 mt-1" v-if="extraLine(item)">{{ extraLine(item) }}</div>
+              </td>
+
+              <td class="align-top">
+              <div class="text-slate-900">{{ item.username || '—' }}</div>
+              <div class="text-xs text-slate-500">Rol: {{ item.userRole || '—' }}</div>
+              </td>
+
+              <td class="align-top">{{ item.ip || '—' }}</td>
+              <td class="align-top truncate max-w-[220px]">{{ item.user_agent || '—' }}</td>
+
+              <td class="align-top text-right">
+              <button class="btn-ghost" @click="openDetails(item)">Ver</button>
+              </td>
+          </tr>
+
+          <tr v-if="!loading && !items.length">
+              <td colspan="7" class="text-center py-6 text-slate-500">Sin resultados</td>
+          </tr>
+  </tbody>
+
+            </table>
+          </div>
+
+          <!-- Paginación -->
+          <div class="p-3 flex items-center justify-between text-sm text-slate-600">
+            <div>Total: <b>{{ total }}</b></div>
+            <div class="flex items-center gap-2">
+              <button class="btn-ghost" :disabled="page<=1" @click="fetchData(page-1)">«</button>
+              <div>Página <b>{{ page }}</b></div>
+              <button class="btn-ghost" :disabled="page*pageSize>=total" @click="fetchData(page+1)">»</button>
+            </div>
+          </div>
         </div>
-        <pre class="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-[60vh]">{{ pretty(details(detailsItem)) }}</pre>
+      </main>
+
+      <!-- Modal detalles -->
+      <div v-if="detailsItem" class="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="font-semibold">Detalles ({{ mapAction(detailsItem.action).label }})</div>
+            <button class="btn-ghost" @click="detailsItem=null">Cerrar</button>
+          </div>
+          <pre class="text-xs bg-slate-50 rounded p-3 overflow-auto max-h-[60vh]">{{ pretty(details(detailsItem)) }}</pre>
+        </div>
       </div>
     </div>
   </div>

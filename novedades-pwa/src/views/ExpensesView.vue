@@ -7,7 +7,7 @@
           <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">G</div>
           <div>
             <h2 class="font-semibold text-slate-900">Gastos — Proyección de comisiones del servicio</h2>
-            <p class="text-slate-500 text-xs">Selecciona una <strong>vigencia</strong> (ej. DIC25), consulta qué funcionarios
+            <p class="text-slate-500 text-xs">Selecciona una <strong>vigencia</strong>, consulta qué funcionarios
           tienen proyección de <strong>COMISIÓN DEL SERVICIO</strong> y valida las
           comisiones que se certificarán en gastos.</p>
           </div>
@@ -314,17 +314,13 @@ async function fetchPeriods () {
 ========================== */
 
 function buildRows (items, periodFrom, periodTo, commissions = []) {
-  // Agrupar comisiones reales por agente+rango para marcar "validated"
-  const commByAgent = new Map()
+  // 1) Comisiones reales por rest_plan_id
+  const commByPlanId = new Set()
   for (const c of commissions) {
-    const agentId = c.agentId || c.agent_id
-    if (!agentId) continue
-    const arr = commByAgent.get(agentId) || []
-    arr.push({
-      start: String(c.start_date).slice(0, 10),
-      end:   String(c.end_date).slice(0, 10)
-    })
-    commByAgent.set(agentId, arr)
+    const planId = c.restPlanId || c.rest_plan_id
+    if (planId) {
+      commByPlanId.add(Number(planId))
+    }
   }
 
   const byAgent = new Map()
@@ -334,7 +330,7 @@ function buildRows (items, periodFrom, periodTo, commissions = []) {
     if (st !== COMMISSION_STATE.toUpperCase()) continue
 
     const segFrom = String(it.start_date || it.from || '').slice(0, 10)
-    const segTo = String(it.end_date || it.to || '').slice(0, 10)
+    const segTo   = String(it.end_date   || it.to   || '').slice(0, 10)
 
     const clipped = clipRange(segFrom, segTo, periodFrom, periodTo)
     if (!clipped) continue
@@ -352,28 +348,29 @@ function buildRows (items, periodFrom, periodTo, commissions = []) {
         it.agent_code ||
         '',
       nickname: it.nickname || it.agentNickname || it.agent_nickname || '',
-      // 👇 NUEVO: id de la fila de rest_plans
+
+      // 👇 IMPORTANTÍSIMO: id de la fila de rest_plans
       planId: it.id || it.restPlanId || it.rest_plan_id || null,
 
-      // grupo / unidad ORIGEN
+      // ORIGEN
       groupIdOrigin: it.agentGroupId || it.groupId || it.group_id || null,
-      unitIdOrigin: it.agentUnitId || it.unitId || it.unit_id || null,
-      unitName: it.unitName || it.unit_name || '',
-      // grupo / unidad DESTINO (proyectada)
-      destGroupId: it.destGroupId || it.dest_group_id || null,
+      unitIdOrigin:  it.agentUnitId  || it.unitId  || it.unit_id  || null,
+      unitName:      it.unitName     || it.unit_name || '',
+
+      // DESTINO
+      destGroupId:   it.destGroupId   || it.dest_group_id   || null,
       destGroupName: it.destGroupName || it.dest_group_name || '',
-      destUnitId: it.destUnitId || it.dest_unit_id || null,
-      destUnitName: it.destUnitName || it.dest_unit_name || '',
+      destUnitId:    it.destUnitId    || it.dest_unit_id    || null,
+      destUnitName:  it.destUnitName  || it.dest_unit_name  || '',
       municipalityId: it.municipalityId || it.municipality_id || null,
+
       start: clipped.from,
-      end: clipped.to,
-      days: clipped.days,
+      end:   clipped.to,
+      days:  clipped.days,
       validated: false
     }
 
     const current = byAgent.get(key)
-
-    // Nos quedamos con el segmento con MÁS días; en empate, el de inicio más temprano.
     if (!current) {
       byAgent.set(key, candidate)
     } else {
@@ -385,21 +382,24 @@ function buildRows (items, periodFrom, periodTo, commissions = []) {
     }
   }
 
-  let out = Array.from(byAgent.values()).sort((a, b) => {
-    // Orden por grupo DESTINO (nombre) y luego por código
+  // 2) Marcar como "validated" si hay una comisión ligada a ese rest_plan_id
+  const out = Array.from(byAgent.values())
+
+  for (const r of out) {
+    const pid = r.planId ? Number(r.planId) : null
+    r.validated = pid ? commByPlanId.has(pid) : false
+  }
+
+  // 3) Orden
+  out.sort((a, b) => {
     const gA = (a.destGroupName || '').localeCompare(b.destGroupName || '')
     if (gA !== 0) return gA
     return String(a.code || '').localeCompare(String(b.code || ''))
   })
 
-  // Marcar como "validated" si ya existe una comisión real con ese mismo rango
-  for (const r of out) {
-    const arr = commByAgent.get(r.agentId) || []
-    r.validated = arr.some(c => c.start === r.start && c.end === r.end)
-  }
-
   return out
 }
+
 
 // ==== Carga de catálogos ====
 async function loadGroups () {
@@ -475,26 +475,15 @@ async function loadExpenses () {
 
     // 4) Traer proyección y comisiones reales POR FECHA
     const [planningRes, commissionsRes] = await Promise.all([
-      http.get('/rest-planning', {
-        params: {
-          from,
-          to
-        }
-      }),
-      http.get('/service-commissions', {
-        params: {
-          from,
-          to
-          // si luego backend acepta vigenciaId, podrías agregar: vigenciaId: vigId
-        }
-      })
+      http.get('/rest-planning', { params: { from, to } }),
+      http.get('/service-commissions', { params: { from, to } })
     ])
 
     const items = Array.isArray(planningRes?.data?.items) ? planningRes.data.items : []
     const commissions = Array.isArray(commissionsRes?.data?.items) ? commissionsRes.data.items : []
 
-    // buildRows recorta por fechas (periodFrom / periodTo)
     rows.value = buildRows(items, from, to, commissions)
+
 
     // Reset filtros locales grupo/unidad
     filters.value.groupId = null
