@@ -1,93 +1,286 @@
 <template>
-  <div class="min-h-screen bg-slate-50">
-    <!-- Hero / encabezado -->
-    <div class="bg-gradient-to-r from-slate-800 to-slate-700">
-      <div class="max-w-6xl mx-auto px-4 py-6 flex items-center justify-between">
+  <div class="max-w-6xl mx-auto space-y-6">
+    <!-- HEADER estilo Expenses -->
+     <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">G</div>
+          <div>
+            <h2 class="font-semibold text-slate-900">Gastos — Comisiones de servicio</h2>
+            <p class="text-slate-500 text-xs">  Administra las comisiones de servicio validadas por
+          <strong>vigencia</strong></p>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="px-3 py-2 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm"
+          @click="openCreateModal"
+        >
+          Crear nueva vigencia
+        </button>
+      </div>
+    </div>
+    <!-- SECCIÓN 1: Vigencia + filtros (estilo tarjeta blanca) -->
+    <section class="bg-white rounded-2xl shadow border border-slate-200 p-4 space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 class="text-white text-2xl font-semibold">
-            Comisiones de servicio certificadas
-          </h1>
-          <p class="text-slate-300 text-sm mt-1">
-            Administra las comisiones de servicio validadas por vigencia (ej. DIC25), ajusta fechas
-            dentro de la vigencia y cambia su estado.
+          <h2 class="text-sm font-semibold text-slate-900">
+            Vigencia y filtros de comisiones
+          </h2>
+          <p class="text-xs text-slate-500">
+            Selecciona una vigencia y filtra por estado y unidad para ver las comisiones certificadas.
           </p>
         </div>
       </div>
-    </div>
 
-    <div class="max-w-[1500px] mx-auto px-4 -mt-6 pb-10">
-      <!-- Panel de vigencias + estado -->
-      <div class="bg-white rounded-2xl shadow border border-slate-200 p-4 mb-4 space-y-4">
-        <!-- Fila 1: seleccionar vigencia + estado -->
-        <div class="flex flex-wrap items-end justify-between gap-4">
-          <div class="flex-1 min-w-[220px]">
-            <label class="text-xs font-medium text-slate-700 mb-1 block">
-              Vigencia
-            </label>
-            <select
-              v-model="selectedVigenciaId"
-              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200 bg-white"
+      <div class="grid gap-3 md:grid-cols-[minmax(0,1.6fr),repeat(3,minmax(0,1fr))] items-end">
+        <!-- Vigencia -->
+        <div>
+          <label class="text-xs font-medium text-slate-700 mb-1 block">
+            Vigencia
+          </label>
+          <select
+            v-model="selectedVigenciaId"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200 bg-white"
+          >
+            <option value="">Selecciona una vigencia…</option>
+            <option
+              v-for="p in periods"
+              :key="p.id"
+              :value="String(p.id)"
             >
-              <option value="">Selecciona una vigencia…</option>
-              <option
-                v-for="p in periods"
-                :key="p.id"
-                :value="p.id"
-              >
-                {{ p.name }} — {{ p.from }} → {{ p.to }}
-              </option>
-            </select>
-            <p v-if="loadingPeriods" class="text-[11px] text-slate-400 mt-1">
-              Cargando vigencias…
-            </p>
-            <p v-else-if="currentPeriod" class="text-[11px] text-slate-500 mt-1">
-              Rango: <strong>{{ currentPeriod.from }}</strong> → <strong>{{ currentPeriod.to }}</strong>
-            </p>
-          </div>
-
-          <div class="flex items-end gap-3">
-            <div>
-              <label class="text-xs font-medium text-slate-700 mb-1 block">
-                Estado
-              </label>
-              <select
-                v-model="statusFilter"
-                class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
-              >
-                <option value="">Todos los estados</option>
-                <option value="DRAFT">Borrador</option>
-                <option value="APROBADA">Aprobadas</option>
-                <option value="ANULADA">Anuladas</option>
-              </select>
-            </div>
-
-            <button
-              class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-800 hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed"
-              @click="loadCommissions"
-              :disabled="loadingCommissions || !selectedVigenciaId"
-            >
-              {{ loadingCommissions ? 'Cargando…' : 'Actualizar' }}
-            </button>
-          </div>
+              {{ p.name }} — {{ p.from }} → {{ p.to }}
+            </option>
+          </select>
+          <p v-if="loadingPeriods" class="text-[11px] text-slate-400 mt-1">
+            Cargando vigencias…
+          </p>
+          <p v-else-if="currentPeriod" class="text-[11px] text-slate-500 mt-1">
+            Rango: <strong>{{ currentPeriod.from }}</strong> → <strong>{{ currentPeriod.to }}</strong>
+          </p>
         </div>
 
-        <!-- Fila 2: crear nueva vigencia -->
-        <div class="border-t border-slate-200 pt-4">
-          <h3 class="text-xs font-semibold text-slate-700 mb-2">
-            Crear nueva vigencia
-          </h3>
-          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr),repeat(3,minmax(0,1fr))] items-end">
-            <div>
-              <label class="text-xs font-medium text-slate-700 mb-1 block">
-                Nombre (ej: DIC25)
-              </label>
-              <input
-                type="text"
-                v-model="newPeriod.name"
-                class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
-                placeholder="DIC25"
-              >
-            </div>
+        <!-- Filtro unidad -->
+        <div>
+          <label class="text-xs font-medium text-slate-700 mb-1 block">
+            Unidad
+          </label>
+          <select
+            v-model="unitFilter"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200 bg-white"
+            :disabled="!units.length"
+          >
+            <option :value="null">Todas las unidades</option>
+            <option
+              v-for="u in units"
+              :key="u.id"
+              :value="u.id"
+            >
+              {{ u.short || u.name || ('Unidad ' + u.id) }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Filtro estado -->
+        <div>
+          <label class="text-xs font-medium text-slate-700 mb-1 block">
+            Estado
+          </label>
+          <select
+            v-model="statusFilter"
+            class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
+          >
+            <option value="">Todos los estados</option>
+            <option value="DRAFT">Borrador</option>
+            <option value="APROBADA">Aprobadas</option>
+            <option value="ANULADA">Anuladas</option>
+          </select>
+        </div>
+
+        <!-- Botón actualizar -->
+        <div class="flex justify-end">
+          <button
+            class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-slate-800 hover:bg-slate-900 disabled:opacity-60 disabled:cursor-not-allowed"
+            @click="loadCommissions"
+            :disabled="loadingCommissions || !selectedVigenciaId"
+          >
+            {{ loadingCommissions ? 'Cargando…' : 'Actualizar' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 2: Tabla comisiones (misma tarjeta que Expenses) -->
+    <section class="bg-white rounded-2xl shadow border border-slate-200 p-4">
+      <header class="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div>
+          <h2 class="text-slate-900 font-semibold text-sm">
+            Comisiones certificadas (gastos)
+          </h2>
+          <p class="text-xs text-slate-500">
+            Rango real que se reconocerá como comisión de servicio dentro de la vigencia seleccionada.
+            Puedes ajustar fechas (subvigencias) y cambiar su estado.
+          </p>
+        </div>
+        <div class="text-[11px] text-slate-500" v-if="currentPeriod">
+          {{ filteredCommissions.length }} comisión(es) en {{ currentPeriod.name }}
+        </div>
+      </header>
+
+      <div v-if="!selectedVigenciaId" class="text-sm text-slate-500 py-8 text-center">
+        Selecciona una vigencia para ver las comisiones certificadas.
+      </div>
+      <div v-else-if="loadingCommissions" class="text-sm text-slate-500 py-8 text-center">
+        Cargando comisiones…
+      </div>
+      <div v-else-if="!filteredCommissions.length" class="text-sm text-slate-500 py-8 text-center">
+        No hay comisiones registradas para la vigencia seleccionada y los filtros aplicados.
+      </div>
+      <div v-else class="overflow-auto rounded-xl border border-slate-200">
+        <table class="min-w-full text-xs">
+          <thead class="bg-slate-900 text-white">
+            <tr>
+              <th class="text-left px-3 py-2 font-semibold">Agente</th>
+              <th class="text-left px-3 py-2 font-semibold">Rango real</th>
+              <th class="text-left px-3 py-2 font-semibold">Destino</th>
+              <th class="text-left px-3 py-2 font-semibold">Días</th>
+              <th class="text-left px-3 py-2 font-semibold">Estado</th>
+              <th class="text-left px-3 py-2 font-semibold"></th>
+            </tr>
+          </thead>
+          <tbody class="bg-white">
+            <tr
+              v-for="c in filteredCommissions"
+              :key="c.id"
+              class="border-t border-slate-100 hover:bg-slate-50"
+            >
+              <td class="px-3 py-2 align-top">
+                <div class="font-semibold text-slate-900">
+                  {{ c.agentCode }}
+                  <span class="text-[11px] text-slate-500">
+                    ({{ displayCategory(c.agentCategory) }})
+                  </span>
+                </div>
+                <div v-if="c.agentNickname" class="text-[11px] text-slate-500">
+                  "{{ c.agentNickname }}"
+                </div>
+                <div class="text-[11px] text-slate-400">
+                  {{ c.unitName || '-' }}
+                </div>
+              </td>
+
+              <td class="px-3 py-2 align-top">
+                <div class="flex flex-col gap-1">
+                  <div class="flex items-center gap-1">
+                    <input
+                      type="date"
+                      v-model="c.start_date"
+                      class="w-28 rounded-md border border-slate-300 px-2 py-1 text-[11px] focus:ring-1 focus:ring-indigo-200"
+                    >
+                    <span class="text-[11px]">→</span>
+                    <input
+                      type="date"
+                      v-model="c.end_date"
+                      class="w-28 rounded-md border border-slate-300 px-2 py-1 text-[11px] focus:ring-1 focus:ring-indigo-200"
+                    >
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-3 py-2 text-[11px] align-top">
+                <div v-if="c.destGroupName || c.destUnitName">
+                  {{ c.destGroupName || 'Grupo' }} / {{ c.destUnitName || 'Unidad' }}
+                </div>
+                <div v-else class="text-slate-400">Sin destino explícito</div>
+              </td>
+
+              <td class="px-3 py-2 text-[11px] align-top">
+                {{ countDays(c.start_date, c.end_date) }}
+              </td>
+
+              <td class="px-3 py-2 align-top">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                  :class="statusPillClass(c.status)"
+                >
+                  {{ c.status }}
+                </span>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  <button
+                    v-for="st in ['DRAFT','APROBADA','ANULADA']"
+                    :key="st"
+                    type="button"
+                    class="px-2 py-0.5 rounded-md border text-[10px]"
+                    :class="c.status === st
+                      ? 'bg-slate-800 text-white border-slate-800'
+                      : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'"
+                    @click="changeStatus(c, st)"
+                  >
+                    {{ st }}
+                  </button>
+                </div>
+              </td>
+
+              <td class="px-3 py-2 text-right align-top">
+                <button
+                  class="px-3 py-1 rounded-lg text-[11px] font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 mr-1"
+                  @click="saveRow(c)"
+                >
+                  Guardar
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p
+        v-if="msg"
+        class="mt-3 text-xs"
+        :class="msgOk ? 'text-emerald-700' : 'text-rose-700'"
+      >
+        {{ msg }}
+      </p>
+    </section>
+
+    <!-- Modal crear vigencia -->
+    <div
+      v-if="showCreateModal"
+      class="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40"
+    >
+      <div class="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-5">
+        <header class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-900">
+              Crear nueva vigencia
+            </h3>
+            <p class="text-xs text-slate-500">
+              Asigna un nombre y un rango de fechas para la vigencia.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="text-slate-400 hover:text-slate-600 text-lg leading-none"
+            @click="closeCreateModal"
+          >
+            ×
+          </button>
+        </header>
+
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs font-medium text-slate-700 mb-1 block">
+              Nombre (ej: DIC25)
+            </label>
+            <input
+              type="text"
+              v-model="newPeriod.name"
+              class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
+              placeholder="DIC25"
+            >
+          </div>
+          <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="text-xs font-medium text-slate-700 mb-1 block">
                 Desde
@@ -108,142 +301,27 @@
                 class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-indigo-200"
               >
             </div>
-            <div class="flex justify-end">
-              <button
-                class="px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                @click="createVigencia"
-                :disabled="creatingPeriod"
-              >
-                {{ creatingPeriod ? 'Creando…' : 'Crear vigencia' }}
-              </button>
-            </div>
           </div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            class="px-3 py-2 rounded-lg text-xs font-medium border border-slate-300 text-slate-700 hover:bg-slate-50"
+            @click="closeCreateModal"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-not-allowed"
+            @click="createVigencia"
+            :disabled="creatingPeriod"
+          >
+            {{ creatingPeriod ? 'Creando…' : 'Crear vigencia' }}
+          </button>
         </div>
       </div>
-
-      <!-- Comisiones reales (editable por gastos) -->
-      <section class="bg-white rounded-2xl shadow border border-slate-200">
-        <header class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
-          <div>
-            <h2 class="text-slate-900 font-semibold text-sm">
-              Comisiones certificadas (gastos)
-            </h2>
-            <p class="text-xs text-slate-500">
-              Rango real que se reconocerá como comisión de servicio dentro de la vigencia seleccionada.
-              Puedes ajustar fechas (subvigencias) siempre que se mantengan dentro de la vigencia y la proyección,
-              y cambiar su estado.
-            </p>
-          </div>
-        </header>
-
-        <div class="p-3">
-          <div v-if="!selectedVigenciaId" class="text-sm text-slate-500">
-            Selecciona una vigencia para ver las comisiones certificadas.
-          </div>
-          <div v-else-if="loadingCommissions" class="text-sm text-slate-500">
-            Cargando comisiones…
-          </div>
-          <div v-else-if="!commissions.length" class="text-sm text-slate-500">
-            No hay comisiones registradas para la vigencia seleccionada y el estado filtrado.
-          </div>
-          <div v-else class="overflow-auto rounded-xl border border-slate-200">
-            <table class="min-w-full text-xs">
-              <thead class="bg-slate-900 text-white">
-                <tr>
-                  <th class="text-left px-3 py-2 font-semibold">Agente</th>
-                  <th class="text-left px-3 py-2 font-semibold">Rango real</th>
-                  <th class="text-left px-3 py-2 font-semibold">Destino</th>
-                  <th class="text-left px-3 py-2 font-semibold">Días</th>
-                  <th class="text-left px-3 py-2 font-semibold">Estado</th>
-                  <th class="text-left px-3 py-2 font-semibold"></th>
-                </tr>
-              </thead>
-              <tbody class="bg-white">
-                <tr
-                  v-for="c in commissions"
-                  :key="c.id"
-                  class="border-t border-slate-100"
-                >
-                  <td class="px-3 py-2">
-                    <div class="font-semibold text-slate-900">
-                      {{ c.agentCode }}
-                      <span class="text-[11px] text-slate-500">
-                        ({{ displayCategory(c.agentCategory) }})
-                      </span>
-                    </div>
-                    <div v-if="c.agentNickname" class="text-[11px] text-slate-500">
-                      "{{ c.agentNickname }}"
-                    </div>
-                    <div class="text-[11px] text-slate-400">
-                      {{ c.unitName || '-' }}
-                    </div>
-                  </td>
-                  <td class="px-3 py-2">
-                    <div class="flex flex-col gap-1">
-                      <div class="flex items-center gap-1">
-                        <input
-                          type="date"
-                          v-model="c.start_date"
-                          class="w-28 rounded-md border border-slate-300 px-2 py-1 text-[11px] focus:ring-1 focus:ring-indigo-200"
-                        >
-                        <span class="text-[11px]">→</span>
-                        <input
-                          type="date"
-                          v-model="c.end_date"
-                          class="w-28 rounded-md border border-slate-300 px-2 py-1 text-[11px] focus:ring-1 focus:ring-indigo-200"
-                        >
-                      </div>
-                    </div>
-                  </td>
-                  <td class="px-3 py-2 text-[11px]">
-                    <div v-if="c.destGroupName || c.destUnitName">
-                      {{ c.destGroupName || 'Grupo' }} / {{ c.destUnitName || 'Unidad' }}
-                    </div>
-                    <div v-else class="text-slate-400">Sin destino explícito</div>
-                  </td>
-                  <td class="px-3 py-2 text-[11px]">
-                    {{ countDays(c.start_date, c.end_date) }}
-                  </td>
-                  <td class="px-3 py-2">
-                    <span
-                      class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
-                      :class="statusPillClass(c.status)"
-                    >
-                      {{ c.status }}
-                    </span>
-                    <div class="mt-1 flex flex-wrap gap-1">
-                      <button
-                        v-for="st in ['DRAFT','APROBADA','ANULADA']"
-                        :key="st"
-                        type="button"
-                        class="px-2 py-0.5 rounded-md border text-[10px]"
-                        :class="c.status === st
-                          ? 'bg-slate-800 text-white border-slate-800'
-                          : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'"
-                        @click="changeStatus(c, st)"
-                      >
-                        {{ st }}
-                      </button>
-                    </div>
-                  </td>
-                  <td class="px-3 py-2 text-right">
-                    <button
-                      class="px-3 py-1 rounded-lg text-[11px] font-medium border border-slate-300 text-slate-700 hover:bg-slate-50 mr-1"
-                      @click="saveRow(c)"
-                    >
-                      Guardar
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div v-if="msg" class="px-4 pb-3 text-xs" :class="msgOk ? 'text-emerald-700' : 'text-rose-700'">
-          {{ msg }}
-        </div>
-      </section>
     </div>
   </div>
 </template>
@@ -256,6 +334,9 @@ const commissions = ref([])
 const loadingCommissions = ref(false)
 
 const statusFilter = ref('')
+const unitFilter = ref(null)
+const units = ref([])
+
 const msg = ref('')
 const msgOk = ref(false)
 
@@ -264,6 +345,8 @@ const periods = ref([])              // { id, name, from, to, created_at }
 const selectedVigenciaId = ref('')
 const loadingPeriods = ref(false)
 
+// Modal crear vigencia
+const showCreateModal = ref(false)
 const newPeriod = ref({
   name: '',
   from: '',
@@ -290,9 +373,25 @@ function statusPillClass (status) {
   return 'bg-slate-100 text-slate-800 border border-slate-200'
 }
 
-const currentPeriod = computed(() =>
-  periods.value.find(p => p.id === selectedVigenciaId.value) || null
-)
+const currentPeriod = computed(() => {
+  const id = selectedVigenciaId.value ? Number(selectedVigenciaId.value) : null
+  if (!id) return null
+  return periods.value.find(p => Number(p.id) === id) || null
+})
+
+const filteredCommissions = computed(() => {
+  let out = commissions.value || []
+
+  if (unitFilter.value) {
+    out = out.filter(c => Number(c.unitId || 0) === Number(unitFilter.value))
+  }
+
+  if (statusFilter.value) {
+    out = out.filter(c => c.status === statusFilter.value)
+  }
+
+  return out
+})
 
 async function fetchPeriods () {
   loadingPeriods.value = true
@@ -309,15 +408,26 @@ async function fetchPeriods () {
       created_at: p.created_at || null
     }))
 
-    // autoseleccionar la más reciente si no hay ninguna
     if (!selectedVigenciaId.value && periods.value.length) {
-      selectedVigenciaId.value = periods.value[0].id
+      selectedVigenciaId.value = String(periods.value[0].id)
     }
   } catch (e) {
     console.error('[fetchPeriods] error', e)
     periods.value = []
   } finally {
     loadingPeriods.value = false
+  }
+}
+
+async function loadUnits () {
+  try {
+    const { data } = await axios.get('/admin/units', {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+    units.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    console.error('[loadUnits] error', e)
+    units.value = []
   }
 }
 
@@ -399,6 +509,21 @@ async function changeStatus (c, newStatus) {
   }
 }
 
+// Modal helpers
+function openCreateModal () {
+  msg.value = ''
+  msgOk.value = false
+  showCreateModal.value = true
+}
+
+function closeCreateModal () {
+  if (creatingPeriod.value) return
+  showCreateModal.value = false
+  newPeriod.value.name = ''
+  newPeriod.value.from = ''
+  newPeriod.value.to = ''
+}
+
 // Crear nueva vigencia
 async function createVigencia () {
   msg.value = ''
@@ -432,17 +557,12 @@ async function createVigencia () {
 
     const newId = data?.id
     if (newId) {
-      // recargar lista de vigencias o inyectar la nueva
       await fetchPeriods()
-      selectedVigenciaId.value = newId
+      selectedVigenciaId.value = String(newId)
       await loadCommissions()
       msg.value = `Vigencia ${name} creada correctamente.`
       msgOk.value = true
-
-      // limpiar formulario
-      newPeriod.value.name = ''
-      newPeriod.value.from = ''
-      newPeriod.value.to = ''
+      closeCreateModal()
     } else {
       msg.value = 'No se pudo crear la vigencia.'
       msgOk.value = false
@@ -457,7 +577,10 @@ async function createVigencia () {
 }
 
 onMounted(async () => {
-  await fetchPeriods()
+  await Promise.all([
+    fetchPeriods(),
+    loadUnits()
+  ])
   if (selectedVigenciaId.value) {
     await loadCommissions()
   }

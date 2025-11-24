@@ -1,19 +1,19 @@
 <template>
   <div class="max-w-6xl mx-auto space-y-6">
-    <!-- Título -->
-    <header class="flex flex-wrap items-center justify-between gap-3">
-      <div>
-        <h1 class="text-xl font-semibold text-slate-900">
-          Gastos — Proyección de comisiones del servicio
-        </h1>
-        <p class="text-sm text-slate-500">
-          Selecciona una <strong>vigencia</strong> (ej. DIC25), consulta qué funcionarios
+    <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">G</div>
+          <div>
+            <h2 class="font-semibold text-slate-900">Gastos — Proyección de comisiones del servicio</h2>
+            <p class="text-slate-500 text-xs">Selecciona una <strong>vigencia</strong> (ej. DIC25), consulta qué funcionarios
           tienen proyección de <strong>COMISIÓN DEL SERVICIO</strong> y valida las
-          comisiones que se certificarán en gastos.
-        </p>
+          comisiones que se certificarán en gastos.</p>
+          </div>
+        </div>
       </div>
-    </header>
-
+    </div>
     <!-- SECCIÓN 1: seleccionar vigencia + consultar -->
     <section class="bg-white rounded-2xl shadow border border-slate-200 p-4 space-y-4">
       <div class="grid gap-3 md:grid-cols-[minmax(0,1.5fr),minmax(0,1fr)] items-end">

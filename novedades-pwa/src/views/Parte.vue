@@ -1,13 +1,15 @@
 <template>
-  <div class="min-h-screen bg-slate-50">
-    <!-- HERO -->
-    <div class="bg-gradient-to-r from-slate-800 to-slate-700">
-      <div class="max-w-6xl mx-auto px-4 py-6 flex flex-wrap md:flex-nowrap items-center justify-between gap-4">
-        <!-- Título -->
-        <div class="flex-shrink-0">
-          <h1 class="text-white text-2xl font-semibold">Parte</h1>
+  <div class="max-w-6xl mx-auto space-y-6">
+    <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">N</div>
+          <div>
+            <h2 class="font-semibold text-slate-900">Parte</h2>
+            <p class="text-slate-500 text-xs">Novedades del día</p>
+          </div>
         </div>
-
         <!-- Controles -->
         <div class="flex flex-wrap justify-end md:justify-normal items-center gap-3 w-full md:w-auto">
           <input
@@ -17,7 +19,7 @@
           />
 
           <!-- Ver SERVICIO -->
-          <label class="flex items-center gap-2 text-slate-200 text-sm">
+          <label class="flex items-center gap-2 text-slate-800 text-sm">
             <input
               type="checkbox"
               v-model="showServicio"
@@ -28,7 +30,7 @@
           </label>
 
           <!-- Ver AUSENTES -->
-          <label class="flex items-center gap-2 text-slate-200 text-sm">
+          <label class="flex items-center gap-2 text-slate-800 text-sm">
             <input
               type="checkbox"
               v-model="showOnlyNoCheck"
@@ -49,8 +51,7 @@
         </div>
       </div>
     </div>
-
-
+   
     <!-- FILTROS / KPIs -->
     <div class="max-w-6xl mx-auto px-4 py-4">
       <div v-if="isSuperLike" class="grid grid-cols-1 sm:grid-cols-3 gap-3">

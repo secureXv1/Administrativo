@@ -1,15 +1,18 @@
 <template>
-  <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
-    <!-- Encabezado -->
-    <div class="card-body flex items-center justify-between">
-        <h1 class="font-semibold text-slate-800">Listado de agentes</h1>
+  <div class="max-w-6xl mx-auto space-y-6">
+    <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <span v-if="msg" :class="msgClass" class="text-sm">{{ msg }}</span>
-          <button v-if="isSuperadmin" class="btn-primary" @click="openCreate">Nuevo agente</button>
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">F</div>
+          <div>
+            <h2 class="font-semibold text-slate-900">Listado de Funcionarios</h2>
+            <p class="text-slate-500 text-xs">FIltra por codigo, nicname, grupo, unidad...</p>
+          </div>
         </div>
+        <button v-if="isSuperadmin" class="btn-primary" @click="openCreate">Nuevo agente</button>
       </div>
-
-
+    </div>
     <!-- Filtros -->
     <div class="card">
       <div class="card-body">

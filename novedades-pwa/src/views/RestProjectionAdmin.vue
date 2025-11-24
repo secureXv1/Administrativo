@@ -1,18 +1,18 @@
 <template>
   <div class="max-w-6xl mx-auto space-y-6">
-    <!-- Título -->
-    <header class="flex flex-wrap items-center justify-between gap-2">
-      <div>
-        <h1 class="text-xl font-semibold text-slate-900">
-          Proyección general de descanso
-        </h1>
-        <p class="text-sm text-slate-500">
-          Vista para administrador, supervisión y líder de grupo (todas las unidades)
-        </p>
+    <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">F</div>
+          <div>
+            <h2 class="font-semibold text-slate-900">Proyección general de descanso</h2>
+            <p class="text-slate-500 text-xs">Vista para administrador, supervisión y líder de grupo (todas las unidades).</p>
+          </div>
+        </div>
       </div>
-    </header>
-
-    <!-- BLOQUE DE CONSULTA (SOLO FECHAS) -->
+    </div>
+   <!-- BLOQUE DE CONSULTA (SOLO FECHAS) -->
     <section class="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
       <div class="grid gap-4 md:grid-cols-2">
         <!-- Fecha desde -->

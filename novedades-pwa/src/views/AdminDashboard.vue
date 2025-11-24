@@ -1,5 +1,17 @@
 <template>
-<div class="space-y-4"> <!-- Este div es el "stack" vertical de tus tarjetas -->
+<div class="max-w-6xl mx-auto space-y-6">
+  <!-- HEADER -->
+    <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">N</div>
+          <div>
+            <h2 class="font-semibold text-slate-900">Reporte diario de novedades</h2>
+            <p class="text-slate-500 text-xs">Estado del cumplimiento actual de las novedades</p>
+          </div>
+        </div>
+      </div>
+    </div>
   <!-- Cumplimiento -->
   <div class="card" ref="complianceBox">
   <div class="card-body space-y-4">
@@ -11,7 +23,7 @@
             <span class="text-slate-400 font-normal text-sm ml-2">Grupos completos = todas sus unidades</span>
           </template>
         </h3>
-        <button class="btn-ghost ml-2" @click="reloadCompliance">Actualizar</button>
+       
       </div>
       <!-- KPI agentes sin unidad a la derecha -->
       <div
