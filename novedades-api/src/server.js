@@ -1133,7 +1133,16 @@ app.post('/my/agents/add', auth, requireRole('leader_unit'), async (req, res) =>
 
   // Caso A: sin grupo -> tomarlo a mi grupo/unidad
   if (!ag.groupId) {
-    await pool.query('UPDATE agent SET groupId=?, unitId=? WHERE id=?', [groupId, unitId, agentId]);
+    await pool.query(
+      'UPDATE agent SET groupId=?, unitId=? WHERE id=?',
+      [groupId, unitId, agentId]
+    );
+
+    // 🔁 Actualizar proyecciones de descanso a la nueva unidad
+    await pool.query(
+      'UPDATE rest_plans SET unit_id=? WHERE agent_id=?',
+      [unitId, agentId]
+    );
 
     // ▶️ Log de asignación (tomado desde “libre total”)
     try {
@@ -1158,7 +1167,16 @@ app.post('/my/agents/add', auth, requireRole('leader_unit'), async (req, res) =>
 
   // Caso B: mismo grupo y sin unidad -> solo set unitId
   if (ag.groupId === groupId) {
-    await pool.query('UPDATE agent SET unitId=? WHERE id=?', [unitId, agentId]);
+    await pool.query(
+      'UPDATE agent SET unitId=? WHERE id=?',
+      [unitId, agentId]
+    );
+
+    // 🔁 Actualizar proyecciones de descanso a la nueva unidad
+    await pool.query(
+      'UPDATE rest_plans SET unit_id=? WHERE agent_id=?',
+      [unitId, agentId]
+    );
 
     // ▶️ Log de asignación (misma organización, solo unidad)
     try {
@@ -1184,6 +1202,7 @@ app.post('/my/agents/add', auth, requireRole('leader_unit'), async (req, res) =>
   // Caso C: pertenece a otro grupo
   return res.status(409).json({ error: 'AgenteDeOtroGrupo', detail: 'El agente pertenece a otro grupo' });
 });
+
 
 // Crear agente (incluye unitId)
 app.post('/adminapi/agents', auth, requireRole('superadmin', 'supervision'), async (req, res) => {

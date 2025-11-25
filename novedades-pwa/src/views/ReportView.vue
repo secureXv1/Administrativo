@@ -95,7 +95,7 @@
                   list="free-agents-list"
                   v-model="agentSearch"
                   @input="onAgentSearchInput"
-                  placeholder="Buscar código o nickname (ej: O101 o &quot;NOM.APE&quot;)..."
+                  placeholder="Buscar código o nickname (ej: O101 o NOM.APE)..."
                   autocomplete="off"
                 />
 
