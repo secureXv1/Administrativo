@@ -385,10 +385,18 @@ function buildRows (items, periodFrom, periodTo, commissions = []) {
 
     let displayUnit = unitBase || '—'
 
-    // Si es GEO y tiene departamentos, agregamos paréntesis
-    if (unitBase && unitBase.toUpperCase().includes('GEO') && depts.length) {
+    // Palabras clave para las que queremos mostrar departamentos
+    const baseUpper = (unitBase || '').toUpperCase()
+    const isGeo  = baseUpper.includes('GEO')
+    const isUnco = baseUpper.includes('UNCO')
+
+    // Si es GEO o UNCO y tiene departamentos, agregamos paréntesis
+    if ((isGeo || isUnco) && depts.length) {
       displayUnit = `${unitBase} (${depts.join(', ')})`
     }
+
+candidate.displayUnit = displayUnit
+
 
     candidate.displayUnit = displayUnit
 

@@ -870,7 +870,7 @@
                     </div>  
 
                     <!-- SOLO si la unidad seleccionada es GEO -->
-                    <div v-if="isGeoDraft" class="grid gap-1">
+                    <div v-if="isDeptUnitDraft" class="grid gap-1">
                       <!-- 👇 Lista chuleable de departamentos (máx 3) -->
                       <div class="border border-indigo-200 rounded-lg bg-white max-h-32 overflow-y-auto">
                         <label
@@ -3027,8 +3027,8 @@ watch(
   }
 )
 
-const isGeoDraft = computed(() => {
-  // Usamos destUnitId si existe, si no, la unidad base del draft
+// GEO y UNCO pueden seleccionar departamentos
+const isDeptUnitDraft = computed(() => {
   const unitId =
     projDraft.value.destUnitId ??
     projDraft.value.unitId ??
@@ -3036,16 +3036,12 @@ const isGeoDraft = computed(() => {
 
   if (!unitId) return false
 
-  // Buscar la unidad en el catálogo
-  const u = Array.isArray(units.value)
-    ? units.value.find(x => Number(x.id) === Number(unitId))
-    : null
-
+  const u = units.value.find(x => Number(x.id) === Number(unitId))
   if (!u) return false
 
-  // Revisar si en el nombre aparece GEO
   const name = String(u.name || '').toUpperCase()
-  return name.includes('GEO')
+
+  return name.includes('GEO') || name.includes('UNCO')
 })
 
 </script>
