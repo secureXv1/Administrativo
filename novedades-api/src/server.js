@@ -13,6 +13,7 @@ import { requireSuperadmin } from './middlewares.js';
 import vehiclesRouter from './routes/vehiculos.js';
 import restPlanning from './routes/rest_planning.js';
 import serviceCommissionsRouter from './routes/service-commissions.js';
+import adminDeptsRouter from './routes/admin-depts.js'
 
 // === Helpers de cifrado robustos (no lanzan) ===
 import crypto from 'crypto';
@@ -132,6 +133,7 @@ async function main() {
   app.use('/vehicles', vehiclesRouter);
   app.use('/rest-planning', restPlanning) 
   app.use('/service-commissions', serviceCommissionsRouter)
+  app.use('/admin/depts', adminDeptsRouter)
 
   function isStrongPassword(pw) {
   // >=8, al menos 1 minúscula, 1 mayúscula, 1 dígito y 1 especial

@@ -868,6 +868,30 @@
                         </option>
                       </select>
                     </div>  
+
+                    <!-- SOLO si la unidad seleccionada es GEO -->
+                    <div v-if="isGeoDraft" class="grid gap-1">
+                      <!-- 👇 Lista chuleable de departamentos (máx 3) -->
+                      <div class="border border-indigo-200 rounded-lg bg-white max-h-32 overflow-y-auto">
+                        <label
+                          v-for="d in depts"
+                          :key="d"
+                          class="flex items-center gap-2 px-2 py-1 text-xs text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            :value="d"
+                            :checked="projDraft.depts.includes(d)"
+                            @change="toggleDept(d, $event.target.checked)"
+                          />
+                          <span>{{ d }}</span>
+                        </label>
+                      </div>
+                      <p class="mt-1 text-[10px] text-indigo-700">
+                        Puedes marcar hasta 3 departamentos (solo para unidad GEO).
+                      </p>
+                    </div>
                   </div>
                   <p
                     v-if="projDraftError"
@@ -939,6 +963,13 @@
                           <span v-if="seg.state === 'COMISIÓN DEL SERVICIO' && seg.destUnitId" class="text-[10px] opacity-80">
                             {{ unitById[seg.destUnitId]?.name || 'Unidad' }}
                           </span>
+                          <span
+                            v-if="seg.depts && seg.depts.length"
+                            class="text-[10px] opacity-80"
+                          >
+                            Deptos: {{ seg.depts.join(', ') }}
+                          </span>
+
 
                         </div>
 
@@ -1356,6 +1387,7 @@ const me = ref(null) // 👈 Para info usuario
 
 const groups = ref([])
 const units = ref([])
+const depts = ref([])
 
 const unitsByGroup = computed(() => {
   const map = {}
@@ -1450,6 +1482,21 @@ async function loadUnits () {
     headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
   })
   units.value = Array.isArray(data) ? data : []
+}
+
+async function loadDepts () {
+  try {
+    const { data } = await axios.get('/admin/depts', {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+    // backend devuelve { items: ["ANTIOQUIA", "ATLÁNTICO", ...] }
+    depts.value = Array.isArray(data?.items)
+      ? data.items   // ← YA ES UN ARREGLO DE STRINGS
+      : []
+  } catch (e) {
+    console.error('[loadDepts] error', e)
+    depts.value = []
+  }
 }
 
 function onStateChange(agent) {
@@ -1945,8 +1992,9 @@ const hasDateErrors = computed(() => agents.value.some(agentHasRangeError))
 onMounted(async () => {
   await loadMe() // <--- Carga el usuario y unidad
   await loadMunicipalities();
-   await loadGroups()   
-  await loadUnits()    
+  await loadGroups()   
+  await loadUnits()  
+  await loadDepts()  
   await loadAgents();
   await checkIfReportExists();
 });
@@ -2245,8 +2293,10 @@ const projDraft = ref({
   to: '',
   state: '',
   destGroupId: null,
-  destUnitId: null
+  destUnitId: null,
+  depts: []              
 })
+
 
 const projDraftError = ref('')
 
@@ -2314,15 +2364,29 @@ async function loadProjectionFromBackend () {
       const aid = Number(it.agentId)
       if (!aid) continue
 
+      // 👇 reconstruimos depts si el backend envía dept1/2/3 o array
+      let segDepts = []
+      if (Array.isArray(it.depts)) {
+        segDepts = it.depts.filter(Boolean)
+      } else {
+        const tmp = []
+        if (it.dept1) tmp.push(it.dept1)
+        if (it.dept2) tmp.push(it.dept2)
+        if (it.dept3) tmp.push(it.dept3)
+        segDepts = tmp
+      }
+
       if (!map[aid]) map[aid] = []
       map[aid].push({
         from: String(it.start_date).slice(0, 10),
         to:   String(it.end_date).slice(0, 10),
         state: it.state,
         destGroupId: it.destGroupId || null,
-        destUnitId:  it.destUnitId  || null
+        destUnitId:  it.destUnitId  || null,
+        depts: segDepts             // 👈 NUEVO
       })
     }
+
 
     // 🔄 sustituimos todo el mapa por lo que hay en BD
     projByAgent.value = map
@@ -2386,6 +2450,58 @@ function projEnumerateDays(from, to) {
     out.push(ymd(d))
   }
   return out
+}
+// 👇 Helper: ¿el rango es COMISIÓN y destino GIG / GEO?
+function isGigGeoDraft(draft) {
+  if (!draft?.destGroupId || !draft?.destUnitId) return false
+  const g = groupById.value[draft.destGroupId]
+  const u = unitById.value[draft.destUnitId]
+  const gLabel = String(g?.code || g?.name || '').toUpperCase()
+  const uLabel = String(u?.name || '').toUpperCase()
+  return gLabel === 'GIG' && uLabel === 'GEO'
+}
+
+function isGigGeoSegment(seg) {
+  if (!seg?.destGroupId || !seg?.destUnitId) return false
+  const g = groupById.value[seg.destGroupId]
+  const u = unitById.value[seg.destUnitId]
+  const gLabel = String(g?.code || g?.name || '').toUpperCase()
+  const uLabel = String(u?.name || '').toUpperCase()
+  return gLabel === 'GIG' && uLabel === 'GEO'
+}
+
+// Límite máx. 3 departamentos en el draft
+function limitDraftDepts() {
+  if (!Array.isArray(projDraft.value.depts)) {
+    projDraft.value.depts = []
+    return
+  }
+  if (projDraft.value.depts.length > 3) {
+    projDraft.value.depts = projDraft.value.depts.slice(0, 3)
+  }
+}
+
+function toggleDept(dept, checked) {
+  if (!Array.isArray(projDraft.value.depts)) {
+    projDraft.value.depts = []
+  }
+
+  if (checked) {
+    // ya estaba marcado → nada
+    if (projDraft.value.depts.includes(dept)) return
+
+    // límite de 3
+    if (projDraft.value.depts.length >= 3) {
+      // opcional: mostrar mensaje
+      projMsg.value = 'Solo puedes seleccionar hasta 3 departamentos.'
+      projMsgOk.value = false
+      return
+    }
+
+    projDraft.value.depts = [...projDraft.value.depts, dept]
+  } else {
+    projDraft.value.depts = projDraft.value.depts.filter(d => d !== dept)
+  }
 }
 
 // Construye mapa de días -> estado y detecta solapamientos
@@ -2561,8 +2677,13 @@ function projAddRangeForCurrent() {
       : null,
     destUnitId: projDraft.value.state === 'COMISIÓN DEL SERVICIO'
       ? Number(projDraft.value.destUnitId) || null
-      : null
+      : null,
+    depts:
+      isGigGeoDraft(projDraft.value) && Array.isArray(projDraft.value.depts)
+        ? projDraft.value.depts.slice(0, 3)    // máx 3
+        : []                                   // otros casos sin depts
   })
+
 
   // Limpiar formulario
   projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null }
@@ -2687,7 +2808,8 @@ const projTimelineSegments = computed(() => {
       to:   r.to,
       count: projEnumerateDays(r.from, r.to).length,
       destGroupId: r.destGroupId || null,
-      destUnitId:  r.destUnitId  || null
+      destUnitId:  r.destUnitId  || null,
+      depts: Array.isArray(r.depts) ? r.depts : []   // 👈 NUEVO
     })
   })
 
@@ -2791,7 +2913,11 @@ async function saveProjection() {
             : null,
           destUnitId: r.state === 'COMISIÓN DEL SERVICIO'
             ? (r.destUnitId || null)
-            : null
+            : null,
+          depts:
+            Array.isArray(r.depts)
+              ? r.depts.slice(0, 3)    // enviamos máx 3
+              : []
         }))
 
 
@@ -2900,6 +3026,27 @@ watch(
     await loadProjectionFromBackend()
   }
 )
+
+const isGeoDraft = computed(() => {
+  // Usamos destUnitId si existe, si no, la unidad base del draft
+  const unitId =
+    projDraft.value.destUnitId ??
+    projDraft.value.unitId ??
+    null
+
+  if (!unitId) return false
+
+  // Buscar la unidad en el catálogo
+  const u = Array.isArray(units.value)
+    ? units.value.find(x => Number(x.id) === Number(unitId))
+    : null
+
+  if (!u) return false
+
+  // Revisar si en el nombre aparece GEO
+  const name = String(u.name || '').toUpperCase()
+  return name.includes('GEO')
+})
 
 </script>
 

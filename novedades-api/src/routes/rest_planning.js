@@ -477,12 +477,16 @@ router.post(
             }
           }
 
+          // 👇 tomamos los deptos que vengan del frontend (máx 3)
+          const depts = Array.isArray(s.depts) ? s.depts.slice(0, 3) : []
+
           return {
             from,
             to,
             state,
             destGroupId: s.destGroupId ?? null,
             destUnitId:  s.destUnitId ?? null,
+            depts, // <<--- AQUÍ
             fromDate: d1,
             toDate: d2
           }
@@ -557,8 +561,10 @@ router.post(
             `
             INSERT INTO rest_plans
               (agent_id, unit_id, start_date, end_date, state,
-               dest_group_id, dest_unit_id, created_by, vigencia_id)
-            VALUES (?,?,?,?,?,?,?,?,?)
+              dest_group_id, dest_unit_id,
+              dept1, dept2, dept3,
+              created_by, vigencia_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
             `,
             [
               agentId,
@@ -568,6 +574,9 @@ router.post(
               seg.state,
               seg.destGroupId || null,
               seg.destUnitId || null,
+              seg.depts?.[0] || null,
+              seg.depts?.[1] || null,
+              seg.depts?.[2] || null,
               req.user.uid ?? null,
               usedVigenciaId || null
             ]
@@ -748,6 +757,9 @@ router.get(
           rp.dest_unit_id  AS destUnitId,
           g2.name AS destGroupName,
           u2.name AS destUnitName,
+          rp.dept1,
+          rp.dept2,
+          rp.dept3,
           rp.vigencia_id   AS vigenciaId
         FROM rest_plans rp
         JOIN agent a ON a.id = rp.agent_id
@@ -764,6 +776,12 @@ router.get(
       // descifrar nickname
       for (const r of rows) {
         r.agentNickname = decNullable(r.agentNickname)
+
+        const list = []
+        if (r.dept1) list.push(r.dept1)
+        if (r.dept2) list.push(r.dept2)
+        if (r.dept3) list.push(r.dept3)
+        r.depts = list
       }
 
       res.json({ items: rows })

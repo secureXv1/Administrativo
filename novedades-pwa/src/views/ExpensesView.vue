@@ -160,7 +160,7 @@
                 {{ r.nickname || '—' }}
               </td>
               <td class="py-2 px-3 text-slate-700">
-                {{ r.destUnitName || r.unitName || '—' }}
+                {{ r.displayUnit || r.destUnitName || r.unitName || '—' }}
               </td>
               <td class="py-2 px-3 text-slate-900">
                 {{ r.start }}
@@ -364,11 +364,34 @@ function buildRows (items, periodFrom, periodTo, commissions = []) {
       destUnitName:  it.destUnitName  || it.dest_unit_name  || '',
       municipalityId: it.municipalityId || it.municipality_id || null,
 
+      // 👇 NUEVO: departamentos que vienen del backend
+      dept1: it.dept1 || it.dept_1 || null,
+      dept2: it.dept2 || it.dept_2 || null,
+      dept3: it.dept3 || it.dept_3 || null,
+
       start: clipped.from,
       end:   clipped.to,
       days:  clipped.days,
       validated: false
     }
+
+    // 👇 construir label de unidad a mostrar
+    const unitBase =
+      candidate.destUnitName ||
+      candidate.unitName ||
+      ''
+
+    const depts = [candidate.dept1, candidate.dept2, candidate.dept3].filter(Boolean)
+
+    let displayUnit = unitBase || '—'
+
+    // Si es GEO y tiene departamentos, agregamos paréntesis
+    if (unitBase && unitBase.toUpperCase().includes('GEO') && depts.length) {
+      displayUnit = `${unitBase} (${depts.join(', ')})`
+    }
+
+    candidate.displayUnit = displayUnit
+
 
     const current = byAgent.get(key)
     if (!current) {
@@ -483,7 +506,6 @@ async function loadExpenses () {
     const commissions = Array.isArray(commissionsRes?.data?.items) ? commissionsRes.data.items : []
 
     rows.value = buildRows(items, from, to, commissions)
-
 
     // Reset filtros locales grupo/unidad
     filters.value.groupId = null
