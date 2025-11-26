@@ -155,7 +155,7 @@
                         to="/admin/expenses"
                         icon="expenses"
                         :collapsed="collapsed"
-                        label="Proyección"
+                        label="Proyección Grupo"
                         dark
                       />
                       <!-- NUEVO: Comisiones de servicio (derivado de proyección) -->
@@ -163,7 +163,7 @@
                         to="/admin/service-commissions"
                         icon="expenses"
                         :collapsed="collapsed"
-                        label="Vigencias"
+                        label="Proyección Gastos"
                         dark
                       />
                     </div>
@@ -324,6 +324,13 @@
                     label="Funcionarios"
                     @click="onMobileNavigate"
                   />
+                  <SidebarItem 
+                    to="/admin/rest-projection" 
+                    icon="expenses" 
+                    :collapsed="collapsed" 
+                    label="Proyección general"  
+                    @click="onMobileNavigate"
+                  />
                 </div>
               </transition>
             </div>
@@ -445,7 +452,7 @@
                       to="/admin/expenses"
                       icon="expenses"
                       :collapsed="collapsed"
-                      label="Proyección"
+                      label="Proyección Grupo"
                       @click="onMobileNavigate"
                     />
                     <!-- NUEVO: Comisiones de servicio -->
@@ -453,7 +460,7 @@
                       to="/admin/service-commissions"
                       icon="expenses"
                       :collapsed="collapsed"
-                      label="Vigencias"
+                      label="Proyección Gastos"
                       @click="onMobileNavigate"
                       />
                   </div>

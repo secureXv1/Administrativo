@@ -172,7 +172,6 @@
                 {{ r.days }}
               </td>
               <td class="py-2 px-3 text-right">
-                <!-- Si ya fue validada, solo chip -->
                 <button
                   v-if="!r.validated"
                   type="button"
@@ -187,6 +186,14 @@
                 >
                   ✔ Validada
                 </span>
+                <button
+                  v-if="r.validated && r.commissionId"
+                  type="button"
+                  class="ml-2 px-3 py-1 rounded-lg text-[11px] font-medium bg-rose-100 text-rose-700 hover:bg-rose-200 border border-rose-300"
+                  @click="undoValidacion(r)"
+                >
+                  Deshacer
+                </button>
               </td>
             </tr>
           </tbody>
@@ -315,11 +322,13 @@ async function fetchPeriods () {
 
 function buildRows (items, periodFrom, periodTo, commissions = []) {
   // 1) Comisiones reales por rest_plan_id
-  const commByPlanId = new Set()
+  // const commByPlanId = new Set() // <-- CÓDIGO ANTERIOR
+  const commByPlanId = new Map() // Map<restPlanId, serviceCommissionId> // <-- CAMBIO
   for (const c of commissions) {
     const planId = c.restPlanId || c.rest_plan_id
     if (planId) {
-      commByPlanId.add(Number(planId))
+      // commByPlanId.add(Number(planId)) // <-- CÓDIGO ANTERIOR
+      commByPlanId.set(Number(planId), c.id) // <-- CAMBIO: Almacena el ID de la comisión
     }
   }
 
@@ -372,7 +381,8 @@ function buildRows (items, periodFrom, periodTo, commissions = []) {
       start: clipped.from,
       end:   clipped.to,
       days:  clipped.days,
-      validated: false
+      validated: false,
+      commissionId: null
     }
 
     // 👇 construir label de unidad a mostrar
@@ -418,7 +428,18 @@ candidate.displayUnit = displayUnit
 
   for (const r of out) {
     const pid = r.planId ? Number(r.planId) : null
-    r.validated = pid ? commByPlanId.has(pid) : false
+    
+    // r.validated = pid ? commByPlanId.has(pid) : false // <-- CÓDIGO ANTERIOR
+
+    // <-- CAMBIO: Almacenar el ID si está validada
+    if (pid && commByPlanId.has(pid)) {
+      r.validated = true
+      r.commissionId = commByPlanId.get(pid) // Guarda el ID para la eliminación
+    } else {
+      r.validated = false
+      r.commissionId = null
+    }
+    // CAMBIO FIN -->
   }
 
   // 3) Orden
@@ -577,14 +598,42 @@ async function validarComision (row) {
       vigenciaId: currentVigenciaId.value
     }
 
-    await http.post('/service-commissions', payload)
+    const res = await http.post('/service-commissions', payload)
 
     row.validated = true
+    row.commissionId = res.data.id // <-- NUEVO: Guardar el ID de la comisión creada
     msg.value = `Comisión creada para ${row.code}`
     msgOk.value = true
   } catch (e) {
     console.error('Error al crear comisión:', e)
     msg.value = e?.response?.data?.error || 'Error al crear comisión'
+    msgOk.value = false
+  }
+}
+
+// ==== Deshacer validación / eliminar comisión para una fila ====
+async function undoValidacion (row) {
+  msg.value = ''
+  msgOk.value = false
+
+  if (!row.commissionId) {
+    msg.value = 'No se encontró el ID de la comisión para eliminar.'
+    msgOk.value = false
+    return
+  }
+
+  try {
+    // Llama al endpoint DELETE
+    await http.delete(`/service-commissions/${row.commissionId}`)
+
+    // Actualizar estado local
+    row.validated = false
+    row.commissionId = null
+    msg.value = `Comisión eliminada para ${row.code}`
+    msgOk.value = true
+  } catch (e) {
+    console.error('Error al eliminar comisión:', e)
+    msg.value = e?.response?.data?.error || 'Error al eliminar comisión'
     msgOk.value = false
   }
 }

@@ -15,13 +15,6 @@
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          class="px-3 py-2 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm"
-          @click="openCreateModal"
-        >
-          Crear nueva vigencia
-        </button>
       </div>
     </div>
 
@@ -114,20 +107,41 @@
           >
             {{ loadingCommissions ? 'Cargando…' : 'Actualizar' }}
           </button>
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded-lg text-[11px] font-medium border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60 disabled:cursor-not-allowed"
-            @click="openSubModal"
-            :disabled="!selectedVigenciaId || !currentPeriod"
-          >
-            Crear subvigencia
-          </button>
         </div>
       </div>
     </section>
 
-    <!-- SECCIÓN 2: Tabla comisiones (misma tarjeta que Expenses) -->
-    <section class="bg-white rounded-2xl shadow border border-slate-200 p-4">
+        <!-- PESTAÑAS -->
+    <div class="mt-2 border-b border-slate-200">
+      <nav class="flex gap-4 px-1 text-xs">
+        <button
+          type="button"
+          class="pb-2 border-b-2 -mb-px font-medium transition-colors"
+          :class="activeTab === 'commissions'
+            ? 'border-slate-900 text-slate-900'
+            : 'border-transparent text-slate-500 hover:text-slate-800'"
+          @click="activeTab = 'commissions'"
+        >
+          Comisiones
+        </button>
+        <button
+          type="button"
+          class="pb-2 border-b-2 -mb-px font-medium transition-colors"
+          :class="activeTab === 'periods'
+            ? 'border-slate-900 text-slate-900'
+            : 'border-transparent text-slate-500 hover:text-slate-800'"
+          @click="activeTab = 'periods'"
+        >
+          Vigencias y subvigencias
+        </button>
+      </nav>
+    </div>
+
+    <!-- TAB 1: COMISIONES -->
+    <section
+      v-if="activeTab === 'commissions'"
+      class="bg-white rounded-2xl shadow border border-slate-200 p-4 mt-3"
+    >
       <header class="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div>
           <h2 class="text-slate-900 font-semibold text-sm">
@@ -290,6 +304,231 @@
         {{ msg }}
       </p>
     </section>
+
+    <!-- TAB 2: GESTIÓN DE VIGENCIAS Y SUBVIGENCIAS -->
+    <section
+      v-else
+      class="bg-white rounded-2xl shadow border border-slate-200 p-4 mt-3 space-y-4"
+    >
+      <header class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-slate-900 font-semibold text-sm">
+            Gestión de vigencias y subvigencias
+          </h2>
+          <p class="text-xs text-slate-500">
+            Administra el catálogo de vigencias y sus subvigencias: cambia nombre, ajusta fechas
+            o elimina registros que ya no se usan.
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-[11px] font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm"
+            @click="openCreateModal"
+          >
+            Crear vigencia
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded-lg text-[11px] font-medium border border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60 disabled:cursor-not-allowed"
+            @click="openSubModal"
+            :disabled="!selectedVigenciaId || !currentPeriod"
+          >
+            Crear subvigencia
+          </button>
+        </div>
+      </header>
+
+      <div class="grid gap-4 md:grid-cols-2">
+        <!-- LISTADO / EDICIÓN DE VIGENCIAS -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+          <div class="px-3 py-2 bg-slate-900 text-white text-[11px] font-semibold flex items-center justify-between">
+            <span>Vigencias</span>
+            <span v-if="loadingPeriods" class="opacity-75">Cargando…</span>
+          </div>
+
+          <div v-if="!periods.length" class="p-3 text-[11px] text-slate-500">
+            No hay vigencias creadas aún. Usa el botón "Crear vigencia" para agregar la primera.
+          </div>
+
+          <div v-else class="max-h-80 overflow-auto">
+            <table class="min-w-full text-[11px]">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-2 py-1 font-semibold">Nombre</th>
+                  <th class="text-left px-2 py-1 font-semibold">Rango</th>
+                  <th class="text-left px-2 py-1 font-semibold"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="p in periods"
+                  :key="p.id"
+                  class="border-b border-slate-100 hover:bg-slate-50"
+                  :class="String(p.id) === selectedVigenciaId ? 'bg-indigo-50/40' : ''"
+                >
+                  <!-- Nombre -->
+                  <td class="px-2 py-1 align-top">
+                    <input
+                      v-model="p.name"
+                      type="text"
+                      class="w-full rounded-md border border-slate-300 px-2 py-1 text-[11px] focus:ring-1 focus:ring-indigo-200"
+                    >
+                    <p v-if="p.created_at" class="text-[10px] text-slate-400 mt-0.5">
+                      Creada: {{ String(p.created_at).slice(0,10) }}
+                    </p>
+                  </td>
+
+                  <!-- Rango -->
+                  <td class="px-2 py-1 align-top">
+                    <div class="flex items-center gap-1">
+                      <input
+                        type="date"
+                        v-model="p.from"
+                        class="w-26 rounded-md border border-slate-300 px-2 py-1 text-[10px] focus:ring-1 focus:ring-indigo-200"
+                      >
+                      <span>→</span>
+                      <input
+                        type="date"
+                        v-model="p.to"
+                        class="w-26 rounded-md border border-slate-300 px-2 py-1 text-[10px] focus:ring-1 focus:ring-indigo-200"
+                      >
+                    </div>
+                    <button
+                      type="button"
+                      class="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px]"
+                      :class="String(p.id) === selectedVigenciaId
+                        ? 'bg-slate-800 text-white border-slate-800'
+                        : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'"
+                      @click="selectedVigenciaId = String(p.id)"
+                    >
+                      Usar en vista
+                    </button>
+                  </td>
+
+                  <!-- Acciones -->
+                  <td class="px-2 py-1 align-top text-right">
+                    <div class="flex flex-col gap-1 items-end">
+                      <button
+                        type="button"
+                        class="px-2 py-0.5 rounded-md text-[10px] font-medium border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        @click="updatePeriod(p)"
+                        :disabled="savingPeriodId === p.id"
+                      >
+                        {{ savingPeriodId === p.id ? 'Guardando…' : 'Guardar' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="px-2 py-0.5 rounded-md text-[10px] font-medium border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        @click="deletePeriod(p)"
+                        :disabled="deletingPeriodId === p.id"
+                      >
+                        {{ deletingPeriodId === p.id ? 'Eliminando…' : 'Eliminar' }}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- LISTADO / EDICIÓN DE SUBVIGENCIAS -->
+        <div class="border border-slate-200 rounded-xl overflow-hidden">
+          <div class="px-3 py-2 bg-slate-900 text-white text-[11px] font-semibold flex items-center justify-between">
+            <span>Subvigencias de la vigencia seleccionada</span>
+            <span v-if="currentPeriod" class="opacity-75">
+              {{ currentPeriod.name }} ({{ currentPeriod.from }} → {{ currentPeriod.to }})
+            </span>
+          </div>
+
+          <div v-if="!currentPeriod" class="p-3 text-[11px] text-slate-500">
+            Selecciona una vigencia para ver y administrar sus subvigencias.
+          </div>
+
+          <div v-else-if="!subperiods.length" class="p-3 text-[11px] text-slate-500">
+            Esta vigencia no tiene subvigencias. Puedes crearlas con "Crear subvigencia".
+          </div>
+
+          <div v-else class="max-h-80 overflow-auto">
+            <table class="min-w-full text-[11px]">
+              <thead class="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th class="text-left px-2 py-1 font-semibold">Nombre</th>
+                  <th class="text-left px-2 py-1 font-semibold">Rango</th>
+                  <th class="text-left px-2 py-1 font-semibold"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="sp in subperiods"
+                  :key="sp.id"
+                  class="border-b border-slate-100 hover:bg-slate-50"
+                >
+                  <!-- Nombre -->
+                  <td class="px-2 py-1 align-top">
+                    <input
+                      v-model="sp.name"
+                      type="text"
+                      class="w-full rounded-md border border-slate-300 px-2 py-1 text-[11px] focus:ring-1 focus:ring-indigo-200"
+                    >
+                  </td>
+
+                  <!-- Rango -->
+                  <td class="px-2 py-1 align-top">
+                    <div class="flex items-center gap-1">
+                      <input
+                        type="date"
+                        v-model="sp.from"
+                        class="w-26 rounded-md border border-slate-300 px-2 py-1 text-[10px] focus:ring-1 focus:ring-indigo-200"
+                      >
+                      <span>→</span>
+                      <input
+                        type="date"
+                        v-model="sp.to"
+                        class="w-26 rounded-md border border-slate-300 px-2 py-1 text-[10px] focus:ring-1 focus:ring-indigo-200"
+                      >
+                    </div>
+                  </td>
+
+                  <!-- Acciones -->
+                  <td class="px-2 py-1 align-top text-right">
+                    <div class="flex flex-col gap-1 items-end">
+                      <button
+                        type="button"
+                        class="px-2 py-0.5 rounded-md text-[10px] font-medium border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        @click="updateSubperiod(sp)"
+                        :disabled="savingSubperiodId === sp.id"
+                      >
+                        {{ savingSubperiodId === sp.id ? 'Guardando…' : 'Guardar' }}
+                      </button>
+                      <button
+                        type="button"
+                        class="px-2 py-0.5 rounded-md text-[10px] font-medium border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        @click="deleteSubperiod(sp)"
+                        :disabled="deletingSubperiodId === sp.id"
+                      >
+                        {{ deletingSubperiodId === sp.id ? 'Eliminando…' : 'Eliminar' }}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <p
+        v-if="msg"
+        class="mt-3 text-xs"
+        :class="msgOk ? 'text-emerald-700' : 'text-rose-700'"
+      >
+        {{ msg }}
+      </p>
+    </section>
+
+
 
     <!-- Modal crear vigencia -->
     <div
@@ -468,6 +707,7 @@ const units = ref([])
 
 const msg = ref('')
 const msgOk = ref(false)
+const activeTab = ref('commissions') // 'commissions' | 'periods'
 
 // Vigencias
 const periods = ref([])              // { id, name, from, to, created_at }
@@ -483,6 +723,12 @@ const newSubperiod = ref({
   to: ''
 })
 const creatingSubperiod = ref(false)
+
+// Estados de guardado/eliminación en gestión
+const savingPeriodId = ref(null)
+const deletingPeriodId = ref(null)
+const savingSubperiodId = ref(null)
+const deletingSubperiodId = ref(null)
 
 // Modal crear vigencia
 const showCreateModal = ref(false)
@@ -741,6 +987,94 @@ async function createVigencia () {
   }
 }
 
+// Actualizar una vigencia (nombre y rango)
+async function updatePeriod (p) {
+  msg.value = ''
+  msgOk.value = false
+
+  const name = String(p.name || '').trim()
+  const from = p.from
+  const to = p.to
+
+  if (!name || !from || !to) {
+    msg.value = 'Nombre, desde y hasta son requeridos para actualizar la vigencia.'
+    msgOk.value = false
+    return
+  }
+
+  if (to < from) {
+    msg.value = 'La fecha final de la vigencia no puede ser menor que la inicial.'
+    msgOk.value = false
+    return
+  }
+
+  savingPeriodId.value = p.id
+  try {
+    await axios.put(`/rest-planning/periods/${p.id}`, {
+      name,
+      from,
+      to
+    }, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+
+    msg.value = `Vigencia ${name} actualizada correctamente.`
+    msgOk.value = true
+
+    // Recargar listado manteniendo la vigencia seleccionada
+    const current = selectedVigenciaId.value
+    await fetchPeriods()
+    if (current) {
+      selectedVigenciaId.value = current
+    }
+  } catch (e) {
+    console.error('[updatePeriod] error', e)
+    msg.value = e?.response?.data?.error || 'Error al actualizar vigencia'
+    msgOk.value = false
+  } finally {
+    savingPeriodId.value = null
+  }
+}
+
+// Eliminar una vigencia
+async function deletePeriod (p) {
+  if (!window.confirm(`¿Eliminar la vigencia "${p.name}" y sus subvigencias (si las tiene)?`)) {
+    return
+  }
+
+  msg.value = ''
+  msgOk.value = false
+  deletingPeriodId.value = p.id
+
+  try {
+    await axios.delete(`/rest-planning/periods/${p.id}`, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+
+    // Actualizar estado local
+    periods.value = periods.value.filter(x => x.id !== p.id)
+
+    if (String(p.id) === selectedVigenciaId.value) {
+      if (periods.value.length) {
+        selectedVigenciaId.value = String(periods.value[0].id)
+      } else {
+        selectedVigenciaId.value = ''
+        subperiods.value = []
+        commissions.value = []
+      }
+    }
+
+    msg.value = `Vigencia "${p.name}" eliminada correctamente.`
+    msgOk.value = true
+  } catch (e) {
+    console.error('[deletePeriod] error', e)
+    msg.value = e?.response?.data?.error || 'Error al eliminar vigencia'
+    msgOk.value = false
+  } finally {
+    deletingPeriodId.value = null
+  }
+}
+
 // Modal helpers - subvigencia
 function openSubModal () {
   msg.value = ''
@@ -824,6 +1158,92 @@ async function createSubvigencia () {
     creatingSubperiod.value = false
   }
 }
+
+// Actualizar una subvigencia
+async function updateSubperiod (sp) {
+  msg.value = ''
+  msgOk.value = false
+
+  const name = String(sp.name || '').trim()
+  const from = sp.from
+  const to = sp.to
+
+  if (!name || !from || !to) {
+    msg.value = 'Nombre, desde y hasta son requeridos para actualizar la subvigencia.'
+    msgOk.value = false
+    return
+  }
+
+  if (to < from) {
+    msg.value = 'La fecha final de la subvigencia no puede ser menor que la inicial.'
+    msgOk.value = false
+    return
+  }
+
+  if (currentPeriod.value) {
+    if (from < currentPeriod.value.from || to > currentPeriod.value.to) {
+      msg.value = `La subvigencia debe estar dentro del rango de la vigencia (${currentPeriod.value.from} → ${currentPeriod.value.to}).`
+      msgOk.value = false
+      return
+    }
+  }
+
+  savingSubperiodId.value = sp.id
+  try {
+    await axios.put(`/rest-planning/subperiods/${sp.id}`, {
+      name,
+      from,
+      to
+    }, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+
+    msg.value = `Subvigencia ${name} actualizada correctamente.`
+    msgOk.value = true
+
+    // Recargar subvigencias para asegurar coherencia
+    await loadSubperiods()
+    await loadCommissions()
+  } catch (e) {
+    console.error('[updateSubperiod] error', e)
+    msg.value = e?.response?.data?.error || 'Error al actualizar subvigencia'
+    msgOk.value = false
+  } finally {
+    savingSubperiodId.value = null
+  }
+}
+
+// Eliminar una subvigencia
+async function deleteSubperiod (sp) {
+  if (!window.confirm(`¿Eliminar la subvigencia "${sp.name}"?`)) {
+    return
+  }
+
+  msg.value = ''
+  msgOk.value = false
+  deletingSubperiodId.value = sp.id
+
+  try {
+    await axios.delete(`/rest-planning/subperiods/${sp.id}`, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+    })
+
+    subperiods.value = subperiods.value.filter(x => x.id !== sp.id)
+
+    msg.value = `Subvigencia "${sp.name}" eliminada correctamente.`
+    msgOk.value = true
+
+    // Opcional: recargar comisiones por si alguna usaba esta subvigencia
+    await loadCommissions()
+  } catch (e) {
+    console.error('[deleteSubperiod] error', e)
+    msg.value = e?.response?.data?.error || 'Error al eliminar subvigencia'
+    msgOk.value = false
+  } finally {
+    deletingSubperiodId.value = null
+  }
+}
+
 
 onMounted(async () => {
   await Promise.all([

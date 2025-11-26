@@ -4,15 +4,15 @@
     <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
       <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">F</div>
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">G</div>
           <div>
             <h2 class="font-semibold text-slate-900">Proyección general de descanso</h2>
-            <p class="text-slate-500 text-xs">Vista para administrador, supervisión y líder de grupo (todas las unidades).</p>
+            <p class="text-slate-500 text-xs">Vista para administrador, supervisión y líder de grupo (todas las unidades)</p>
           </div>
         </div>
       </div>
     </div>
-   <!-- BLOQUE DE CONSULTA (SOLO FECHAS) -->
+    <!-- BLOQUE DE CONSULTA (SOLO FECHAS) -->
     <section class="bg-white border border-slate-200 rounded-xl p-4 space-y-4">
       <div class="grid gap-4 md:grid-cols-2">
         <!-- Fecha desde -->
@@ -52,7 +52,7 @@
         </button>
 
         <p class="text-xs text-slate-500">
-          Selecciona un rango de fechas para ver la proyección consolidada.
+          Selecciona un rango de fechas (idealmente un mes) para ver la matriz.
         </p>
       </div>
 
@@ -70,7 +70,7 @@
         Filtros sobre la consulta actual
       </h2>
 
-      <div class="grid gap-4 md:grid-cols-4">
+      <div class="grid gap-4 md:grid-cols-5">
         <!-- Grupo -->
         <div>
           <label class="block text-xs font-medium text-slate-700 mb-1">
@@ -87,13 +87,29 @@
           </select>
         </div>
 
-        <!-- Unidad -->
+        <!-- Unidad actual -->
         <div>
           <label class="block text-xs font-medium text-slate-700 mb-1">
-            Unidad
+            Unidad actual
           </label>
           <select
-            v-model="filtroUnidad"
+            v-model="filtroUnidadActual"
+            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+          >
+            <option value="">Todas</option>
+            <option v-for="u in units" :key="u.id" :value="u.id">
+              {{ u.name }}
+            </option>
+          </select>
+        </div>
+
+        <!-- Unidad proyectada -->
+        <div>
+          <label class="block text-xs font-medium text-slate-700 mb-1">
+            Unidad proyectada
+          </label>
+          <select
+            v-model="filtroUnidadProyectada"
             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
           >
             <option value="">Todas</option>
@@ -127,134 +143,250 @@
           <input
             v-model="filtroTexto"
             type="text"
-            placeholder="Código o nombre"
+            placeholder="Código o alias"
             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
           >
         </div>
       </div>
 
       <p class="text-xs text-slate-500">
-        {{ groupedAgents.length }} funcionarios · {{ filtered.length }} registros en total.
+        {{ groupedAgents.length }} funcionarios · {{ filtered.length }} tramos proyectados.
       </p>
     </section>
 
-    <!-- LISTA AGRUPADA POR FUNCIONARIO -->
+    <!-- MATRIZ NICKNAME + LÍNEA DE TIEMPO VERTICAL -->
     <section v-if="loaded">
       <div v-if="!items.length" class="text-sm text-slate-500">
         No hay proyección en el rango seleccionado.
       </div>
 
-      <div v-else class="space-y-3">
-        <div
-          v-for="agent in groupedAgents"
-          :key="agent.agentId"
-          class="bg-white border border-slate-200 rounded-xl overflow-hidden"
-        >
-          <!-- CABECERA DEL FUNCIONARIO (CLICK PARA VER DETALLE) -->
-          <button
-            type="button"
-            class="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
-            @click="toggleAgent(agent.agentId)"
-          >
-            <div>
-              <div class="text-sm font-semibold text-slate-900">
-                {{ agent.agentCode }} — {{ agent.agentNickname || 'Sin alias' }}
-              </div>
-              <div class="text-xs text-slate-500">
-                {{ agent.unitName }} · {{ agent.segments.length }} tramos
-              </div>
-            </div>
-            <svg
-              class="size-4 text-slate-400 transition-transform"
-              :class="expandedAgentId === agent.agentId ? 'rotate-180' : ''"
-              viewBox="0 0 24 24"
-              fill="none"
+      <div v-else class="bg-white border border-slate-200 rounded-xl overflow-auto">
+        <table class="min-w-full text-[11px] border-collapse">
+          <thead class="bg-amber-500 text-white sticky top-0 z-10">
+            <tr>
+              <th class="px-3 py-2 text-left font-semibold w-56">
+                FUNCIONARIO
+              </th>
+              <th
+                v-for="day in dayRange"
+                :key="day.date"
+                class="px-1 py-1 text-center font-semibold min-w-[24px]"
+              >
+                {{ day.day }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="agent in groupedAgents"
+              :key="agent.agentId"
+              class="border-t border-slate-200"
             >
-              <path
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M19 9l-7 7-7-7"
-              />
-            </svg>
-          </button>
-
-          <!-- DETALLE: TRAMOS + LÍNEA DE TIEMPO / CALENDARIO -->
-          <div v-if="expandedAgentId === agent.agentId" class="border-t border-slate-200 px-4 py-3 space-y-4">
-            <!-- Tabla de tramos -->
-            <div class="overflow-x-auto rounded-lg border border-slate-100">
-              <table class="min-w-full text-xs">
-                <thead class="bg-slate-800 text-white uppercase tracking-wide">
-                  <tr>
-                    <th class="text-left px-3 py-1.5">Rango</th>
-                    <th class="text-left px-3 py-1.5">Estado</th>
-                    <th class="text-left px-3 py-1.5">Destino</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="seg in agent.segments"
-                    :key="seg.id"
-                    class="border-t border-slate-100"
-                  >
-                    <td class="px-3 py-1.5 whitespace-nowrap">
-                      {{ seg.start_date }} → {{ seg.end_date }}
-                    </td>
-                    <td class="px-3 py-1.5">
-                      <span class="inline-flex items-center rounded-full bg-sky-50 text-sky-700 px-2 py-0.5 text-[11px] font-medium">
-                        {{ seg.state }}
-                      </span>
-                    </td>
-                    <td class="px-3 py-1.5 text-[11px] text-slate-600">
-                      <div v-if="seg.destGroupName || seg.destUnitName">
-                        <span v-if="seg.destGroupName">Grupo: {{ seg.destGroupName }}</span>
-                        <span v-if="seg.destUnitName">
-                          <span v-if="seg.destGroupName"> · </span>
-                          Unidad: {{ seg.destUnitName }}
-                        </span>
-                      </div>
-                      <span v-else class="italic text-slate-400">Sin cambio</span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <!-- LÍNEA DE TIEMPO / CALENDARIO DÍA A DÍA -->
-            <div class="space-y-1">
-              <div class="text-xs font-semibold text-slate-700">
-                Línea de tiempo en el rango seleccionado
-              </div>
-              <div class="text-[11px] text-slate-500 mb-1">
-                Cada recuadro es un día ({{ from }} → {{ to }}), coloreado según el estado.
-              </div>
-              <div class="overflow-x-auto">
-                <div class="flex gap-1 min-w-max">
-                  <div
-                    v-for="day in buildDayCellsForAgent(agent)"
-                    :key="day.date"
-                    class="flex flex-col items-center"
-                  >
-                    <div
-                      class="w-7 h-7 rounded-md text-[10px] flex items-center justify-center border"
-                      :class="stateColorClass(day.state)"
-                      :title="day.date + (day.state ? ' — ' + day.state : '')"
-                    >
-                      {{ day.day }}
-                    </div>
-                    <div class="mt-0.5 text-[9px] text-slate-400">
-                      {{ day.label }}
-                    </div>
+              <!-- Columna NICKNAME + unidad actual/proyectada -->
+              <td class="px-3 py-1.5 bg-slate-100 align-top">
+                <!-- NICKNAME clickable -->
+                <button
+                  type="button"
+                  class="font-semibold text-sky-700 hover:underline block text-left truncate"
+                  @click="openModal(agent)"
+                >
+                  {{ agent.agentNickname || 'Sin alias' }}
+                </button>
+                
+                <!-- Unidades -->
+                <div class="mt-1 text-[10px] text-slate-700">
+                  <div>Act.: <span class="font-medium">{{ agent.unitName || '—' }}</span></div>
+                  <div>
+                    Proy.:
+                    <span class="font-medium">
+                      {{ projectedUnit(agent) }}
+                    </span>
                   </div>
                 </div>
-              </div>
-            </div>
+              </td>
 
-          </div>
+              <!-- Celdas día a día -->
+              <td
+                v-for="day in dayRange"
+                :key="day.date"
+                class="px-0.5 py-0.5 text-center"
+              >
+                <div
+                  v-if="dayRange.length"
+                  class="w-6 h-6 rounded-sm flex items-center justify-center border text-[10px]"
+                  :class="stateColorClass(getStateCode(agent, day.date).code)"
+                  :title="getStateCode(agent, day.date).full"
+                >
+                  {{ getStateCode(agent, day.date).code }}
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- LEYENDA -->
+      <div class="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-700">
+        <div class="flex items-center gap-1">
+          <span class="w-4 h-4 rounded-sm border bg-sky-700"></span> NC — SIN NOVEDAD
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="w-4 h-4 rounded-sm border bg-emerald-500"></span> CS — COMISIÓN DEL SERVICIO
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="w-4 h-4 rounded-sm border bg-amber-400"></span> CE — COMISIÓN DE ESTUDIOS
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="w-4 h-4 rounded-sm border bg-amber-200"></span> PR — PERMISO
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="w-4 h-4 rounded-sm border bg-red-500"></span> VC — VACACIONES
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="w-4 h-4 rounded-sm border bg-orange-500"></span> SR — SERVICIO
+        </div>
+        <div class="flex items-center gap-1">
+          <span class="w-4 h-4 rounded-sm border bg-cyan-400"></span> FR — FRANCO
         </div>
       </div>
     </section>
+
+    <!-- MODAL: LÍNEA DE TIEMPO EDITABLE POR FUNCIONARIO -->
+    <transition name="fade">
+      <div
+        v-if="selectedAgent"
+        class="fixed inset-0 z-[2000] flex items-center justify-center"
+      >
+        <div class="absolute inset-0 bg-black/40" @click="closeModal"></div>
+
+        <div class="relative bg-white rounded-2xl shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col">
+          <!-- Header modal -->
+          <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+            <div>
+              <h2 class="text-sm font-semibold text-slate-900">
+                Proyección — {{ selectedAgent.agentNickname || 'Sin alias' }}
+              </h2>
+              <p class="text-[11px] text-slate-500">
+                {{ selectedAgent.agentCode }} · {{ selectedAgent.unitName }} ·
+                Rango: {{ from }} → {{ to }}
+              </p>
+              <p class="text-[11px] text-slate-500 mt-0.5">
+                Click en un día para cambiar el estado.
+              </p>
+            </div>
+            <button
+              type="button"
+              class="p-1.5 rounded-full hover:bg-slate-100"
+              @click="closeModal"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                class="size-4 text-slate-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.5"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Contenido modal: línea de tiempo editable -->
+          <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <div class="flex flex-wrap items-end gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                    <div class="flex-1 min-w-[120px]">
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Desde</label>
+                        <input type="date" v-model="newSegment.from" class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
+                    </div>
+                    <div class="flex-1 min-w-[120px]">
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Hasta</label>
+                        <input type="date" v-model="newSegment.to" class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
+                    </div>
+                    <div class="flex-1 min-w-[150px]">
+                        <label class="block text-xs font-medium text-slate-700 mb-1">Estado</label>
+                        <select v-model="newSegment.state" class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
+                            <option value="">Selecciona...</option>
+                            <option v-for="code in stateOrder.slice(1)" :key="code" :value="codeToFull[code]">
+                                {{ codeToFull[code] }}
+                            </option>
+                        </select>
+                    </div>
+                    <button
+                        type="button"
+                        class="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-60"
+                        @click="addSegment"
+                        :disabled="!newSegment.from || !newSegment.to || !newSegment.state || !newSegmentValid"
+                    >
+                        Añadir rango
+                    </button>
+                </div>
+
+                <h3 class="text-sm font-semibold text-slate-800">
+                    Línea de tiempo de proyección
+                </h3>
+                
+                <div class="space-y-2">
+                    <div
+                        v-for="(segment, index) in editableSegments"
+                        :key="index"
+                        class="flex items-center gap-3 p-3 border border-slate-200 rounded-lg bg-white"
+                    >
+                        <div class="size-3 rounded-full flex-shrink-0" :class="stateColorClass(fullToCode[segment.state] || '')"></div>
+
+                        <div class="flex items-center gap-2 flex-grow">
+                            <input type="date" v-model="segment.from" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[120px]">
+                            <span>—</span>
+                            <input type="date" v-model="segment.to" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[120px]">
+                            
+                            <select v-model="segment.state" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[180px]">
+                                <option v-for="code in stateOrder.slice(1)" :key="code" :value="codeToFull[code]">
+                                    {{ codeToFull[code] }}
+                                </option>
+                            </select>
+                        </div>
+                        
+                        <div class="flex items-center gap-2 flex-shrink-0 text-xs text-slate-500">
+                            <span v-if="dateDifference(segment.from, segment.to) !== null">
+                                {{ dateDifference(segment.from, segment.to) }} día(s)
+                            </span>
+                            <button type="button" @click="removeSegment(index)" class="text-red-500 hover:text-red-700 font-medium ml-2">
+                                Quitar
+                            </button>
+                        </div>
+                    </div>
+                    <div v-if="!editableSegments.length" class="text-xs text-slate-500 p-2 text-center border-dashed border rounded-lg">
+                        No hay rangos de proyección definidos.
+                    </div>
+                </div>
+          </div>
+
+          <!-- Footer modal -->
+          <div class="px-4 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-lg border border-slate-300 text-xs text-slate-700 hover:bg-slate-100"
+              @click="closeModal"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="px-4 py-1.5 rounded-lg bg-sky-600 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-60"
+              :disabled="saving"
+              @click="saveProjection"
+            >
+              <span v-if="!saving">Guardar proyección</span>
+              <span v-else>Guardando…</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -278,12 +410,38 @@ const units = ref([])
 
 // Filtros secundarios
 const filtroGrupo = ref('')
-const filtroUnidad = ref('')
+const filtroUnidadActual = ref('')
+const filtroUnidadProyectada = ref('')
 const filtroEstado = ref('')
 const filtroTexto = ref('')
 
-// Funcionario expandido
-const expandedAgentId = ref(null)
+// Modal / edición
+const selectedAgent = ref(null)
+const editableSegments = ref([]) // Nuevo: Para almacenar los segmentos en el modal
+const newSegment = ref({ from: '', to: '', state: '' }) // Nuevo: Para añadir un nuevo rango
+const saving = ref(false)
+const modalDays = ref([]) // [{date, day, code}]
+
+// Orden y nombres completos de estados
+const stateOrder = ['', 'NC', 'CS', 'CE', 'PR', 'VC', 'SR', 'FR']
+const codeToFull = {
+  '': '',
+  NC: 'SIN NOVEDAD',
+  CS: 'COMISIÓN DEL SERVICIO',
+  CE: 'COMISIÓN DE ESTUDIOS',
+  PR: 'PERMISO',
+  VC: 'VACACIONES',
+  SR: 'SERVICIO',
+  FR: 'FRANCO'
+}
+
+const fullToCode = computed(() => {
+    const map = {}
+    for (const [code, full] of Object.entries(codeToFull)) {
+        if (code) map[full] = code
+    }
+    return map
+})
 
 // Cargar catálogos (grupos y unidades)
 async function loadCatalogs () {
@@ -306,11 +464,14 @@ const estadosUnicos = computed(() => {
   return [...set].sort()
 })
 
-// Lista filtrada (por grupo, unidad, estado, texto)
+// Lista filtrada (por grupo, unidad actual, unidad proyectada, estado, texto)
 const filtered = computed(() => {
   return items.value.filter(r => {
+    const destUnitIdRaw = r.destUnitId ?? r.dest_unit_id ?? null
+
     if (filtroGrupo.value && r.agentGroupId !== Number(filtroGrupo.value)) return false
-    if (filtroUnidad.value && r.unitId !== Number(filtroUnidad.value)) return false
+    if (filtroUnidadActual.value && r.unitId !== Number(filtroUnidadActual.value)) return false
+    if (filtroUnidadProyectada.value && destUnitIdRaw !== Number(filtroUnidadProyectada.value)) return false
     if (filtroEstado.value && r.state !== filtroEstado.value) return false
 
     if (filtroTexto.value) {
@@ -353,14 +514,54 @@ const groupedAgents = computed(() => {
   )
 })
 
-function toggleAgent (id) {
-  expandedAgentId.value = expandedAgentId.value === id ? null : id
+// Unidad proyectada usando dest_unit_id
+function projectedUnit (agent) {
+  const ids = new Set()
+
+  for (const seg of agent.segments) {
+    const id = seg.destUnitId ?? seg.dest_unit_id ?? null
+    if (id) ids.add(id)
+  }
+
+  if (!ids.size) return 'Sin cambio'
+  if (ids.size === 1) {
+    const id = [...ids][0]
+    const u = units.value.find(u => u.id === id)
+    return u ? u.name : `Unidad ${id}`
+  }
+  return 'Varias'
 }
+
+// Rango global de días (para las columnas)
+const dayRange = computed(() => {
+  const res = []
+  if (!from.value || !to.value) return res
+
+  const d1 = new Date(from.value)
+  const d2 = new Date(to.value)
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1) return res
+
+  const ymd = (d) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  for (let d = new Date(d1); d <= d2; d.setDate(d.getDate() + 1)) {
+    res.push({
+      date: ymd(d),
+      day: d.getDate()
+    })
+  }
+  return res
+})
 
 async function consultarProyeccion () {
   error.value = ''
   loaded.value = false
   items.value = []
+  selectedAgent.value = null
 
   if (!from.value || !to.value) {
     error.value = 'Seleccione un rango de fechas (desde y hasta).'
@@ -373,7 +574,6 @@ async function consultarProyeccion () {
     const { data } = await http.get('/rest-planning', { params })
     items.value = data.items || []
     loaded.value = true
-    expandedAgentId.value = null
   } catch (e) {
     console.error('Error consultando proyección', e)
     error.value = 'No se pudo cargar la proyección.'
@@ -382,54 +582,220 @@ async function consultarProyeccion () {
   }
 }
 
-// Helper: construir "calendario" / línea de tiempo para un agente
-function buildDayCellsForAgent (agent) {
-  const result = []
-  if (!from.value || !to.value) return result
+// =========================
+// HELPERS PARA ESTADOS
+// =========================
 
-  const d1 = new Date(from.value)
-  const d2 = new Date(to.value)
+// Devuelve { code, full } para ese agente en esa fecha
+function getStateCode (agent, dateStr) {
+  const seg = agent.segments.find(
+    s => dateStr >= s.start_date && dateStr <= s.end_date
+  )
 
-  if (isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1) return result
+  const raw = seg ? String(seg.state || '') : ''
+  const upper = raw.toUpperCase()
 
-  // Función helper para formato YYYY-MM-DD
-  const ymd = (d) => {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
+  if (!raw) {
+    return { code: '', full: '' }
+  }
+  if (upper === 'NC' || upper.includes('SIN NOVEDAD')) {
+    return { code: 'NC', full: 'SIN NOVEDAD' }
+  }
+  if (upper === 'CS' || upper.includes('COMISION DEL SERVICIO') || upper.includes('COMISIÓN DEL SERVICIO')) {
+    return { code: 'CS', full: 'COMISIÓN DEL SERVICIO' }
+  }
+  if (upper === 'CE' || upper.includes('COMISION DE ESTUDIOS') || upper.includes('COMISIÓN DE ESTUDIOS')) {
+    return { code: 'CE', full: 'COMISIÓN DE ESTUDIOS' }
+  }
+  if (upper === 'PR' || upper.includes('PERMISO')) {
+    return { code: 'PR', full: 'PERMISO' }
+  }
+  if (upper === 'VC' || upper.includes('VACACION')) {
+    return { code: 'VC', full: 'VACACIONES' }
+  }
+  if (upper === 'FR' || upper.includes('FRANCO')) {
+    return { code: 'FR', full: 'FRANCO' }
+  }
+  if (upper === 'SR' || (upper.includes('SERVICIO') && !upper.includes('COMISION'))) {
+    return { code: 'SR', full: 'SERVICIO' }
   }
 
-  const monthLabels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-
-  for (let d = new Date(d1); d <= d2; d.setDate(d.getDate() + 1)) {
-    const dateStr = ymd(d)
-    const dayNum = d.getDate()
-    const label = monthLabels[d.getMonth()]
-
-    const seg = agent.segments.find(s => dateStr >= s.start_date && dateStr <= s.end_date)
-    result.push({
-      date: dateStr,
-      day: dayNum,
-      label,
-      state: seg ? seg.state : ''
-    })
-  }
-
-  return result
+  return { code: '', full: raw }
 }
 
-// Clase de color según estado (muy simple; puedes ajustar colores por tipo)
-function stateColorClass (state) {
-  if (!state) return 'bg-white text-slate-400 border-slate-200'
-  const s = String(state).toUpperCase()
-  if (s.includes('PERMISO')) return 'bg-amber-50 text-amber-800 border-amber-300'
-  if (s.includes('COMISIÓN')) return 'bg-emerald-50 text-emerald-800 border-emerald-300'
-  if (s.includes('DESCANSO')) return 'bg-sky-50 text-sky-800 border-sky-300'
-  return 'bg-slate-50 text-slate-700 border-slate-300'
+// Clases de color según código (aprox colores de tu imagen)
+function stateColorClass (code) {
+  switch (code) {
+    case 'NC': return 'bg-sky-700 text-white border-sky-900'
+    case 'CS': return 'bg-emerald-500 text-white border-emerald-700'
+    case 'CE': return 'bg-amber-400 text-slate-900 border-amber-600'
+    case 'PR': return 'bg-amber-200 text-slate-900 border-amber-400'
+    case 'VC': return 'bg-red-500 text-white border-red-700'
+    case 'SR': return 'bg-orange-500 text-white border-orange-700'
+    case 'FR': return 'bg-cyan-400 text-slate-900 border-cyan-600'
+    default:   return 'bg-slate-100 text-slate-500 border-slate-300'
+  }
+}
+
+// =========================
+// MODAL / EDICIÓN
+// =========================
+// Nuevo: Calcula la diferencia en días entre dos fechas (inclusive)
+function dateDifference(date1Str, date2Str) {
+    const d1 = new Date(date1Str)
+    const d2 = new Date(date2Str)
+    
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1) return null
+
+    // Calcula la diferencia en milisegundos y la convierte a días.
+    const diffTime = Math.abs(d2.getTime() - d1.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    
+    // Sumamos 1 porque el rango es inclusivo (ej: del 1 al 1 son 1 día)
+    return diffDays + 1;
+}
+
+// Nuevo: Valida si el nuevo segmento es válido para ser añadido
+const newSegmentValid = computed(() => {
+    if (!newSegment.value.from || !newSegment.value.to) return false
+    const diff = dateDifference(newSegment.value.from, newSegment.value.to)
+    return diff !== null && diff > 0
+})
+
+// =========================
+// MODAL / EDICIÓN (BASADO EN RANGOS)
+// =========================
+
+function openModal (agent) {
+  selectedAgent.value = agent
+
+  // Clonamos y normalizamos los segmentos para edición
+  // Usamos los segmentos crudos del agente (que son los rangos guardados)
+  editableSegments.value = agent.segments.map(s => ({
+    from: s.start_date,
+    to: s.end_date,
+    state: s.state // El estado ya viene como nombre completo
+  }))
+
+  // Inicializa el formulario de nuevo segmento
+  // 💡 CAMBIO: Asignamos las fechas globales de la consulta (from.value y to.value)
+  newSegment.value = { 
+    from: from.value, // <-- Aquí toma la fecha "Desde" global
+    to: to.value,     // <-- Aquí toma la fecha "Hasta" global
+    state: '' 
+  }
+}
+
+function closeModal () {
+  selectedAgent.value = null
+  editableSegments.value = []
+}
+
+// Nuevo: Añade un nuevo segmento a la lista
+function addSegment() {
+    if (!newSegmentValid.value || !newSegment.value.state) return
+
+    editableSegments.value.push({
+        from: newSegment.value.from,
+        to: newSegment.value.to,
+        state: newSegment.value.state
+    })
+
+    // Limpiar formulario para el siguiente
+    newSegment.value = { from: '', to: '', state: '' }
+    
+    // Opcional: ordenar los segmentos por fecha de inicio
+    editableSegments.value.sort((a, b) => a.from.localeCompare(b.from))
+}
+
+// Nuevo: Elimina un segmento de la lista
+function removeSegment(index) {
+    editableSegments.value.splice(index, 1)
+}
+
+function cycleDayState (idx) {
+  const current = modalDays.value[idx].code
+  const i = stateOrder.indexOf(current)
+  const next = stateOrder[(i + 1) % stateOrder.length] || ''
+  modalDays.value[idx].code = next || 'NC'
+}
+
+function fillAll (code) {
+  modalDays.value = modalDays.value.map(d => ({ ...d, code }))
+}
+
+// Generar segmentos y enviar POST /rest-planning/bulk
+// Enviar POST /rest-planning/bulk
+async function saveProjection () {
+  if (!selectedAgent.value) return
+  saving.value = true
+  try {
+    // 1. Validar que no haya superposiciones ni rangos inválidos
+    const validSegments = editableSegments.value
+        .filter(s => s.from && s.to && s.state && dateDifference(s.from, s.to) !== null)
+        .sort((a, b) => a.from.localeCompare(b.from)) // Ordenar por fecha
+
+    if (!validSegments.length) {
+        // Enviar una lista vacía para "borrar" la proyección en el rango
+        // En tu lógica actual, si no hay segmentos, se asume 'NC' por defecto si no hay un segmento con el estado. 
+        // Para este ejemplo, enviaremos los segmentos válidos. Si se deben borrar, la API debería manejar la eliminación de los rangos existentes antes de guardar los nuevos.
+
+    } else {
+        // Validación de superposiciones simple
+        for (let i = 0; i < validSegments.length - 1; i++) {
+            const currentEnd = new Date(validSegments[i].to)
+            const nextStart = new Date(validSegments[i+1].from)
+            
+            // Si el día de inicio del siguiente es menor o igual al día de fin del actual (o el día siguiente al fin del actual)
+            if (nextStart.getTime() <= currentEnd.getTime()) {
+                alert('Error: Los rangos de proyección se superponen o son contiguos, y no están ordenados correctamente. Por favor, revísalos.')
+                saving.value = false
+                return
+            }
+        }
+    }
+
+    const payload = {
+        from: from.value,
+        to: to.value,
+        items: [
+            {
+                agentId: selectedAgent.value.agentId,
+                // Mapeamos a la estructura que espera la API
+                segments: validSegments.map(s => ({
+                    from: s.from,
+                    to: s.to,
+                    state: s.state // El estado ya es el nombre completo (ej: 'COMISIÓN DEL SERVICIO')
+                }))
+            }
+        ]
+    }
+
+    await http.post('/rest-planning/bulk', payload)
+
+    // Recargar y cerrar
+    await consultarProyeccion()
+    closeModal()
+  } catch (e) {
+    console.error('Error guardando proyección', e)
+    alert('Vigencia de gatos vigente no se puede modificar la proyección')
+  } finally {
+    saving.value = false
+  }
 }
 
 onMounted(() => {
   loadCatalogs()
 })
 </script>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

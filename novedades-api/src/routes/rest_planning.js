@@ -301,6 +301,326 @@ router.get(
   }
 )
 
+// === Editar vigencia (projection_periods) ===
+router.put(
+  '/periods/:id',
+  requireAuth,
+  // mismos roles que crean vigencias
+  requireRole('superadmin', 'supervision', 'gastos'),
+  async (req, res) => {
+    const id = Number(req.params.id)
+    if (!id) return res.status(400).json({ error: 'ID de vigencia inválido' })
+
+    const { name, from, to } = req.body || {}
+
+    const nombre = String(name || '').trim().toUpperCase()
+    if (!nombre || !from || !to) {
+      return res.status(422).json({
+        error: 'Nombre, desde y hasta son requeridos para actualizar la vigencia.'
+      })
+    }
+
+    const d1 = toDate(from)
+    const d2 = toDate(to)
+    if (!d1 || !d2 || d2 < d1) {
+      return res.status(422).json({ error: 'Rango de fechas inválido para la vigencia.' })
+    }
+
+    const fromYMD = formatYMD(d1)
+    const toYMD   = formatYMD(d2)
+
+    try {
+      // 1) Verificar que la vigencia existe
+      const [[period]] = await pool.query(
+        `
+        SELECT
+          id,
+          DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
+          DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
+        FROM projection_periods
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [id]
+      )
+
+      if (!period) {
+        return res.status(404).json({ error: 'Vigencia no encontrada' })
+      }
+
+      // 2) Validar que todas las subvigencias sigan dentro del nuevo rango
+      const [subs] = await pool.query(
+        `
+        SELECT
+          id,
+          DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
+          DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
+        FROM projection_subperiods
+        WHERE period_id = ?
+        `,
+        [id]
+      )
+
+      for (const sp of subs) {
+        if (sp.fromYmd < fromYMD || sp.toYmd > toYMD) {
+          return res.status(422).json({
+            error: `No se puede reducir el rango: la subvigencia "${sp.id}" quedaría por fuera del nuevo rango.`
+          })
+        }
+      }
+
+      // 3) Actualizar vigencia
+      await pool.query(
+        `
+        UPDATE projection_periods
+        SET
+          name      = ?,
+          from_date = ?,
+          to_date   = ?,
+          updated_at = NOW()
+        WHERE id = ?
+        `,
+        [nombre, fromYMD, toYMD, id]
+      )
+
+      try {
+        await logEvent({
+          req,
+          userId: req.user.uid,
+          action: Actions.REST_PLAN_PERIOD_UPDATE ?? 'REST_PLAN_PERIOD_UPDATE',
+          details: { id, name: nombre, from: fromYMD, to: toYMD }
+        })
+      } catch {}
+
+      res.json({ ok: true })
+    } catch (e) {
+      console.error('[PUT /rest-planning/periods/:id] error', e)
+      res.status(500).json({ error: 'PeriodUpdateError', detail: e.message })
+    }
+  }
+)
+
+// === Eliminar vigencia (projection_periods) ===
+router.delete(
+  '/periods/:id',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'gastos'),
+  async (req, res) => {
+    const id = Number(req.params.id)
+    if (!id) return res.status(400).json({ error: 'ID de vigencia inválido' })
+
+    try {
+      // 1) Verificar que exista
+      const [[period]] = await pool.query(
+        'SELECT id, name FROM projection_periods WHERE id=? LIMIT 1',
+        [id]
+      )
+      if (!period) {
+        return res.status(404).json({ error: 'Vigencia no encontrada' })
+      }
+
+      // 2) ¿Tiene subvigencias?
+      const [[subCount]] = await pool.query(
+        'SELECT COUNT(*) AS c FROM projection_subperiods WHERE period_id=?',
+        [id]
+      )
+      if (subCount.c > 0) {
+        return res.status(409).json({
+          error: 'PeriodHasSubperiods',
+          detail: 'La vigencia tiene subvigencias asociadas. Elimínalas o reasígname antes.'
+        })
+      }
+
+      // 3) ¿Está usada por proyecciones (rest_plans)?
+      const [[rpCount]] = await pool.query(
+        'SELECT COUNT(*) AS c FROM rest_plans WHERE vigencia_id=?',
+        [id]
+      )
+      if (rpCount.c > 0) {
+        return res.status(409).json({
+          error: 'PeriodInUse',
+          detail: 'La vigencia está asociada a proyecciones de descanso (rest_plans).'
+        })
+      }
+
+      // 4) ¿Está usada por comisiones reales?
+      const [[scCount]] = await pool.query(
+        'SELECT COUNT(*) AS c FROM service_commissions WHERE vigencia_id=?',
+        [id]
+      )
+      if (scCount.c > 0) {
+        return res.status(409).json({
+          error: 'PeriodInUse',
+          detail: 'La vigencia está asociada a comisiones de servicio.'
+        })
+      }
+
+      // 5) Eliminar
+      await pool.query(
+        'DELETE FROM projection_periods WHERE id=?',
+        [id]
+      )
+
+      try {
+        await logEvent({
+          req,
+          userId: req.user.uid,
+          action: Actions.REST_PLAN_PERIOD_DELETE ?? 'REST_PLAN_PERIOD_DELETE',
+          details: { id, name: period.name }
+        })
+      } catch {}
+
+      res.json({ ok: true })
+    } catch (e) {
+      console.error('[DELETE /rest-planning/periods/:id] error', e)
+      res.status(500).json({ error: 'PeriodDeleteError', detail: e.message })
+    }
+  }
+)
+
+// === Editar subvigencia (projection_subperiods) ===
+router.put(
+  '/subperiods/:id',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos'),
+  async (req, res) => {
+    const id = Number(req.params.id)
+    if (!id) return res.status(400).json({ error: 'ID de subvigencia inválido' })
+
+    const { name, from, to } = req.body || {}
+
+    const nameClean = String(name || '').trim()
+    if (!nameClean || !from || !to) {
+      return res.status(422).json({
+        error: 'Nombre, desde y hasta son requeridos para actualizar la subvigencia.'
+      })
+    }
+
+    const d1 = toDate(from)
+    const d2 = toDate(to)
+    if (!d1 || !d2 || d2 < d1) {
+      return res.status(422).json({ error: 'Rango de fechas inválido para la subvigencia.' })
+    }
+
+    const fromYMD = formatYMD(d1)
+    const toYMD   = formatYMD(d2)
+
+    try {
+      // 1) Traer subvigencia y su vigencia padre
+      const [[sp]] = await pool.query(
+        `
+        SELECT
+          s.id,
+          s.period_id,
+          DATE_FORMAT(s.from_date,'%Y-%m-%d') AS fromYmd,
+          DATE_FORMAT(s.to_date  ,'%Y-%m-%d') AS toYmd,
+          p.name AS periodName,
+          DATE_FORMAT(p.from_date,'%Y-%m-%d') AS periodFrom,
+          DATE_FORMAT(p.to_date  ,'%Y-%m-%d') AS periodTo
+        FROM projection_subperiods s
+        JOIN projection_periods p ON p.id = s.period_id
+        WHERE s.id = ?
+        LIMIT 1
+        `,
+        [id]
+      )
+
+      if (!sp) {
+        return res.status(404).json({ error: 'Subvigencia no encontrada' })
+      }
+
+      // 2) Validar que el nuevo rango quede dentro de la vigencia
+      if (fromYMD < sp.periodFrom || toYMD > sp.periodTo) {
+        return res.status(422).json({
+          error: `La subvigencia debe estar dentro del rango de la vigencia (${sp.periodFrom} → ${sp.periodTo}).`
+        })
+      }
+
+      // 3) Actualizar subvigencia
+      await pool.query(
+        `
+        UPDATE projection_subperiods
+        SET
+          name      = ?,
+          from_date = ?,
+          to_date   = ?,
+          updated_at = NOW()
+        WHERE id = ?
+        `,
+        [nameClean, fromYMD, toYMD, id]
+      )
+
+      try {
+        await logEvent({
+          req,
+          userId: req.user.uid,
+          action: Actions.REST_PLAN_SUBPERIOD_UPDATE ?? 'REST_PLAN_SUBPERIOD_UPDATE',
+          details: { id, periodId: sp.period_id, name: nameClean, from: fromYMD, to: toYMD }
+        })
+      } catch {}
+
+      res.json({ ok: true })
+    } catch (e) {
+      console.error('[PUT /rest-planning/subperiods/:id] error', e)
+      res.status(500).json({ error: 'SubperiodUpdateError', detail: e.message })
+    }
+  }
+)
+
+// === Eliminar subvigencia (projection_subperiods) ===
+router.delete(
+  '/subperiods/:id',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos'),
+  async (req, res) => {
+    const id = Number(req.params.id)
+    if (!id) return res.status(400).json({ error: 'ID de subvigencia inválido' })
+
+    try {
+      // 1) Verificar que exista
+      const [[sp]] = await pool.query(
+        'SELECT id, name FROM projection_subperiods WHERE id=? LIMIT 1',
+        [id]
+      )
+      if (!sp) {
+        return res.status(404).json({ error: 'Subvigencia no encontrada' })
+      }
+
+      // 2) ¿Está en uso por alguna comisión real?
+      const [[scCount]] = await pool.query(
+        'SELECT COUNT(*) AS c FROM service_commissions WHERE subperiod_id=?',
+        [id]
+      )
+      if (scCount.c > 0) {
+        return res.status(409).json({
+          error: 'SubperiodInUse',
+          detail: 'La subvigencia está asociada a comisiones reales.'
+        })
+      }
+
+      // 3) Eliminar
+      await pool.query(
+        'DELETE FROM projection_subperiods WHERE id=?',
+        [id]
+      )
+
+      try {
+        await logEvent({
+          req,
+          userId: req.user.uid,
+          action: Actions.REST_PLAN_SUBPERIOD_DELETE ?? 'REST_PLAN_SUBPERIOD_DELETE',
+          details: { id, name: sp.name }
+        })
+      } catch {}
+
+      res.json({ ok: true })
+    } catch (e) {
+      console.error('[DELETE /rest-planning/subperiods/:id] error', e)
+      res.status(500).json({ error: 'SubperiodDeleteError', detail: e.message })
+    }
+  }
+)
+
 // Valida que un usuario pueda tocar info de un agente
 async function validateAgentScope(req, agentId) {
   const role = String(req.user?.role || '').toLowerCase()
