@@ -2648,12 +2648,13 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
         g.name AS groupName,
         a.unitId,
         u.name AS unitName,
-        a.nickname
+        a.nickname,
+        a.rank_order
       FROM agent a
       LEFT JOIN \`group\` g ON g.id = a.groupId
       LEFT JOIN unit u      ON u.id = a.unitId
       WHERE ${where}
-      ORDER BY a.code
+      ORDER BY a.rank_order ASC, a.code ASC
       `,
       params
     );
@@ -2825,6 +2826,51 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
   }
 });
 
+// Reordenar escalafón global de agentes
+app.post(
+  '/admin/agents/reorder',
+  auth,
+  requireRole('superadmin'),
+  async (req, res) => {
+    try {
+      const { items } = req.body;
+      // items: [ { id, rank_order }, ... ]
+
+      if (!Array.isArray(items) || !items.length) {
+        return res.status(400).json({ error: 'PayloadInvalido', detail: 'items vacío o inválido' });
+      }
+
+      const conn = await pool.getConnection();
+      try {
+        await conn.beginTransaction();
+
+        for (const it of items) {
+          const id = Number(it.id);
+          const ro = Number(it.rank_order);
+          if (!id || !ro) continue;
+
+          await conn.query(
+            'UPDATE agent SET rank_order=? WHERE id=?',
+            [ro, id]
+          );
+        }
+
+        await conn.commit();
+      } catch (e) {
+        await conn.rollback();
+        throw e;
+      } finally {
+        conn.release();
+      }
+
+      res.json({ ok: true });
+    } catch (e) {
+      console.error('Error en /admin/agents/reorder:', e);
+      res.status(500).json({ error: 'ErrorReordenEscalafon', detail: e.message });
+    }
+  }
+);
+
 
 // Obtener un agente por id (incluye joins útiles)
 app.get(
@@ -2908,6 +2954,7 @@ app.get(
     }
   }
 );
+
 
 // Para líder de grupo: cumplimiento de unidades de SU grupo
 app.get('/dashboard/compliance-units', auth, requireRole('leader_group'), async (req, res) => {

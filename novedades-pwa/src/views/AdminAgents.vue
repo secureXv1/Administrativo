@@ -2,17 +2,44 @@
   <div class="max-w-6xl mx-auto space-y-6">
     <!-- HEADER -->
     <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
-      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
         <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">F</div>
+          <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">
+            F
+          </div>
           <div>
-            <h2 class="font-semibold text-slate-900">Listado de Funcionarios</h2>
-            <p class="text-slate-500 text-xs">FIltra por codigo, nicname, grupo, unidad...</p>
+            <h2 class="font-semibold text-slate-900">Listado de funcionarios</h2>
+            <p class="text-slate-500 text-xs">
+              Filtra por código, nickname, grupo, unidad...
+            </p>
           </div>
         </div>
-        <button v-if="isSuperadmin" class="btn-primary" @click="openCreate">Nuevo agente</button>
+
+        <div class="flex items-center gap-3">
+          <!-- Toggle reordenar escalafón (solo superadmin si quieres) -->
+          <label
+            v-if="isSuperadmin"
+            class="inline-flex items-center gap-2 text-xs text-slate-600"
+          >
+            <input
+              type="checkbox"
+              v-model="reorderMode"
+              class="rounded border-slate-300"
+            />
+            <span>Reordenar escalafón</span>
+          </label>
+
+          <button
+            v-if="isSuperadmin"
+            class="btn-primary"
+            @click="openCreate"
+          >
+            Nuevo agente
+          </button>
+        </div>
       </div>
     </div>
+
     <!-- Filtros -->
     <div class="card">
       <div class="card-body">
@@ -65,7 +92,7 @@
                 <th v-if="isEditableRole" style="text-align: center">Acciones</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody v-if="!reorderMode">
               <tr v-for="(a, idx) in itemsPagina" :key="a.id">
                 <td :title="'ID: ' + a.id">{{ rowNumber(idx) }}</td>
                 <td>{{ a.code }}</td>
@@ -97,24 +124,33 @@
                 <td class="text-center">
                   <button class="btn-ghost p-1" title="Historial" @click="openHistory(a)">
                     <!-- icono reloj -->
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"></circle>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none"
+                        viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path d="M12 8v4l3 3"/>
+                      <circle cx="12" cy="12" r="9"></circle>
                     </svg>
                   </button>
                 </td>
                 <td class="text-center">
                   <button v-if="isEditableRole" class="btn-ghost p-1" title="Editar" @click="openEdit(a)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path><path d="m16 5 3 3"></path>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                        viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path>
+                      <path d="m16 5 3 3"></path>
                     </svg>
                   </button>
                   <button v-if="isSuperadmin" class="btn-ghost p-1" title="Eliminar" @click="requestDelete(a)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
-                      stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M3 6h18"/><path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                        viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 6h18"/>
+                      <path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/>
                       <path d="M19 6V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2"/>
-                      <line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>
+                      <line x1="10" x2="10" y1="11" y2="17"/>
+                      <line x1="14" x2="14" y1="11" y2="17"/>
                     </svg>
                   </button>
                 </td>
@@ -123,6 +159,93 @@
                 <td colspan="9" class="text-center text-slate-500 py-6">Sin agentes</td>
               </tr>
             </tbody>
+
+            <!-- 🟢 Modo reordenar escalafón (drag & drop) -->
+            <draggable
+              v-else
+              v-model="orderedAgents"
+              item-key="id"
+              handle=".drag-handle"
+              tag="tbody"
+              @end="onDragEnd"
+            >
+              <template #item="{ element, index }">
+                <tr>
+                  <!-- usamos la misma primera columna como handle -->
+                  <td
+                    :title="'ID: ' + element.id"
+                    class="drag-handle cursor-move"
+                  >
+                    {{ rowNumber(index) }}
+                  </td>
+                  <td>{{ element.code }}</td>
+                  <td>{{ element.nickname || '—' }}</td> <!-- Apodo aquí -->
+                  <td>{{ catLabel(element.category) }}</td>
+                  <td>{{ element.groupCode || groupCode(element.groupId) || '—' }}</td>
+                  <td>{{ element.unitName || unitName(element.unitId) || '—' }}</td>
+                  <td>
+                    <span
+                      :class="[
+                        'inline-block min-w-[2.5em] text-center rounded px-1',
+                        element.current_streak >= 45
+                          ? 'bg-red-100 text-red-600 font-bold border border-red-200'
+                          : element.current_streak >= 30
+                            ? 'bg-orange-100 text-orange-700 font-semibold border border-orange-200'
+                            : element.current_streak > 0
+                              ? 'bg-green-50 text-green-700 font-semibold border border-green-200'
+                              : 'text-slate-400'
+                      ]"
+                      :title="element.current_streak >= 45
+                        ? '¡Alerta! Racha extremadamente prolongada'
+                        : element.current_streak >= 30
+                          ? 'Racha prolongada: recomienda revisión'
+                          : 'Días consecutivos en servicio o sin novedad'"
+                    >
+                      {{ element.current_streak ?? 0 }}
+                    </span>
+                  </td>
+                  <td class="text-center">
+                    <button class="btn-ghost p-1" title="Historial" @click="openHistory(element)">
+                      <!-- icono reloj -->
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none"
+                          viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path d="M12 8v4l3 3"/>
+                        <circle cx="12" cy="12" r="9"></circle>
+                      </svg>
+                    </button>
+                  </td>
+                  <td class="text-center">
+                    <button v-if="isEditableRole" class="btn-ghost p-1" title="Editar" @click="openEdit(element)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                          viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" stroke-width="2"
+                          stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 2a2.828 2.828 0 0 1 4 4L7 21l-4 1 1-4Z"></path>
+                        <path d="m16 5 3 3"></path>
+                      </svg>
+                    </button>
+                    <button v-if="isSuperadmin" class="btn-ghost p-1" title="Eliminar" @click="requestDelete(element)">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+                          viewBox="0 0 24 24" fill="none"
+                          stroke="currentColor" stroke-width="2"
+                          stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18"/>
+                        <path d="M8 6v14a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V6"/>
+                        <path d="M19 6V4a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v2"/>
+                        <line x1="10" x2="10" y1="11" y2="17"/>
+                        <line x1="14" x2="14" y1="11" y2="17"/>
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              </template>
+
+              <template #footer>
+                <tr v-if="orderedAgents.length === 0">
+                  <td colspan="9" class="text-center text-slate-500 py-6">Sin agentes</td>
+                </tr>
+              </template>
+            </draggable>
           </table>
 
                           <!-- Paginación (solo admin/supervisión) -->
@@ -418,6 +541,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import axios from 'axios'
+import draggable from 'vuedraggable'
 
 // Confirmación borrar
 const pendingDelete = ref(null)
@@ -652,16 +776,32 @@ const reloadAdminDebounced = (() => {
 })()
 
 // Filtrado + orden (solo para líder de grupo; admin/supervisión ya filtran en backend)
+// Filtrado + orden (usando rank_order si existe)
 const itemsFiltradosOrdenados = computed(() => {
-  // Todos los roles: confiar en backend (ya viene filtrado/paginado); solo ordenamos por estética si quieres
   const arr = items.value.slice()
-  const order = { 'OF':1, 'SO':2, 'PT':3 }
-  arr.sort((a,b) => {
-    const ca = order[String(a.category).toUpperCase()] || 9
-    const cb = order[String(b.category).toUpperCase()] || 9
+  const catOrder = { 'OF': 1, 'SO': 2, 'PT': 3 }
+
+  arr.sort((a, b) => {
+    const ra = (a.rank_order ?? a.rankOrder ?? null)
+    const rb = (b.rank_order ?? b.rankOrder ?? null)
+
+    // 1) Si ambos tienen rank_order, ordenar por ahí
+    if (ra != null && rb != null && ra !== rb) {
+      return ra - rb
+    }
+
+    // 2) Uno tiene rank y el otro no → el que tenga rank va primero
+    if (ra != null && rb == null) return -1
+    if (ra == null && rb != null) return 1
+
+    // 3) Sin rank_order → caemos al orden clásico categoría + código
+    const ca = catOrder[String(a.category).toUpperCase()] || 9
+    const cb = catOrder[String(b.category).toUpperCase()] || 9
     if (ca !== cb) return ca - cb
+
     return String(a.code).localeCompare(String(b.code))
   })
+
   return arr
 })
 
@@ -669,6 +809,56 @@ const itemsPagina = computed(() => {
   // Ya está paginado por backend, simplemente retorna los items
   return itemsFiltradosOrdenados.value
 })
+
+// Modo reordenar escalafón
+const reorderMode = ref(false)
+
+// Lista que se usará para drag & drop en la tabla
+const orderedAgents = ref([])
+
+// Cuando cambien los items de la página, copiamos a orderedAgents
+watch(itemsPagina, (val) => {
+  orderedAgents.value = val.slice() // copia superficial
+}, { immediate: true })
+
+watch(reorderMode, (val) => {
+  if (val) {
+    orderedAgents.value = itemsPagina.value.slice()
+  }
+})
+
+// ==== Drag & Drop: guardar nuevo escalafón global ====
+async function onDragEnd() {
+  try {
+    const token = localStorage.getItem('token') || ''
+    const headers = { Authorization: 'Bearer ' + token }
+
+    // Calcula el escalafón basado en la página actual
+    const payload = {
+      items: orderedAgents.value.map((ag, idx) => ({
+        id: ag.id,
+        rank_order: (page.value - 1) * pageSize.value + idx + 1
+      }))
+    }
+
+    await axios.post('/admin/agents/reorder', payload, { headers })
+
+    toast?.({
+      type: 'success',
+      title: 'Escalafón actualizado',
+      desc: 'El orden ha sido guardado correctamente.'
+    })
+
+    await loadAgents()
+  } catch (e) {
+    const detail = e?.response?.data?.detail || e?.response?.data?.error || e?.message
+    toast?.({
+      type: 'error',
+      title: 'No se pudo guardar el orden',
+      desc: detail
+    })
+  }
+}
 
 
 
