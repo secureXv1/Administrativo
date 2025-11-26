@@ -308,13 +308,22 @@
                         <input type="date" v-model="newSegment.to" class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
                     </div>
                     <div class="flex-1 min-w-[150px]">
-                        <label class="block text-xs font-medium text-slate-700 mb-1">Estado</label>
-                        <select v-model="newSegment.state" class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500">
-                            <option value="">Selecciona...</option>
-                            <option v-for="code in stateOrder.slice(1)" :key="code" :value="codeToFull[code]">
-                                {{ codeToFull[code] }}
-                            </option>
-                        </select>
+                      <label class="block text-xs font-medium text-slate-700 mb-1">
+                        Unidad proyectada (opcional)
+                      </label>
+                      <select
+                        v-model.number="newSegment.destUnitId"
+                        class="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                      >
+                        <option :value="null">Sin cambio</option>
+                        <option
+                          v-for="u in units"
+                          :key="u.id"
+                          :value="u.id"
+                        >
+                          {{ u.name }}
+                        </option>
+                      </select>
                     </div>
                     <button
                         type="button"
@@ -339,16 +348,47 @@
                         <div class="size-3 rounded-full flex-shrink-0" :class="stateColorClass(fullToCode[segment.state] || '')"></div>
 
                         <div class="flex items-center gap-2 flex-grow">
-                            <input type="date" v-model="segment.from" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[120px]">
-                            <span>—</span>
-                            <input type="date" v-model="segment.to" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[120px]">
-                            
-                            <select v-model="segment.state" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[180px]">
-                                <option v-for="code in stateOrder.slice(1)" :key="code" :value="codeToFull[code]">
-                                    {{ codeToFull[code] }}
-                                </option>
-                            </select>
+                          <input
+                            type="date"
+                            v-model="segment.from"
+                            class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[120px]"
+                          >
+                          <span>—</span>
+                          <input
+                            type="date"
+                            v-model="segment.to"
+                            class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[120px]"
+                          >
+                          
+                          <select
+                            v-model="segment.state"
+                            class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[180px]"
+                          >
+                            <option
+                              v-for="code in stateOrder.slice(1)"
+                              :key="code"
+                              :value="codeToFull[code]"
+                            >
+                              {{ codeToFull[code] }}
+                            </option>
+                          </select>
+
+                          <!-- NUEVO: Unidad proyectada -->
+                          <select
+                            v-model.number="segment.destUnitId"
+                            class="rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[150px]"
+                          >
+                            <option :value="null">Sin cambio</option>
+                            <option
+                              v-for="u in units"
+                              :key="u.id"
+                              :value="u.id"
+                            >
+                              {{ u.name }}
+                            </option>
+                          </select>
                         </div>
+
                         
                         <div class="flex items-center gap-2 flex-shrink-0 text-xs text-slate-500">
                             <span v-if="dateDifference(segment.from, segment.to) !== null">
@@ -418,7 +458,12 @@ const filtroTexto = ref('')
 // Modal / edición
 const selectedAgent = ref(null)
 const editableSegments = ref([]) // Nuevo: Para almacenar los segmentos en el modal
-const newSegment = ref({ from: '', to: '', state: '' }) // Nuevo: Para añadir un nuevo rango
+const newSegment = ref({
+  from: '',
+  to: '',
+  state: '',
+  destUnitId: null  // 👈 unidad proyectada (opcional)
+})
 const saving = ref(false)
 const modalDays = ref([]) // [{date, day, code}]
 
@@ -669,22 +714,25 @@ const newSegmentValid = computed(() => {
 function openModal (agent) {
   selectedAgent.value = agent
 
-  // Clonamos y normalizamos los segmentos para edición
-  // Usamos los segmentos crudos del agente (que son los rangos guardados)
+  // Clonamos y normalizamos los segmentos para edición,
+  // incluyendo unidad proyectada actual (si la hay)
   editableSegments.value = agent.segments.map(s => ({
     from: s.start_date,
     to: s.end_date,
-    state: s.state // El estado ya viene como nombre completo
+    state: s.state, // nombre completo
+    destUnitId: s.destUnitId ?? s.dest_unit_id ?? null,
+    destGroupId: s.destGroupId ?? s.dest_group_id ?? null
   }))
 
   // Inicializa el formulario de nuevo segmento
-  // 💡 CAMBIO: Asignamos las fechas globales de la consulta (from.value y to.value)
   newSegment.value = { 
-    from: from.value, // <-- Aquí toma la fecha "Desde" global
-    to: to.value,     // <-- Aquí toma la fecha "Hasta" global
-    state: '' 
+    from: from.value,
+    to: to.value,
+    state: '',
+    destUnitId: null
   }
 }
+
 
 function closeModal () {
   selectedAgent.value = null
@@ -693,19 +741,21 @@ function closeModal () {
 
 // Nuevo: Añade un nuevo segmento a la lista
 function addSegment() {
-    if (!newSegmentValid.value || !newSegment.value.state) return
+  if (!newSegmentValid.value || !newSegment.value.state) return
 
-    editableSegments.value.push({
-        from: newSegment.value.from,
-        to: newSegment.value.to,
-        state: newSegment.value.state
-    })
+  editableSegments.value.push({
+    from: newSegment.value.from,
+    to: newSegment.value.to,
+    state: newSegment.value.state,
+    destUnitId: newSegment.value.destUnitId || null,
+    destGroupId: null // lo inferiremos al guardar
+  })
 
-    // Limpiar formulario para el siguiente
-    newSegment.value = { from: '', to: '', state: '' }
-    
-    // Opcional: ordenar los segmentos por fecha de inicio
-    editableSegments.value.sort((a, b) => a.from.localeCompare(b.from))
+  // Limpiar formulario para el siguiente
+  newSegment.value = { from: '', to: '', state: '', destUnitId: null }
+  
+  // Ordenar por fecha inicio
+  editableSegments.value.sort((a, b) => a.from.localeCompare(b.from))
 }
 
 // Nuevo: Elimina un segmento de la lista
@@ -756,19 +806,27 @@ async function saveProjection () {
     }
 
     const payload = {
-        from: from.value,
-        to: to.value,
-        items: [
-            {
-                agentId: selectedAgent.value.agentId,
-                // Mapeamos a la estructura que espera la API
-                segments: validSegments.map(s => ({
-                    from: s.from,
-                    to: s.to,
-                    state: s.state // El estado ya es el nombre completo (ej: 'COMISIÓN DEL SERVICIO')
-                }))
+      from: from.value,
+      to: to.value,
+      items: [
+        {
+          agentId: selectedAgent.value.agentId,
+          segments: validSegments.map(s => {
+            const destUnitId = s.destUnitId || null
+            const unit = destUnitId
+              ? units.value.find(u => u.id === destUnitId)
+              : null
+
+            return {
+              from: s.from,
+              to: s.to,
+              state: s.state,              // nombre completo (ej: COMISIÓN DEL SERVICIO)
+              destUnitId,                  // 👈 se guarda en rest_plans.dest_unit_id
+              destGroupId: unit ? unit.groupId : (s.destGroupId || null) // 👈 inferimos grupo
             }
-        ]
+          })
+        }
+      ]
     }
 
     await http.post('/rest-planning/bulk', payload)
