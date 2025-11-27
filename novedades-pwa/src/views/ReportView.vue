@@ -757,7 +757,7 @@
             <!-- LAYOUT PRINCIPAL: IZQ = rangos + línea de tiempo, DER = calendario -->
             <div
               v-if="projSelectedAgentId && projRange.from && projRange.to"
-              class="mt-4 grid gap-4 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]"
+              class="mt-4 grid gap-3 md:grid-cols-[minmax(0,1.7fr)_minmax(0,0.8fr)]"
             >
               <!-- === COLUMNA IZQUIERDA: RANGOS + LÍNEA DE TIEMPO === -->
               <div class="space-y-3">
@@ -825,30 +825,11 @@
                       </button>
                     </div>
                   </div>
-                  <!-- Grupo y Unidad destino SOLO si es COMISIÓN DEL SERVICIO -->
+                  <!-- Unidad destino SOLO si es COMISIÓN DEL SERVICIO -->
                   <div
                     v-if="projDraft.state === 'COMISIÓN DEL SERVICIO'"
-                    class="mt-2 grid gap-2 sm:grid-cols-2"
+                    class="mt-2 grid gap-2"
                   >
-                    <div>
-                      <label class="text-[11px] font-medium text-slate-600 mb-1 block">
-                        Grupo destino
-                      </label>
-                      <select
-                        class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
-                        v-model="projDraft.destGroupId"
-                      >
-                        <option :value="null" disabled>Selecciona grupo…</option>
-                        <option
-                          v-for="g in groups"
-                          :key="g.id"
-                          :value="g.id"
-                        >
-                          {{ g.code || g.name }}
-                        </option>
-                      </select>
-                    </div>
-
                     <div>
                       <label class="text-[11px] font-medium text-slate-600 mb-1 block">
                         Unidad destino
@@ -856,18 +837,18 @@
                       <select
                         class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
                         v-model="projDraft.destUnitId"
-                        :disabled="!projDraft.destGroupId"
                       >
                         <option :value="null" disabled>Selecciona unidad…</option>
                         <option
-                          v-for="u in (unitsByGroup[projDraft.destGroupId] || [])"
+                          v-for="u in units"
                           :key="u.id"
                           :value="u.id"
                         >
-                          {{ u.name }}
+                          {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
                         </option>
                       </select>
-                    </div>  
+                    </div>
+
 
                     <!-- SOLO si la unidad seleccionada es GEO -->
                     <div v-if="isDeptUnitDraft" class="grid gap-1">
@@ -912,43 +893,50 @@
                     </div>
                   </div>
 
+                  <!-- === Timeline en UNA sola línea === -->
                   <div
                     v-if="projTimelineSegments.length"
-                    class="space-y-2 relative mt-1 max-h-56 overflow-auto pr-1"
+                    class="relative mt-1 overflow-x-auto whitespace-nowrap pr-1 pb-1 no-scrollbar"
+                    style="max-width: 100%;"
                   >
-                    <div class="absolute left-2 top-0 bottom-0 w-px bg-slate-300" />
-                    <div
-                      v-for="seg in projTimelineSegments"
-                      :key="seg.index"
-                      class="flex flex-wrap items-center gap-2 pl-4"
-                    >
-                      <div
-                        class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200"
-                        :class="colorClass(seg.state)?.dot || 'bg-slate-400'"
-                      />
+                    <!-- Línea vertical removida (opcional) -->
+                    <!-- <div class="absolute left-2 top-0 bottom-0 w-px bg-slate-300" /> -->
 
+                    <div class="inline-flex items-center gap-3">
                       <div
-                        class="inline-flex flex-wrap items-center gap-2 px-3 py-1  text-[10px] shadow-sm bg-white border border-slate-200"
+                        v-for="seg in projTimelineSegments"
+                        :key="seg.index"
+                        class="inline-flex items-center gap-2"
                       >
-                       
-                        <!-- Fechas editables -->
-                        <div class="flex items-center gap-1">
+                        <!-- Punto -->
+                        <div
+                          class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200 flex-none"
+                          :class="colorClass(seg.state)?.dot || 'bg-slate-400'"
+                        />
+
+                        <!-- Tarjeta del segmento -->
+                        <div
+                          class="inline-flex items-center gap-2 px-3 py-1 text-[10px] shadow-sm bg-white border border-slate-200 rounded-md"
+                        >
+
+                          <!-- Fechas -->
                           <input
                             type="date"
-                            class="rounded-md border border-slate-300 px-1 py-0.5"
+                            class="rounded-md border border-slate-300 px-1 py-0.5 text-[10px] w-[115px]"
                             :value="seg.from"
                             @change="projUpdateSegmentField(seg.index, 'from', $event.target.value)"
                           />
                           <span>→</span>
                           <input
                             type="date"
-                            class="rounded-md border border-slate-300 px-1 py-0.5"
+                            class="rounded-md border border-slate-300 px-1 py-0.5 text-[10px] w-[115px]"
                             :value="seg.to"
                             @change="projUpdateSegmentField(seg.index, 'to', $event.target.value)"
                           />
-                          <!-- Estado editable -->
+
+                          <!-- Estado -->
                           <select
-                            class="rounded-md border border-slate-300 px-1 py-0.5 bg-white"
+                            class="rounded-md border border-slate-300 px-1 py-0.5 bg-white text-[10px]"
                             :value="seg.state"
                             @change="projUpdateSegmentField(seg.index, 'state', $event.target.value)"
                           >
@@ -960,31 +948,49 @@
                               {{ st }}
                             </option>
                           </select>
-                          <span v-if="seg.state === 'COMISIÓN DEL SERVICIO' && seg.destUnitId" class="text-[10px] opacity-80">
-                            {{ unitById[seg.destUnitId]?.name || 'Unidad' }}
-                          </span>
+
+                          <!-- Unidad -->
+                          <select
+                            v-if="seg.state === 'COMISIÓN DEL SERVICIO'"
+                            class="rounded-md border border-slate-300 px-1 py-0.5 bg-white max-w-[150px] text-[10px]"
+                            :value="seg.destUnitId || ''"
+                            @change="projUpdateSegmentField(
+                              seg.index,
+                              'destUnitId',
+                              $event.target.value ? Number($event.target.value) : null
+                            )"
+                          >
+                            <option value="">Unidad…</option>
+                            <option
+                              v-for="u in units"
+                              :key="u.id"
+                              :value="u.id"
+                            >
+                              {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
+                            </option>
+                          </select>
+
+                          <!-- Etiquetas -->
                           <span
                             v-if="seg.depts && seg.depts.length"
-                            class="text-[10px] opacity-80"
+                            class="text-[9px] opacity-70"
                           >
                             Deptos: {{ seg.depts.join(', ') }}
                           </span>
 
-
+                          <!-- Días -->
+                          <span class="opacity-70">{{ seg.count }}d</span>
                         </div>
 
-                        <span class="opacity-70">
-                          {{ seg.count }} día(s)
-                        </span>
+                        <!-- Botón quitar -->
+                        <button
+                          type="button"
+                          class="text-[10px] text-rose-700 hover:underline"
+                          @click="projRemoveSegment(seg.index)"
+                        >
+                          ✕
+                        </button>
                       </div>
-
-                      <button
-                        type="button"
-                        class="ml-1 text-[11px] text-rose-700 hover:underline"
-                        @click="projRemoveSegment(seg.index)"
-                      >
-                        Quitar
-                      </button>
                     </div>
                   </div>
 
@@ -992,12 +998,13 @@
                     Este funcionario no tiene rangos proyectados dentro del intervalo seleccionado.
                   </p>
                 </div>
-              </div>
-
 
               </div>
 
-              <!-- === COLUMNA DERECHA: CALENDARIO CUADRADO === -->
+
+              </div>
+
+              <!-- === COLUMNA DERECHA: CALENDARIO CUADRADO (estilo admin) === -->
               <div class="rounded-2xl border border-slate-200 bg-white p-3">
                 <div class="flex items-center justify-between mb-2">
                   <div class="text-xs font-semibold text-slate-700">
@@ -1010,7 +1017,7 @@
 
                 <!-- Cabecera días semana -->
                 <div
-                  class="grid grid-cols-7 gap-1 text-[10px] font-medium text-slate-500 mb-1"
+                  class="grid grid-cols-7 gap-1 text-[9px] font-medium text-slate-500 mb-1"
                 >
                   <div class="text-center">L</div>
                   <div class="text-center">M</div>
@@ -1022,43 +1029,61 @@
                 </div>
 
                 <!-- Calendario con scroll si el rango es grande -->
-                <div class="max-h-80 overflow-y-auto pr-1">
+                <div class="max-h-72 overflow-y-auto pr-1">
                   <div class="grid grid-cols-7 gap-1">
                     <div
                       v-for="cell in projCalendarCells"
                       :key="cell.key"
                       :title="cell.title"
-                      class="h-14 rounded-lg border text-[10px] flex flex-col p-1 transition-all"
+                      class="h-9 rounded-sm border text-[9px] flex flex-col px-0.5 pt-0.5 pb-0.5 transition-all"
                       :class="[
-                        cell.state
-                          ? (colorClass(cell.state)?.bg || 'bg-slate-100')
-                          : 'bg-white',
+                        projStateColorClass(projStateCode(cell.state)),
                         cell.isOutside && 'opacity-60',
                         projMissingDaysSet.has(cell.date) && '!border-rose-400 border-2'
                       ]"
                     >
-                      <div class="text-[10px] font-medium text-slate-700">
-                        {{ cell.day }}
+                      <!-- Día arriba a la izquierda -->
+                      <div class="flex items-center justify-between mb-0.5">
+                        <span class="text-[9px] font-medium text-white/80 drop-shadow-sm">
+                          {{ cell.day }}
+                        </span>
                       </div>
-                      <div
-                        v-if="cell.state"
-                        class="mt-auto text-center text-lg leading-none"
-                      >
-                        {{ iconFor(cell.state) }}
-                      </div>
-                      <div
-                        v-if="cell.state"
-                        class="text-[9px] text-center truncate"
-                      >
-                        {{ shortState(cell.state) }}
-                      </div>
-                      <div
-                        v-else
-                        class="mt-auto text-[9px] text-rose-500"
-                      >
-                        sin estado
+
+                      <!-- Código NC / CS / SR / FR / VC / PR / CE al centro -->
+                      <div class="flex-1 flex items-center justify-center">
+                        <span
+                          class="font-semibold tracking-tight"
+                          :class="projStateCode(cell.state) ? 'text-white' : 'text-slate-400'"
+                        >
+                          {{ projStateCode(cell.state) || '—' }}
+                        </span>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <!-- Leyenda estilo admin (opcional pero recomendado) -->
+                <div class="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-500">
+                  <div class="flex items-center gap-1">
+                    <span class="w-4 h-4 rounded-sm border bg-sky-700"></span> NC
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <span class="w-4 h-4 rounded-sm border bg-emerald-500"></span> CS
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <span class="w-4 h-4 rounded-sm border bg-orange-500"></span> SR
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <span class="w-4 h-4 rounded-sm border bg-cyan-400"></span> FR
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <span class="w-4 h-4 rounded-sm border bg-amber-400"></span> CE
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <span class="w-4 h-4 rounded-sm border bg-amber-500"></span> PR
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <span class="w-4 h-4 rounded-sm border bg-red-500"></span> VC
                   </div>
                 </div>
               </div>
@@ -2158,6 +2183,73 @@ function shortState(s){ const t=String(s||''); return t.length<=16?t:(t.slice(0,
 const legendStates = [
   'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','VACACIONES','FRANCO FRANCO','SUSPENDIDO','HOSPITALIZADO'
 ]
+// === Mapeo a códigos cortos y colores estilo ADMIN ===
+function projStateCode (state) {
+  const raw = String(state || '')
+  const upper = raw.toUpperCase()
+
+  if (!raw) return ''
+
+  if (upper === 'NC' || upper.includes('SIN NOVEDAD')) {
+    return 'NC' // SIN NOVEDAD
+  }
+  if (
+    upper === 'CS' ||
+    upper.includes('COMISION DEL SERVICIO') ||
+    upper.includes('COMISIÓN DEL SERVICIO')
+  ) {
+    return 'CS' // COMISIÓN DEL SERVICIO
+  }
+  if (
+    upper === 'CE' ||
+    upper.includes('COMISION DE ESTUDIO') ||
+    upper.includes('COMISIÓN DE ESTUDIO') ||
+    upper.includes('COMISION DE ESTUDIOS') ||
+    upper.includes('COMISIÓN DE ESTUDIOS')
+  ) {
+    return 'CE' // COMISIÓN DE ESTUDIOS
+  }
+  if (upper === 'PR' || upper.includes('PERMISO')) {
+    return 'PR' // PERMISO
+  }
+  if (upper === 'VC' || upper.includes('VACACION')) {
+    return 'VC' // VACACIONES
+  }
+  if (
+    upper === 'SR' ||
+    upper === 'SERVICIO' ||
+    upper.includes('SERVICIO')
+  ) {
+    return 'SR' // SERVICIO
+  }
+  if (upper === 'FR' || upper.includes('FRANCO')) {
+    return 'FR' // FRANCO
+  }
+
+  return ''
+}
+
+function projStateColorClass (code) {
+  switch (code) {
+    case 'NC':
+      return 'bg-sky-700 text-white border-sky-900'
+    case 'CS':
+      return 'bg-emerald-500 text-white border-emerald-700'
+    case 'CE':
+      return 'bg-amber-400 text-slate-900 border-amber-600'
+    case 'PR':
+      return 'bg-amber-600 text-slate-900 border-amber-400'
+    case 'VC':
+      return 'bg-red-500 text-white border-red-700'
+    case 'SR':
+      return 'bg-orange-500 text-white border-orange-700'
+    case 'FR':
+      return 'bg-cyan-400 text-slate-900 border-cyan-600'
+    default:
+      return 'bg-slate-100 text-slate-500 border-slate-300'
+  }
+}
+
 
 function diasLaboradosColor(n) {
   if (n == null) return 'text-slate-400'
@@ -2309,9 +2401,9 @@ const projCanAddDraft = computed(() => {
   const d2 = toDate(t)
   if (!d1 || !d2 || d2 < d1) return false
 
-  // 👇 Si es COMISIÓN DEL SERVICIO, obligar grupo/unidad destino
+  // Si es COMISIÓN, solo exigimos unidad (grupo lo derivamos)
   if (s === 'COMISIÓN DEL SERVICIO') {
-    if (!projDraft.value.destGroupId || !projDraft.value.destUnitId) return false
+    if (!projDraft.value.destUnitId) return false
   }
 
   return true
@@ -2668,22 +2760,26 @@ function projAddRangeForCurrent() {
   }
 
   // Añadir rango
+  let destGroupId = null
+  let destUnitId = null
+
+  if (projDraft.value.state === 'COMISIÓN DEL SERVICIO' && projDraft.value.destUnitId) {
+    destUnitId = Number(projDraft.value.destUnitId)
+    const u = units.value.find(x => Number(x.id) === destUnitId)
+    destGroupId = u ? (u.groupId || null) : null
+  }
+
   arr.push({
     from,
     to,
     state,
-    destGroupId: projDraft.value.state === 'COMISIÓN DEL SERVICIO'
-      ? Number(projDraft.value.destGroupId) || null
-      : null,
-    destUnitId: projDraft.value.state === 'COMISIÓN DEL SERVICIO'
-      ? Number(projDraft.value.destUnitId) || null
-      : null,
+    destGroupId,
+    destUnitId,
     depts:
-      isGigGeoDraft(projDraft.value) && Array.isArray(projDraft.value.depts)
-        ? projDraft.value.depts.slice(0, 3)    // máx 3
-        : []                                   // otros casos sin depts
+      isGigGeoDraft({ destGroupId, destUnitId }) && Array.isArray(projDraft.value.depts)
+        ? projDraft.value.depts.slice(0, 3)
+        : []
   })
-
 
   // Limpiar formulario
   projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null }
@@ -2718,10 +2814,11 @@ function projUpdateSegmentField(segIndex, field, value) {
   const arr = projByAgent.value[id]
   if (!arr || !arr[segIndex]) return
 
-  // Pequeña validación de fechas si quieres ser estricto
+  const current = arr[segIndex]
+
+  // ✅ Validar fechas
   if (field === 'from' || field === 'to') {
-    const otherField = field === 'from' ? 'to' : 'from'
-    const tmp = { ...arr[segIndex], [field]: value }
+    const tmp = { ...current, [field]: value }
     const d1 = toDate(tmp.from)
     const d2 = toDate(tmp.to)
     if (d1 && d2 && d2 < d1) {
@@ -2729,10 +2826,54 @@ function projUpdateSegmentField(segIndex, field, value) {
       projMsgOk.value = false
       return
     }
+    arr[segIndex] = tmp
+    return
   }
 
+  // ✅ Cambiar estado: si deja de ser COMISIÓN, limpiamos destino
+  if (field === 'state') {
+    const newState = value
+    const updated = { ...current, state: newState }
+
+    if (newState !== 'COMISIÓN DEL SERVICIO') {
+      updated.destGroupId = null
+      updated.destUnitId  = null
+      updated.depts       = []
+    }
+
+    arr[segIndex] = updated
+    return
+  }
+
+  // ✅ Cambiar unidad: de ahí sacamos el grupo
+  if (field === 'destUnitId') {
+    const newUnitId = value ? Number(value) : null
+
+    let newGroupId = null
+    if (newUnitId) {
+      const u = units.value.find(x => Number(x.id) === newUnitId)
+      newGroupId = u ? (u.groupId || null) : null
+    }
+
+    const tmpSeg = { destGroupId: newGroupId, destUnitId: newUnitId }
+
+    const keepDepts = isGigGeoSegment(tmpSeg)
+    const newDepts = keepDepts && Array.isArray(current.depts)
+      ? current.depts.slice(0, 3)
+      : []
+
+    arr[segIndex] = {
+      ...current,
+      destUnitId: newUnitId,
+      destGroupId: newGroupId,
+      depts: newDepts
+    }
+    return
+  }
+
+  // Otros campos genéricos si hicieras algo más
   arr[segIndex] = {
-    ...arr[segIndex],
+    ...current,
     [field]: value
   }
 }
