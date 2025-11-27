@@ -893,106 +893,103 @@
                     </div>
                   </div>
 
-                  <!-- === Timeline en UNA sola línea === -->
+                  <!-- === Timeline: un registro por renglón, SIN SCROLL y con inputs más pequeños === -->
                   <div
                     v-if="projTimelineSegments.length"
-                    class="relative mt-1 overflow-x-auto whitespace-nowrap pr-1 pb-1 no-scrollbar"
-                    style="max-width: 100%;"
+                    class="relative mt-1 space-y-2"
                   >
-                    <!-- Línea vertical removida (opcional) -->
-                    <!-- <div class="absolute left-2 top-0 bottom-0 w-px bg-slate-300" /> -->
+                    <!-- Línea vertical -->
+                    <div class="absolute left-2 top-0 bottom-0 w-px bg-slate-300" />
 
-                    <div class="inline-flex items-center gap-3">
+                    <div
+                      v-for="seg in projTimelineSegments"
+                      :key="seg.index"
+                      class="flex items-center gap-2 pl-4"
+                    >
+                      <!-- Punto -->
                       <div
-                        v-for="seg in projTimelineSegments"
-                        :key="seg.index"
-                        class="inline-flex items-center gap-2"
+                        class="w-2.5 h-2.5 rounded-full border border-white shadow ring-1 ring-slate-200 flex-none"
+                        :class="colorClass(seg.state)?.dot || 'bg-slate-400'"
+                      />
+
+                      <!-- Tarjeta -->
+                      <div
+                        class="flex items-center gap-1.5 px-2 py-1 text-[9px] shadow-sm bg-white border border-slate-200 rounded-md flex-1"
                       >
-                        <!-- Punto -->
-                        <div
-                          class="w-3 h-3 rounded-full border-2 border-white shadow ring-1 ring-slate-200 flex-none"
-                          :class="colorClass(seg.state)?.dot || 'bg-slate-400'"
+                        <!-- Fechas (MUY COMPACTAS) -->
+                        <input
+                          type="date"
+                          class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[95px]"
+                          :value="seg.from"
+                          @change="projUpdateSegmentField(seg.index, 'from', $event.target.value)"
+                        />
+                        <span>→</span>
+                        <input
+                          type="date"
+                          class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[95px]"
+                          :value="seg.to"
+                          @change="projUpdateSegmentField(seg.index, 'to', $event.target.value)"
                         />
 
-                        <!-- Tarjeta del segmento -->
-                        <div
-                          class="inline-flex items-center gap-2 px-3 py-1 text-[10px] shadow-sm bg-white border border-slate-200 rounded-md"
+                        <!-- Estado (más pequeño) -->
+                        <select
+                          class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[95px]"
+                          :value="seg.state"
+                          @change="projUpdateSegmentField(seg.index, 'state', $event.target.value)"
                         >
-
-                          <!-- Fechas -->
-                          <input
-                            type="date"
-                            class="rounded-md border border-slate-300 px-1 py-0.5 text-[10px] w-[115px]"
-                            :value="seg.from"
-                            @change="projUpdateSegmentField(seg.index, 'from', $event.target.value)"
-                          />
-                          <span>→</span>
-                          <input
-                            type="date"
-                            class="rounded-md border border-slate-300 px-1 py-0.5 text-[10px] w-[115px]"
-                            :value="seg.to"
-                            @change="projUpdateSegmentField(seg.index, 'to', $event.target.value)"
-                          />
-
-                          <!-- Estado -->
-                          <select
-                            class="rounded-md border border-slate-300 px-1 py-0.5 bg-white text-[10px]"
-                            :value="seg.state"
-                            @change="projUpdateSegmentField(seg.index, 'state', $event.target.value)"
+                          <option
+                            v-for="st in STATUS_ORDER"
+                            :key="st"
+                            :value="st"
                           >
-                            <option
-                              v-for="st in STATUS_ORDER"
-                              :key="st"
-                              :value="st"
-                            >
-                              {{ st }}
-                            </option>
-                          </select>
+                            {{ st }}
+                          </option>
+                        </select>
 
-                          <!-- Unidad -->
-                          <select
-                            v-if="seg.state === 'COMISIÓN DEL SERVICIO'"
-                            class="rounded-md border border-slate-300 px-1 py-0.5 bg-white max-w-[150px] text-[10px]"
-                            :value="seg.destUnitId || ''"
-                            @change="projUpdateSegmentField(
-                              seg.index,
-                              'destUnitId',
-                              $event.target.value ? Number($event.target.value) : null
-                            )"
-                          >
-                            <option value="">Unidad…</option>
-                            <option
-                              v-for="u in units"
-                              :key="u.id"
-                              :value="u.id"
-                            >
-                              {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
-                            </option>
-                          </select>
-
-                          <!-- Etiquetas -->
-                          <span
-                            v-if="seg.depts && seg.depts.length"
-                            class="text-[9px] opacity-70"
-                          >
-                            Deptos: {{ seg.depts.join(', ') }}
-                          </span>
-
-                          <!-- Días -->
-                          <span class="opacity-70">{{ seg.count }}d</span>
-                        </div>
-
-                        <!-- Botón quitar -->
-                        <button
-                          type="button"
-                          class="text-[10px] text-rose-700 hover:underline"
-                          @click="projRemoveSegment(seg.index)"
+                        <!-- Unidad destino (solo CS) -->
+                        <select
+                          v-if="seg.state === 'COMISIÓN DEL SERVICIO'"
+                          class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[140px]"
+                          :value="seg.destUnitId || ''"
+                          @change="projUpdateSegmentField(
+                            seg.index,
+                            'destUnitId',
+                            $event.target.value ? Number($event.target.value) : null
+                          )"
                         >
-                          ✕
-                        </button>
+                          <option value="">Unidad…</option>
+                          <option
+                            v-for="u in units"
+                            :key="u.id"
+                            :value="u.id"
+                          >
+                            {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
+                          </option>
+                        </select>
+
+                        <!-- Días -->
+                        <span class="opacity-70 flex-none">{{ seg.count }}d</span>
+
+                        <!-- Deptos -->
+                        <span
+                          v-if="seg.depts && seg.depts.length"
+                          class="text-[8px] opacity-70 flex-none"
+                        >
+                          {{ seg.depts.join(',') }}
+                        </span>
                       </div>
+
+                      <!-- Botón quitar -->
+                      <button
+                        type="button"
+                        class="text-[9px] text-rose-700 hover:underline flex-none"
+                        @click="projRemoveSegment(seg.index)"
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
+
 
                   <p v-else class="text-[11px] text-slate-500 mt-1">
                     Este funcionario no tiene rangos proyectados dentro del intervalo seleccionado.

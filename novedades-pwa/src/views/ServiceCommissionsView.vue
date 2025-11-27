@@ -247,10 +247,24 @@
 
               <!-- Destino -->
               <td class="px-3 py-2 text-[11px] align-top">
-                <div v-if="c.destGroupName || c.destUnitName">
-                  {{ c.destGroupName || 'Grupo' }} / {{ c.destUnitName || 'Unidad' }}
+                <div v-if="c.destUnitName || c.dest_unit_name">
+                  <div class="font-semibold text-slate-900">
+                    {{ c.destUnitName || c.dest_unit_name }}
+                  </div>
+
+                  <!-- Deptos si grupo destino es GEO o UNCO -->
+                  <div
+                    v-if="isGeoOrUnco(c) && getDestDepts(c).length"
+                    class="text-[10px] text-slate-500 mt-0.5"
+                  >
+                    Deptos destino:
+                    {{ getDestDepts(c).join(', ') }}
+                  </div>
                 </div>
-                <div v-else class="text-slate-400">Sin destino explícito</div>
+
+                <div v-else class="text-slate-400">
+                  Sin destino explícito
+                </div>
               </td>
 
               <!-- Días -->
@@ -756,6 +770,60 @@ function statusPillClass (status) {
   if (status === 'APROBADA') { return 'bg-emerald-100 text-emerald-800 border border-emerald-200' }
   if (status === 'ANULADA') { return 'bg-rose-100 text-rose-800 border border-rose-200' }
   return 'bg-slate-100 text-slate-800 border border-slate-200'
+}
+
+function isGeoOrUnco (c) {
+  const rawCode =
+    c.destGroupCode ??
+    c.dest_group_code ??
+    c.groupCode ??
+    c.group_code ??
+    ''
+
+  const rawName =
+    c.destGroupName ??
+    c.dest_group_name ??
+    c.groupName ??
+    c.group_name ??
+    ''
+
+  const code = String(rawCode || '').toUpperCase()
+  const name = String(rawName || '').toUpperCase()
+
+  if (code === 'GEO' || code === 'UNCO') return true
+  if (name.includes('GEO') || name.includes('UNCO')) return true
+
+  return false
+}
+
+function getDestDepts (c) {
+  const raw =
+    c.destDepts ??
+    c.dest_depts ??
+    c.depts ??
+    c.deptos ??
+    c.destDeptos ??
+    c.dest_deptos ??
+    c.departments ??
+    c.departamentos ??
+    null
+
+  if (!raw) return []
+
+  if (Array.isArray(raw)) {
+    return raw
+      .map(x => String(x).trim())
+      .filter(Boolean)
+  }
+
+  if (typeof raw === 'string') {
+    return raw
+      .split(',')
+      .map(x => x.trim())
+      .filter(Boolean)
+  }
+
+  return []
 }
 
 const currentPeriod = computed(() => {
