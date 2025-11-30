@@ -483,8 +483,17 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
   const [rows] = await pool.query(
     `
     SELECT DISTINCT
-      a.id, a.code, a.category, a.status AS status_agent, a.groupId, a.unitId, a.nickname, a.mt,
+      a.id,
+      a.code,
+      a.category,
+      a.rank_order AS rank_order,
+      a.status AS status_agent,
+      a.groupId,
+      a.unitId,
+      a.nickname,
+      a.mt,
       COALESCE(l.municipalityId, a.municipalityId) AS effectiveMunicipalityId,
+
 
       m_da.dept AS dept_da, m_da.name AS name_da,
       m_ag.dept AS dept_ag, m_ag.name AS name_ag,
@@ -514,7 +523,7 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
     LEFT JOIN municipality m_ag ON m_ag.id = a.municipalityId
 
     WHERE a.unitId = ?
-    ORDER BY a.code
+    ORDER BY a.rank_order ASC, a.code ASC
     `,
     [dateParam, dateParam, unitId]
   );
@@ -531,6 +540,7 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
     id: r.id,
     code: r.code,
     category: r.category,
+    rank_order: r.rank_order != null ? Number(r.rank_order) : null,
     status,
     groupId: r.groupId,
     unitId: r.unitId,
@@ -549,21 +559,32 @@ app.get('/my/agents', auth, requireRole('leader_unit', 'leader_group'), async (r
 }
 
 
-    // --- leader_group: puedes dejarlo como lo tienes ---
+    // --- leader_group: dejarlo como está ---
     const groupId = req.user.groupId;
     const [rows] = await pool.query(
       `SELECT 
-         a.id, a.code, a.category, a.status, a.groupId, a.unitId, a.municipalityId, a.nickname,   
-         g.code AS groupCode, u.name AS unitName,
-         m.dept, m.name
-       FROM agent a
-       JOIN \`group\` g ON g.id=a.groupId
-       LEFT JOIN unit u ON u.id=a.unitId
-       LEFT JOIN municipality m ON m.id=a.municipalityId
-       WHERE a.groupId=?
-       ORDER BY a.category='OF' DESC, a.category='SO' DESC, a.category='PT' DESC, a.code`,
+        a.id,
+        a.code,
+        a.category,
+        a.rank_order AS rank_order,
+        a.status,
+        a.groupId,
+        a.unitId,
+        a.municipalityId,
+        a.nickname,   
+        g.code AS groupCode,
+        u.name AS unitName,
+        m.dept,
+        m.name
+      FROM agent a
+      JOIN \`group\` g ON g.id = a.groupId
+      LEFT JOIN unit u ON u.id = a.unitId
+      LEFT JOIN municipality m ON m.id = a.municipalityId
+      WHERE a.groupId = ?
+      ORDER BY a.rank_order ASC, a.code ASC`,
       [groupId]
     );
+
 
     res.json(rows.map(r => ({
       ...r,

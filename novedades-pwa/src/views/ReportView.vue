@@ -1445,7 +1445,7 @@ async function loadMe() {
   } catch { me.value = null }
 }
 
-const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
+// const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
 
 // Mostrar "ME" cuando la categoría real sea "SO"
 function displayCategory(c) {
@@ -1458,23 +1458,30 @@ async function loadAgents() {
       headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
       params: { date: reportDate.value }
     })
+
     agents.value = (Array.isArray(data) ? data : []).map(a => ({
       ...a,
       municipalityName: a.municipalityName || '',
       novelty_start: a.novelty_start ? String(a.novelty_start).slice(0, 10) : '',
       novelty_end:   a.novelty_end   ? String(a.novelty_end).slice(0, 10)   : '',
       novelty_description: a.novelty_description || '',
-      // ✅ MT viene de agent.mt desde el backend
       mt: a.mt || ''
     }))
-      .sort((x, y) => (CATEG_ORDER[x.category] || 99) - (CATEG_ORDER[y.category] || 99))
+    .sort((x, y) => {
+      const rx = Number(x.rank_order ?? 9999)
+      const ry = Number(y.rank_order ?? 9999)
+      return rx - ry   // menor rank_order primero
+    })
 
-    await setDiasLaboradosTodos()  
+    await setDiasLaboradosTodos()
+
   } catch (e) {
     msg.value = e?.response?.data?.error || 'Error al cargar agentes'
     agents.value = []
   }
 }
+
+
 
 async function getMunicipalityIdFromLabel(label) {
   if (!label || label === 'N/A') return null
