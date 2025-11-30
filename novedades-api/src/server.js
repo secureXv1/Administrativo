@@ -2246,35 +2246,43 @@ app.get('/admin/report-agents/:id',
     const [rows] = await pool.query(`
       SELECT 
         a.id AS agentId,
-        a.code, a.nickname,
+        a.code,
+        a.nickname,
         a.category,
+        a.rank_order,                      -- 👈 escalafón
         da.state,
-        da.groupId, g.code AS groupCode,
-        da.unitId, u.name AS unitName,
+        da.groupId,
+        g.code AS groupCode,
+        da.unitId,
+        u.name AS unitName,
         da.municipalityId,
-        m.name AS municipalityName, m.dept,
+        m.name AS municipalityName,
+        m.dept,
         DATE_FORMAT(da.novelty_start, '%Y-%m-%d') AS novelty_start,
-        DATE_FORMAT(da.novelty_end,   '%Y-%m-%d')   AS novelty_end,
+        DATE_FORMAT(da.novelty_end,   '%Y-%m-%d') AS novelty_end,
         da.novelty_description,
         da.mt,
-        a.mt AS mt                                 
+        a.mt AS mt_agent
       FROM dailyreport_agent da
       JOIN agent a              ON a.id = da.agentId
       LEFT JOIN \`group\` g     ON g.id = da.groupId
       LEFT JOIN unit u          ON u.id = da.unitId
       LEFT JOIN municipality m  ON m.id = da.municipalityId
       WHERE da.reportId = ?
-      ORDER BY FIELD(a.category, 'OF', 'SO', 'PT'), a.code
+      ORDER BY
+        a.rank_order ASC,               -- 👈 primero escalafón
+        a.code ASC                      --    luego código
     `, [id]);
 
     res.json(rows.map(r => ({
       ...r,
       nickname: r.nickname ? decNullable(r.nickname) : null,
       novelty_description: r.novelty_description ? decNullable(r.novelty_description) : null,
-      mt: r.mt || null   // ✅ nuevo: incluir MT en la respuesta
+      mt: r.mt || r.mt_agent || null   // por si quieres caer al MT de la ficha
     })));
   }
 );
+
 
 function normQ(v) {
   const s = String(v ?? '').trim().toLowerCase()

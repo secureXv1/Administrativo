@@ -940,9 +940,9 @@ const agentesFiltrados = computed(() => {
   }
 
   return list.sort((a, b) => {
-    const ca = categorySort(a.category)
-    const cb = categorySort(b.category)
-    if (ca !== cb) return ca - cb
+    const ra = Number(a.rank_order ?? 9999)
+    const rb = Number(b.rank_order ?? 9999)
+    if (ra !== rb) return ra - rb
     return String(a.code).localeCompare(String(b.code))
   })
 })
