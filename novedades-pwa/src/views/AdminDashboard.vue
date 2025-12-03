@@ -1301,54 +1301,97 @@ const openGroupId = ref(null)
 const complianceBox = ref(null)
 
 async function loadComplianceAdmin () {
-  const [unitsResp, groupsResp, reportsResp] = await Promise.all([
-    axios.get('/admin/units',  { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }),
-    axios.get('/admin/groups', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }),
-    axios.get('/reports',      { params: { date: date.value }, headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+  const token = localStorage.getItem('token')
+
+  const [unitsResp, groupsResp, reportsResp, agentsResp] = await Promise.all([
+    axios.get('/admin/units',  { headers: { Authorization: 'Bearer ' + token } }),
+    axios.get('/admin/groups', { headers: { Authorization: 'Bearer ' + token } }),
+    axios.get('/reports',      { params: { date: date.value }, headers: { Authorization: 'Bearer ' + token } }),
+    axios.get('/admin/agents', { params: { limit: 5000 }, headers: { Authorization: 'Bearer ' + token } })
   ])
 
-  const unitsList   = Array.isArray(unitsResp.data)  ? unitsResp.data  : []
-  const groupsList  = Array.isArray(groupsResp.data) ? groupsResp.data : []
-  const reportsList = Array.isArray(reportsResp.data)? reportsResp.data: []
+  const unitsList   = Array.isArray(unitsResp.data)   ? unitsResp.data   : []
+  const groupsList  = Array.isArray(groupsResp.data)  ? groupsResp.data  : []
+  const reportsList = Array.isArray(reportsResp.data) ? reportsResp.data : []
+  const agentsList  = Array.isArray(agentsResp.data?.items)
+    ? agentsResp.data.items
+    : (Array.isArray(agentsResp.data) ? agentsResp.data : [])
 
-  // groupId -> unidades
+  // 🔹 unitId -> número de agentes asignados a esa unidad
+  const agentsByUnit = new Map()
+  for (const a of agentsList) {
+    const uid = a.unitId ?? a.unit_id
+    if (!uid) continue
+    const key = String(uid)
+    agentsByUnit.set(key, (agentsByUnit.get(key) || 0) + 1)
+  }
+
+  // groupId -> todas sus unidades (del catálogo)
   const unitsByGroup = {}
   for (const u of unitsList) {
     if (!unitsByGroup[u.groupId]) unitsByGroup[u.groupId] = []
     unitsByGroup[u.groupId].push(u)
   }
 
-  // groupId -> Set(unitId) reportadas ese día
+  // groupId -> Set(unitId) que reportaron ese día
   const reportedByGroup = {}
   for (const r of reportsList) {
-    const gid = r.groupId, uid = r.unitId
+    const gid = r.groupId
+    const uid = r.unitId
+    if (!gid || !uid) continue
     if (!reportedByGroup[gid]) reportedByGroup[gid] = new Set()
-    if (uid) reportedByGroup[gid].add(uid)
+    reportedByGroup[gid].add(uid)
   }
 
   const complete = []
   const pending  = []
 
   for (const g of groupsList) {
-    const allUnits   = unitsByGroup[g.id] || []
-    const totalUnits = allUnits.length
-    const repSet     = reportedByGroup[g.id] || new Set()
-    const doneUnits  = [...repSet].length
-    const missingUnits = allUnits.filter(u => !repSet.has(u.id)).map(u => u.name)
-    const percent = totalUnits ? Math.round((doneUnits / totalUnits) * 100) : 100
+    const allUnits = unitsByGroup[g.id] || []
+
+    // 🔹 Sólo contamos como "obligadas" las unidades que tienen al menos 1 agente
+    const countableUnits = allUnits.filter(u => {
+      const n = agentsByUnit.get(String(u.id)) || 0
+      return n > 0
+    })
+
+    const totalUnits = countableUnits.length
+
+    const repSet = reportedByGroup[g.id] || new Set()
+    const requiredIds = new Set(countableUnits.map(u => u.id))
+
+    // ✅ Unidades reportadas entre las que sí tienen agentes
+    const doneUnits = [...repSet].filter(uid => requiredIds.has(uid)).length
+
+    // ✅ Pendientes = unidades con agentes que no han enviado parte
+    const missingUnits = countableUnits
+      .filter(u => !repSet.has(u.id))
+      .map(u => u.name)
+
+    const percent = totalUnits
+      ? Math.round((doneUnits / totalUnits) * 100)
+      : 100 // si no hay ninguna unidad con agentes, lo consideramos completo
 
     if (totalUnits === 0 || percent === 100) {
       complete.push({ groupId: g.id, groupCode: g.code })
     } else {
-      pending.push({ groupId: g.id, groupCode: g.code, totalUnits, doneUnits, percent, missingUnits })
+      pending.push({
+        groupId: g.id,
+        groupCode: g.code,
+        totalUnits,
+        doneUnits,
+        percent,
+        missingUnits
+      })
     }
   }
 
   compAdmin.value = {
-    complete: complete.sort((a,b)=>a.groupCode.localeCompare(b.groupCode)),
-    pending : pending.sort((a,b)=>a.groupCode.localeCompare(b.groupCode))
+    complete: complete.sort((a, b) => a.groupCode.localeCompare(b.groupCode)),
+    pending : pending.sort((a, b) => a.groupCode.localeCompare(b.groupCode))
   }
 }
+
 
 function togglePendingPopover(id){ openGroupId.value = openGroupId.value === id ? null : id }
 function onComplianceOutsideClick(e){
