@@ -780,7 +780,9 @@
                         type="date"
                         class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
                         v-model="projDraft.from"
-                      >
+                        :min="projRange.from"
+                        :max="projRange.to"
+                      />
                     </div>
 
                     <div>
@@ -791,7 +793,9 @@
                         type="date"
                         class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
                         v-model="projDraft.to"
-                      >
+                        :min="projRange.from"
+                        :max="projRange.to"
+                      />
                     </div>
 
                     <div>
