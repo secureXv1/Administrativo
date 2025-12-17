@@ -578,26 +578,30 @@ function projectedUnit (agent) {
 }
 
 // Rango global de días (para las columnas)
+// helpers
+const parseYMDLocal = (s) => {
+  const [y, m, d] = String(s || '').split('-').map(Number)
+  if (!y || !m || !d) return null
+  return new Date(y, m - 1, d) // LOCAL (sin UTC)
+}
+const ymd = (d) => {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// Rango global de días (para las columnas)
 const dayRange = computed(() => {
   const res = []
   if (!from.value || !to.value) return res
 
-  const d1 = new Date(from.value)
-  const d2 = new Date(to.value)
-  if (isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1) return res
-
-  const ymd = (d) => {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
-  }
+  const d1 = parseYMDLocal(from.value)
+  const d2 = parseYMDLocal(to.value)
+  if (!d1 || !d2 || isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1) return res
 
   for (let d = new Date(d1); d <= d2; d.setDate(d.getDate() + 1)) {
-    res.push({
-      date: ymd(d),
-      day: d.getDate()
-    })
+    res.push({ date: ymd(d), day: d.getDate() })
   }
   return res
 })
@@ -687,17 +691,14 @@ function stateColorClass (code) {
 // =========================
 // Nuevo: Calcula la diferencia en días entre dos fechas (inclusive)
 function dateDifference(date1Str, date2Str) {
-    const d1 = new Date(date1Str)
-    const d2 = new Date(date2Str)
-    
-    if (isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1) return null
+  const d1 = parseYMDLocal(date1Str)
+  const d2 = parseYMDLocal(date2Str)
+  if (!d1 || !d2 || isNaN(d1.getTime()) || isNaN(d2.getTime()) || d2 < d1) return null
 
-    // Calcula la diferencia en milisegundos y la convierte a días.
-    const diffTime = Math.abs(d2.getTime() - d1.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-    
-    // Sumamos 1 porque el rango es inclusivo (ej: del 1 al 1 son 1 día)
-    return diffDays + 1;
+  // diferencia en días (inclusive)
+  const diffTime = d2.getTime() - d1.getTime()
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays + 1
 }
 
 // Nuevo: Valida si el nuevo segmento es válido para ser añadido
