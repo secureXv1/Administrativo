@@ -1,8 +1,8 @@
 <template>
-  <div class="max-w-6xl mx-auto space-y-6">
+  <div class="max-w-9xl mx-auto space-y-6">
     <!-- HEADER -->
     <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
-      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="max-w-9xl mx-auto px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">C</div>
           <div>
@@ -15,7 +15,7 @@
         </div>
       </div>
     </div>
-    <main class="max-w-6xl mx-auto py-6 px-4 space-y-6">
+    <main class="max-w-9xl mx-auto py-6 px-4 space-y-6">
       <!-- Encabezado + filtro por grupo -->
       <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h2 class="text-xl font-bold">

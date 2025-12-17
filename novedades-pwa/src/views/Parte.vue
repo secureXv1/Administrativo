@@ -1,8 +1,8 @@
 <template>
-  <div class="max-w-6xl mx-auto space-y-6">
+  <div class="max-w-9xl mx-auto space-y-6">
     <!-- HEADER -->
     <div class="sticky top-0 z-10 bg-white/70 backdrop-blur border-b border-slate-200">
-      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="max-w-9xl mx-auto px-4 py-3 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-800 to-slate-700 grid place-items-center text-white font-bold">N</div>
           <div>
@@ -53,7 +53,7 @@
     </div>
    
     <!-- FILTROS / KPIs -->
-    <div class="max-w-6xl mx-auto px-4 py-4">
+    <div class="max-w-9xl mx-auto px-4 py-4">
       <div v-if="isSuperLike" class="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <!-- KPI: FD esperado -->
         <section class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
@@ -96,7 +96,7 @@
     </div>
 
     <!-- LISTAS POR GRUPO (sin unidades) -->
-    <div class="max-w-6xl mx-auto px-4 pb-12 space-y-6">
+    <div class="max-w-9xl mx-auto px-4 pb-12 space-y-6">
       <div v-for="group in visibleGroupIds" :key="group" class="rounded-xl overflow-hidden border border-slate-200 shadow">
         <div
           class="flex items-center justify-between px-4 py-3 cursor-pointer transition"

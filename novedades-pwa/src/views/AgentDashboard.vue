@@ -8,7 +8,7 @@
       </div>
     </div>
 
-    <div class="max-w-[1500px] mx-auto px-4 -mt-6 pb-10">
+    <div class="max-w-[2000px] mx-auto px-4 -mt-6 pb-10">
       <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
         <!-- SIDEBAR -->
         <aside class="md:col-span-3">
