@@ -1118,18 +1118,24 @@ router.get(
   '/groups',
   requireAuth,
   requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'),
-  async (_req, res) => {
+  async (req, res) => {
     try {
-      const [rows] = await pool.query(
-        `
-        SELECT
-          g.id,
-          g.code,
-          g.name
+      const role = String(req.user.role || '').toLowerCase()
+
+      let sql = `
+        SELECT g.id, g.code, g.name
         FROM \`group\` g
-        ORDER BY g.code, g.name
-        `
-      )
+      `
+      const args = []
+
+      if (role === 'leader_group' || role === 'leader_unit') {
+        sql += ` WHERE g.id = ? `
+        args.push(Number(req.user.groupId))
+      }
+
+      sql += ` ORDER BY g.code, g.name `
+
+      const [rows] = await pool.query(sql, args)
       res.json(rows)
     } catch (e) {
       console.error('[GET /rest-planning/groups] error', e.code, e.sqlMessage || e.message)
@@ -1143,26 +1149,110 @@ router.get(
   '/units',
   requireAuth,
   requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'),
-  async (_req, res) => {
+  async (req, res) => {
     try {
-      const [rows] = await pool.query(
-        `
+      const role = String(req.user.role || '').toLowerCase()
+
+      let sql = `
         SELECT
           u.id,
           u.groupId,
           u.name,
-          u.id AS code   -- usamos el id como "code" genérico para no depender de la columna code
+          u.id AS code
         FROM unit u
-        ORDER BY u.name
-        `
-      )
+      `
+      const args = []
+
+      if (role === 'leader_group') {
+        sql += ` WHERE u.groupId = ? `
+        args.push(Number(req.user.groupId))
+      } else if (role === 'leader_unit') {
+        sql += ` WHERE u.id = ? `
+        args.push(Number(req.user.unitId))
+      }
+
+      sql += ` ORDER BY u.name `
+
+      const [rows] = await pool.query(sql, args)
       res.json(rows)
     } catch (e) {
       console.error('[GET /rest-planning/units] error', e.code, e.sqlMessage || e.message)
-      res.status(500).json({
-        error: 'CatalogUnitsError',
-        detail: e.sqlMessage || e.message
-      })
+      res.status(500).json({ error: 'CatalogUnitsError', detail: e.sqlMessage || e.message })
+    }
+  }
+)
+
+// GET /rest-planning/units-projected?from=YYYY-MM-DD&to=YYYY-MM-DD
+// o  /rest-planning/units-projected?vigenciaId=ID
+router.get(
+  '/units-projected',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'),
+  async (req, res) => {
+    try {
+      let { from, to, vigenciaId } = req.query
+      const role = String(req.user.role || '').toLowerCase()
+
+      // Resolver rango igual que en GET /rest-planning (tu lógica ya existe) :contentReference[oaicite:4]{index=4}
+      if (vigenciaId) {
+        const idV = Number(vigenciaId)
+        const [[period]] = await pool.query(
+          `
+          SELECT
+            DATE_FORMAT(from_date,'%Y-%m-%d') AS fromYmd,
+            DATE_FORMAT(to_date  ,'%Y-%m-%d') AS toYmd
+          FROM projection_periods
+          WHERE id=? LIMIT 1
+          `,
+          [idV]
+        )
+        if (!period) return res.status(404).json({ error: 'Vigencia no encontrada' })
+        from = period.fromYmd
+        to   = period.toYmd
+      } else {
+        if (!from || !to) return res.status(400).json({ error: 'from y to requeridos si no hay vigenciaId' })
+      }
+
+      const where = [
+        'rp.dest_unit_id IS NOT NULL',
+        'NOT (rp.end_date < ? OR rp.start_date > ?)'
+      ]
+      const args = [from, to]
+
+      if (vigenciaId) {
+        where.push('rp.vigencia_id = ?')
+        args.push(Number(vigenciaId))
+      }
+
+      // Scope por rol (clave):
+      if (role === 'leader_group') {
+        where.push('a.groupId = ?')
+        args.push(Number(req.user.groupId))
+      } else if (role === 'leader_unit') {
+        where.push('a.unitId = ?')
+        args.push(Number(req.user.unitId))
+      }
+
+      const [rows] = await pool.query(
+        `
+        SELECT DISTINCT
+          u2.id,
+          u2.groupId,
+          u2.name,
+          u2.id AS code
+        FROM rest_plans rp
+        JOIN agent a ON a.id = rp.agent_id
+        JOIN unit  u2 ON u2.id = rp.dest_unit_id
+        WHERE ${where.join(' AND ')}
+        ORDER BY u2.name
+        `,
+        args
+      )
+
+      res.json(rows)
+    } catch (e) {
+      console.error('[GET /rest-planning/units-projected] error', e)
+      res.status(500).json({ error: 'UnitsProjectedError', detail: e.message })
     }
   }
 )
