@@ -843,13 +843,10 @@
                         v-model="projDraft.destUnitId"
                       >
                         <option :value="null" disabled>Selecciona unidad…</option>
-                        <option
-                          v-for="u in units"
-                          :key="u.id"
-                          :value="u.id"
-                        >
+                        <option v-for="u in destUnits" :key="u.id" :value="u.id">
                           {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
                         </option>
+
                       </select>
                     </div>
 
@@ -962,13 +959,10 @@
                           )"
                         >
                           <option value="">Unidad…</option>
-                          <option
-                            v-for="u in units"
-                            :key="u.id"
-                            :value="u.id"
-                          >
+                          <option v-for="u in destUnits" :key="u.id" :value="u.id">
                             {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
                           </option>
+
                         </select>
 
                         <!-- Días -->
@@ -1413,6 +1407,7 @@ const me = ref(null) // 👈 Para info usuario
 
 const groups = ref([])
 const units = ref([])
+const destUnits = ref([])
 const depts = ref([])
 
 const unitsByGroup = computed(() => {
@@ -1449,12 +1444,19 @@ async function loadMe() {
   } catch { me.value = null }
 }
 
+async function loadDestUnits () {
+  const { data } = await axios.get('/rest-planning/units-dest', {
+    headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+  })
+  destUnits.value = Array.isArray(data) ? data : []
+}
 // const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
 
 // Mostrar "ME" cuando la categoría real sea "SO"
 function displayCategory(c) {
   return String(c || '') === 'SO' ? 'ME' : c
 }
+
 
 async function loadAgents() {
   try {
@@ -2027,6 +2029,7 @@ onMounted(async () => {
   await loadMunicipalities();
   await loadGroups()   
   await loadUnits()  
+  await loadDestUnits()
   await loadDepts()  
   await loadAgents();
   await checkIfReportExists();
@@ -2790,20 +2793,21 @@ function projAddRangeForCurrent() {
   })
 
   // Limpiar formulario
-  projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null }
+    projDraft.value = {
+    from: '',
+    to: '',
+    state: '',
+    destGroupId: null,
+    destUnitId: null,
+    depts: []
+  }
 }
 
 function onProjDraftStateChange() {
   const s = projDraft.value.state
   if (s === 'COMISIÓN DEL SERVICIO' && projCurrentAgent.value) {
-    // Sugerir grupo y unidad actual del funcionario
     projDraft.value.destGroupId = projCurrentAgent.value.groupId || null
-    projDraft.value.destUnitId  = projCurrentAgent.value.unitId  || null
-  } else {
-    // Para otros estados, no forzamos destino
-    // (puedes limpiar si quieres)
-    // projDraft.value.destGroupId = null
-    // projDraft.value.destUnitId  = null
+    projDraft.value.destUnitId  = null // 👈 que el usuario escoja
   }
 }
 
@@ -3176,21 +3180,17 @@ watch(
   }
 )
 
-// GEO y UNCO pueden seleccionar departamentos
+// GEO y UNCO pueden seleccionar departamentos (en COMISIÓN DEL SERVICIO)
 const isDeptUnitDraft = computed(() => {
-  const unitId =
-    projDraft.value.destUnitId ??
-    projDraft.value.unitId ??
-    null
-
+  const unitId = projDraft.value.destUnitId ?? null
   if (!unitId) return false
 
-  const u = units.value.find(x => Number(x.id) === Number(unitId))
+  // 👇 OJO: usar destUnits (el mismo listado del <select>)
+  const u = destUnits.value.find(x => Number(x.id) === Number(unitId))
   if (!u) return false
 
-  const name = String(u.name || '').toUpperCase()
-
-  return name.includes('GEO') || name.includes('UNCO')
+  const name = String(u.name || '').toUpperCase().trim()
+  return name === 'GEO' || name === 'UNCO' || name.includes('GEO') || name.includes('UNCO')
 })
 
 </script>

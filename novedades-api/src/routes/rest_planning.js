@@ -1257,5 +1257,27 @@ router.get(
   }
 )
 
+// routes/rest_planning.js (o donde tengas ese router)
+
+router.get(
+  '/units-dest',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'),
+  async (_req, res) => {
+    try {
+      const [rows] = await pool.query(`
+        SELECT u.id, u.groupId, u.name
+        FROM unit u
+        ORDER BY u.name
+      `)
+      res.json(rows)
+    } catch (e) {
+      console.error('[GET /rest-planning/units-dest] error', e.code, e.sqlMessage || e.message)
+      res.status(500).json({ error: 'CatalogUnitsDestError', detail: e.sqlMessage || e.message })
+    }
+  }
+)
+
+
 export default router
 
