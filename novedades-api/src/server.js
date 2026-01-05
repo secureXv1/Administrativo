@@ -102,10 +102,11 @@ export const VALID_STATES = new Set([
   'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','FRANCO FRANCO',
   'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO',
   'LICENCIA REMUNERADA','LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO',
-  'LICENCIA PATERNIDAD','PERMISO','PERMISO ACTIVIDAD PERSONAL',
+  'LICENCIA PATERNIDAD','PERMISO','DESCANSO ESPECIAL','PERMISO ACTIVIDAD PERSONAL',
   'COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO',
   'SUSPENDIDO','HOSPITALIZADO'
 ]);
+
 
 export function isValidState(s) {
   return VALID_STATES.has(String(s || '').toUpperCase().trim());
@@ -1317,7 +1318,8 @@ app.post('/reports', auth, requireRole('leader_unit', 'leader_group', 'superadmi
         if (
           r.novelty_start &&
           (!r.novelty_end || new Date(r.novelty_end) >= today) &&
-          ['VACACIONES','EXCUSA DEL SERVICIO','PERMISO', 'PERMISO ACTIVIDAD PERSONAL', 'COMISIÓN EN EL EXTERIOR','SUSPENDIDO','HOSPITALIZADO'].includes(r.state)
+          ['VACACIONES','EXCUSA DEL SERVICIO','PERMISO','DESCANSO ESPECIAL', 'PERMISO ACTIVIDAD PERSONAL', 'COMISIÓN EN EL EXTERIOR','SUSPENDIDO','HOSPITALIZADO'].includes(r.state)
+
         ) {
           prevNovedades[r.agentId] = {
             novelty_start: r.novelty_start,

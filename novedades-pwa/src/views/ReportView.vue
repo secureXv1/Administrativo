@@ -216,6 +216,7 @@
                           <option value="EXCUSA DEL SERVICIO">EXCUSA DEL SERVICIO</option>
                           <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
                           <option value="PERMISO">PERMISO</option>
+                          <option value="DESCANSO ESPECIAL">DESCANSO ESPECIAL</option>
                           <option value="PERMISO ACTIVIDAD PERSONAL">PERMISO ACTIVIDAD PERSONAL</option>
                           <option value="COMISIÓN EN EL EXTERIOR">COMISIÓN EN EL EXTERIOR</option>
                           <option value="COMISIÓN DE ESTUDIO">COMISIÓN DE ESTUDIO</option>
@@ -481,6 +482,7 @@
                     <option value="EXCUSA DEL SERVICIO">EXCUSA DEL SERVICIO</option>
                     <option value="LICENCIA PATERNIDAD">LICENCIA PATERNIDAD</option>
                     <option value="PERMISO">PERMISO</option>
+                    <option value="DESCANSO ESPECIAL">DESCANSO ESPECIAL</option>
                     <option value="PERMISO ACTIVIDAD PERSONAL">PERMISO ACTIVIDAD PERSONAL</option>
                     <option value="COMISIÓN EN EL EXTERIOR">COMISIÓN EN EL EXTERIOR</option>
                     <option value="COMISIÓN DE ESTUDIO">COMISIÓN DE ESTUDIO</option>
@@ -1767,6 +1769,7 @@ const STATUS_ORDER = [
   'LICENCIA NO REMUNERADA',
   'LICENCIA PATERNIDAD',
   'PERMISO',
+  'DESCANSO ESPECIAL',
   'PERMISO ACTIVIDAD PERSONAL',
   'COMISIÓN EN EL EXTERIOR',
   'COMISIÓN DE ESTUDIO',
@@ -1787,6 +1790,7 @@ const STATUS_LABEL = {
   'LICENCIA NO REMUNERADA': 'LICENCIA NO REMUNERADA',
   'LICENCIA PATERNIDAD': 'LICENCIA PATERNIDAD',
   'PERMISO': 'PERMISO',
+  'DESCANSO ESPECIAL': 'DESCANSO ESPECIAL',
   'PERMISO ACTIVIDAD PERSONAL': 'PERMISO ACTIVIDAD PERSONAL',
   'COMISIÓN EN EL EXTERIOR': 'COMISIÓN EN EL EXTERIOR',
   'COMISIÓN DE ESTUDIO': 'COMISIÓN DE ESTUDIO',
@@ -2012,7 +2016,7 @@ function needsBothDates(state) {
     'SUSPENDIDO',
     // genéricos: todas las que en tu UI piden inicio y fin
     'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA',
-    'LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD','PERMISO', 'PERMISO ACTIVIDAD PERSONAL',
+    'LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD','PERMISO', 'DESCANSO ESPECIAL', 'PERMISO ACTIVIDAD PERSONAL',
     'COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO'
   ].includes(s)
 }
@@ -2172,7 +2176,7 @@ function iconFor(state){
     'SIN NOVEDAD':'✅','SERVICIO':'🧭','COMISIÓN DEL SERVICIO':'📌','FRANCO FRANCO':'🛌',
     'VACACIONES':'🏖️','LICENCIA DE MATERNIDAD':'👶','LICENCIA DE LUTO':'🕊️',
     'LICENCIA REMUNERADA':'📝','LICENCIA NO REMUNERADA':'📝','EXCUSA DEL SERVICIO':'📝',
-    'LICENCIA PATERNIDAD':'🍼','PERMISO':'⏳', 'PERMISO ACTIVIDAD PERSONAL':'⏳','COMISIÓN EN EL EXTERIOR':'✈️','COMISIÓN DE ESTUDIO':'🎓',
+    'LICENCIA PATERNIDAD':'🍼','PERMISO':'⏳', 'DESCANSO ESPECIAL':'🎆', 'PERMISO ACTIVIDAD PERSONAL':'⏳','COMISIÓN EN EL EXTERIOR':'✈️','COMISIÓN DE ESTUDIO':'🎓',
     'SUSPENDIDO':'⛔','HOSPITALIZADO':'🏥'
   }
   return map[s] || '•'
@@ -2220,9 +2224,10 @@ function projStateCode (state) {
   ) {
     return 'CE' // COMISIÓN DE ESTUDIOS
   }
-  if (upper === 'PR' || upper.includes('PERMISO')) {
-    return 'PR' // PERMISO
+  if (upper === 'PR' || upper.includes('PERMISO') || upper.includes('DESCANSO ESPECIAL')) {
+    return 'PR' // PERMISO / DESCANSO ESPECIAL
   }
+
   if (upper === 'VC' || upper.includes('VACACION')) {
     return 'VC' // VACACIONES
   }
