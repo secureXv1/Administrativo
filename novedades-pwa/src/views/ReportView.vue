@@ -1341,19 +1341,24 @@
 
 
 <script setup>
-
-import axios from 'axios'
 import { http } from '@/lib/http'
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import FechasBanner from '@/components/FechasBanner.vue'
 
+/**
+ * ✅ IMPORTANTÍSIMO:
+ * - No usamos axios “crudo” (rutas relativas) para evitar 404 en host.
+ * - http ya debe traer baseURL + token por interceptor.
+ * - Si algún endpoint no existe en el host (como /rest-planning/units-dest), lo capturamos y NO bloquea.
+ */
+
 const restViewer = reactive({
-  from: '',      // 'YYYY-MM-DD'
-  to: '',        // 'YYYY-MM-DD'
-  agentId: null, // id del agente seleccionado (opcional para filtrar)
+  from: '',
+  to: '',
+  agentId: null,
   loading: false,
   error: '',
-  byAgent: {}    // { [agentId]: [ { from, to, state } ] }
+  byAgent: {}
 })
 
 const toast = ref({ visible: false, text: '', kind: 'success' })
@@ -1372,7 +1377,7 @@ function ymdInTZ(date) {
   const y = parts.find(p => p.type === 'year')?.value
   const m = parts.find(p => p.type === 'month')?.value
   const d = parts.find(p => p.type === 'day')?.value
-  return `${y}-${m}-${d}` // YYYY-MM-DD
+  return `${y}-${m}-${d}`
 }
 
 function hourMinuteInTZ(date) {
@@ -1385,27 +1390,22 @@ function hourMinuteInTZ(date) {
   }
 }
 
-/**
- * Devuelve YYYY-MM-DD "de negocio" en Bogotá, con corte a la hora indicada.
- * - Si ahora >= cutoffHour (hora local Bogotá), devuelve "mañana".
- * - Si ahora <  cutoffHour, devuelve "hoy".
- */
-function businessDateBogota(cutoffHour /* 0..23 */) {
+function businessDateBogota(cutoffHour) {
   const now = new Date()
   const { hour } = hourMinuteInTZ(now)
   const base = (hour >= cutoffHour)
-    ? new Date(now.getTime() + 24 * 60 * 60 * 1000) // +1 día
+    ? new Date(now.getTime() + 24 * 60 * 60 * 1000)
     : now
   return ymdInTZ(base)
 }
 
-const reportDate = ref(businessDateBogota(9)) // flip a las 05:00 Bogotá
+const reportDate = ref(businessDateBogota(9))
 const msg = ref('')
 const msgClass = computed(() => msg.value.includes('✅') ? 'text-green-600' : 'text-red-600')
 
-const agents = ref([])          // [{id, code, category, status, location, municipalityId}]
+const agents = ref([])
 const municipalities = ref([])
-const me = ref(null) // 👈 Para info usuario
+const me = ref(null)
 
 const groups = ref([])
 const units = ref([])
@@ -1435,35 +1435,37 @@ const unitById = computed(() => {
 
 const existeReporte = ref(false)
 
-const agentOwnershipMsg = ref('')     // Mensaje "Agente pertenece a XX unidad"
-const canAddSelected     = ref(false) // Habilita/inhabilita el botón Agregar
+const agentOwnershipMsg = ref('')
+const canAddSelected = ref(false)
 
 async function loadMe() {
   try {
-    me.value = await axios.get('/me/profile', {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-    }).then(r => r.data)
-  } catch { me.value = null }
+    const { data } = await http.get('/me/profile')
+    me.value = data
+  } catch {
+    me.value = null
+  }
 }
 
+// ✅ FIX: NO rompe el montaje si falla en host
 async function loadDestUnits () {
-  const { data } = await axios.get('/rest-planning/units-dest', {
-    headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-  })
-  destUnits.value = Array.isArray(data) ? data : []
+  try {
+    const { data } = await http.get('/rest-planning/units-dest')
+    destUnits.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    console.warn('[loadDestUnits] 404/err (no bloquea):', e?.response?.status, e?.response?.data || e?.message)
+    destUnits.value = []
+  }
 }
-// const CATEG_ORDER = { 'OF': 1, 'SO': 2, 'PT': 3 }
 
 // Mostrar "ME" cuando la categoría real sea "SO"
 function displayCategory(c) {
   return String(c || '') === 'SO' ? 'ME' : c
 }
 
-
 async function loadAgents() {
   try {
-    const { data } = await axios.get('/my/agents', {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
+    const { data } = await http.get('/my/agents', {
       params: { date: reportDate.value }
     })
 
@@ -1478,18 +1480,15 @@ async function loadAgents() {
     .sort((x, y) => {
       const rx = Number(x.rank_order ?? 9999)
       const ry = Number(y.rank_order ?? 9999)
-      return rx - ry   // menor rank_order primero
+      return rx - ry
     })
 
     await setDiasLaboradosTodos()
-
   } catch (e) {
     msg.value = e?.response?.data?.error || 'Error al cargar agentes'
     agents.value = []
   }
 }
-
-
 
 async function getMunicipalityIdFromLabel(label) {
   if (!label || label === 'N/A') return null
@@ -1499,37 +1498,25 @@ async function getMunicipalityIdFromLabel(label) {
 }
 
 async function loadMunicipalities(q = '') {
-  const params = q.length >= 2 ? { q } : {};
-  const { data } = await axios.get('/catalogs/municipalities', {
-    headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
-    params
-  });
-  municipalities.value = data || [];
+  const params = q.length >= 2 ? { q } : {}
+  const { data } = await http.get('/catalogs/municipalities', { params })
+  municipalities.value = data || []
 }
 
 async function loadGroups () {
-  const { data } = await axios.get('/rest-planning/groups', {
-    headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-  })
+  const { data } = await http.get('/rest-planning/groups')
   groups.value = Array.isArray(data) ? data : []
 }
 
 async function loadUnits () {
-  const { data } = await axios.get('/rest-planning/units', {
-    headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-  })
+  const { data } = await http.get('/rest-planning/units')
   units.value = Array.isArray(data) ? data : []
 }
 
 async function loadDepts () {
   try {
-    const { data } = await axios.get('/admin/depts', {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-    })
-    // backend devuelve { items: ["ANTIOQUIA", "ATLÁNTICO", ...] }
-    depts.value = Array.isArray(data?.items)
-      ? data.items   // ← YA ES UN ARREGLO DE STRINGS
-      : []
+    const { data } = await http.get('/admin/depts')
+    depts.value = Array.isArray(data?.items) ? data.items : []
   } catch (e) {
     console.error('[loadDepts] error', e)
     depts.value = []
@@ -1537,7 +1524,6 @@ async function loadDepts () {
 }
 
 function onStateChange(agent) {
-  // SIN NOVEDAD: Bogotá fijo, limpia lo demás
   if (agent.status === 'SIN NOVEDAD') {
     agent.municipalityId = 11001
     const bogota = municipalities.value.find(m => m.id === 11001)
@@ -1548,7 +1534,6 @@ function onStateChange(agent) {
     return
   }
 
-  // SERVICIO: Bogotá fijo, pero permite editar fechas y descripción
   if (agent.status === 'SERVICIO') {
     agent.municipalityId = 11001
     const bogota = municipalities.value.find(m => m.id === 11001)
@@ -1556,7 +1541,6 @@ function onStateChange(agent) {
     return
   }
 
-  // COMISIÓN DEL SERVICIO: municipio requerido
   if (agent.status === 'COMISIÓN DEL SERVICIO') {
     agent.municipalityId = null
     agent.municipalityName = ''
@@ -1566,7 +1550,6 @@ function onStateChange(agent) {
     return
   }
 
-  // FRANCO FRANCO: limpia todo
   if (agent.status === 'FRANCO FRANCO') {
     agent.municipalityId = null
     agent.municipalityName = ''
@@ -1576,7 +1559,6 @@ function onStateChange(agent) {
     return
   }
 
-  // SUSPENDIDO: requiere inicio, fin y descripción, sin municipio
   if (agent.status === 'SUSPENDIDO') {
     agent.municipalityId = null
     agent.municipalityName = ''
@@ -1586,17 +1568,15 @@ function onStateChange(agent) {
     return
   }
 
-  // HOSPITALIZADO: requiere inicio y descripción (sin fin), sin municipio
   if (agent.status === 'HOSPITALIZADO') {
     agent.municipalityId = null
     agent.municipalityName = ''
     agent.novelty_start = ''
-    agent.novelty_end = '' // asegúrate que quede vacío
+    agent.novelty_end = ''
     agent.novelty_description = ''
     return
   }
 
-  // Otros estados genéricos: limpia municipio y pide fechas/desc
   agent.municipalityId = null
   agent.municipalityName = ''
   agent.novelty_start = ''
@@ -1605,50 +1585,43 @@ function onStateChange(agent) {
 }
 
 async function save() {
-        for (const a of agents.value) {
-        if (a.status === 'SIN NOVEDAD') {
-          if (a.municipalityId !== 11001) {
-            msg.value = `El agente ${a.code} debe estar en Bogotá (SIN NOVEDAD)`
-            return
-          }
-        } else if (a.status === 'SERVICIO') {
-          if (a.municipalityId !== 11001) {
-            msg.value = `El agente ${a.code} debe estar en Bogotá (SERVICIO)`
-            return
-          }
-          if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (SERVICIO)`; return }
-          if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (SERVICIO)`; return }
-          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SERVICIO)`; return }
-        } else if (a.status === 'COMISIÓN DEL SERVICIO') {
-          if (!a.municipalityId) { msg.value = `Falta municipio para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
-          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
-        } else if (a.status === 'FRANCO FRANCO') {
-          // nada requerido
-        } else if (a.status === 'SUSPENDIDO') {
-          if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (SUSPENDIDO)`; return }
-          if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (SUSPENDIDO)`; return }
-          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SUSPENDIDO)`; return }
-        } else if (a.status === 'HOSPITALIZADO') {
-          if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (HOSPITALIZADO)`; return }
-          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (HOSPITALIZADO)`; return }
-          // fuerza a vacío por consistencia de UI
-          a.novelty_end = ''
-        } else {
-          // Resto de novedades: inicio, fin, descripción
-          if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (${a.status})`; return }
-          if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (${a.status})`; return }
-          if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (${a.status})`; return }
-        }
-      }
-      // ✅ Bloquea guardado si algún MT es inválido
-      for (const a of agents.value) {
-        if (isMtInvalid(a.mt)) {
-          msg.value = `MT inválido para ${a.code}. Usa solo números y guiones.`
-          return
-        }
-      }
+  for (const a of agents.value) {
+    if (a.status === 'SIN NOVEDAD') {
+      if (a.municipalityId !== 11001) { msg.value = `El agente ${a.code} debe estar en Bogotá (SIN NOVEDAD)`; return }
+    } else if (a.status === 'SERVICIO') {
+      if (a.municipalityId !== 11001) { msg.value = `El agente ${a.code} debe estar en Bogotá (SERVICIO)`; return }
+      if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (SERVICIO)`; return }
+      if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (SERVICIO)`; return }
+      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SERVICIO)`; return }
+    } else if (a.status === 'COMISIÓN DEL SERVICIO') {
+      if (!a.municipalityId) { msg.value = `Falta municipio para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
+      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (COMISIÓN DEL SERVICIO)`; return }
+    } else if (a.status === 'FRANCO FRANCO') {
+      // nada
+    } else if (a.status === 'SUSPENDIDO') {
+      if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (SUSPENDIDO)`; return }
+      if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (SUSPENDIDO)`; return }
+      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (SUSPENDIDO)`; return }
+    } else if (a.status === 'HOSPITALIZADO') {
+      if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (HOSPITALIZADO)`; return }
+      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (HOSPITALIZADO)`; return }
+      a.novelty_end = ''
+    } else {
+      if (!a.novelty_start) { msg.value = `Falta fecha inicio para ${a.code} (${a.status})`; return }
+      if (!a.novelty_end)   { msg.value = `Falta fecha fin para ${a.code} (${a.status})`; return }
+      if (!a.novelty_description) { msg.value = `Falta descripción para ${a.code} (${a.status})`; return }
+    }
+  }
+
+  for (const a of agents.value) {
+    if (isMtInvalid(a.mt)) {
+      msg.value = `MT inválido para ${a.code}. Usa solo números y guiones.`
+      return
+    }
+  }
+
   try {
-    await axios.post('/reports', {
+    await http.post('/reports', {
       reportDate: reportDate.value,
       people: agents.value.map(a => {
         const isBase = (s) => ['SIN NOVEDAD', 'COMISIÓN DEL SERVICIO', 'FRANCO FRANCO'].includes(s)
@@ -1671,16 +1644,14 @@ async function save() {
               ? (a.novelty_description || null)
               : null,
 
-          mt: a.mt ? a.mt.trim() : null // ✅ NUEVO
+          mt: a.mt ? a.mt.trim() : null
         }
       })
-    }, {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     })
     msg.value = 'Guardado ✅'
     await loadAgents()
   } catch (e) {
-    msg.value = e.response?.data?.error || 'Error al guardar'
+    msg.value = e?.response?.data?.error || 'Error al guardar'
   }
 }
 
@@ -1690,13 +1661,9 @@ async function removeAgent(agentId) {
     const role = String(me.value?.role || '').toLowerCase()
 
     if (role === 'leader_unit' || role === 'leader_group') {
-      await axios.put(`/my/agents/${agentId}/unit`, { unitId: null }, {
-        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-      })
+      await http.put(`/my/agents/${agentId}/unit`, { unitId: null })
     } else if (role === 'superadmin' || role === 'supervision') {
-      await axios.put(`/admin/agents/${agentId}`, { unitId: null }, {
-        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-      })
+      await http.put(`/admin/agents/${agentId}`, { unitId: null })
     } else {
       msg.value = 'No tiene permisos para quitar agentes de la unidad'
       return
@@ -1704,52 +1671,37 @@ async function removeAgent(agentId) {
 
     await loadAgents()
   } catch (e) {
-    msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo quitar agente'
+    msg.value = e?.response?.data?.detail || e?.response?.data?.error || 'No se pudo quitar agente'
   }
 }
 
 // KPIs calculados en frontend
-// FD = todos los OF/SO/PT con status "SIN NOVEDAD"
 const fdOF = computed(() => agents.value.filter(a => a.category === 'OF' && a.status === 'SIN NOVEDAD').length)
 const fdSO = computed(() => agents.value.filter(a => a.category === 'SO' && a.status === 'SIN NOVEDAD').length)
 const fdPT = computed(() => agents.value.filter(a => a.category === 'PT' && a.status === 'SIN NOVEDAD').length)
 
-// FE (efectivo total)
 const feOF = computed(() => agents.value.filter(a => a.category === 'OF').length)
 const feSO = computed(() => agents.value.filter(a => a.category === 'SO').length)
 const fePT = computed(() => agents.value.filter(a => a.category === 'PT').length)
 
-// Novedades = total - FD
 const kpiFE = computed(() => `${feOF.value}/${feSO.value}/${fePT.value}`)
 const kpiFD = computed(() => `${fdOF.value}/${fdSO.value}/${fdPT.value}`)
 const kpiNOV = computed(() =>
   `${feOF.value - fdOF.value}/${feSO.value - fdSO.value}/${fePT.value - fdPT.value}`
 )
 
-// Totales para KPI
 const feTotal  = computed(() => feOF.value + feSO.value + fePT.value)
 const fdTotal  = computed(() => fdOF.value + fdSO.value + fdPT.value)
-const novTotalKPI = computed(() => feTotal.value - fdTotal.value) // = (FE - FD)
+const novTotalKPI = computed(() => feTotal.value - fdTotal.value)
 
-// Panel desplegable (cerrado por defecto)
 const showUnitPanel = ref(false)
 
-// === Cómputos para FE, F/D (Comisión) y Novedades ===
-// Ya tienes feOF/feSO/fePT; reutilizamos
-
-const comiOF = computed(() =>
-  agents.value.filter(a => a.category === 'OF' && a.status === 'COMISIÓN DEL SERVICIO').length
-)
-const comiSO = computed(() =>
-  agents.value.filter(a => a.category === 'SO' && a.status === 'COMISIÓN DEL SERVICIO').length
-)
-const comiPT = computed(() =>
-  agents.value.filter(a => a.category === 'PT' && a.status === 'COMISIÓN DEL SERVICIO').length
-)
+// Comisión del servicio
+const comiOF = computed(() => agents.value.filter(a => a.category === 'OF' && a.status === 'COMISIÓN DEL SERVICIO').length)
+const comiSO = computed(() => agents.value.filter(a => a.category === 'SO' && a.status === 'COMISIÓN DEL SERVICIO').length)
+const comiPT = computed(() => agents.value.filter(a => a.category === 'PT' && a.status === 'COMISIÓN DEL SERVICIO').length)
 const comiTotal = computed(() => comiOF.value + comiSO.value + comiPT.value)
 
-// Novedades (suma de "SIN NOVEDAD" y todos los demás EXCEPTO Comisión del servicio)
-// Equivale a FE - Comisión del servicio
 const novOF = computed(() => feOF.value - comiOF.value)
 const novSO = computed(() => feSO.value - comiSO.value)
 const novPT = computed(() => fePT.value - comiPT.value)
@@ -1775,7 +1727,7 @@ const STATUS_ORDER = [
   'COMISIÓN DE ESTUDIO',
   'SUSPENDIDO',
   'HOSPITALIZADO',
-];
+]
 
 const STATUS_LABEL = {
   'COMISIÓN DEL SERVICIO': 'COMISIÓN DEL SERVICIO',
@@ -1796,40 +1748,38 @@ const STATUS_LABEL = {
   'COMISIÓN DE ESTUDIO': 'COMISIÓN DE ESTUDIO',
   'SUSPENDIDO': 'SUSPENDIDO',
   'HOSPITALIZADO': 'HOSPITALIZADO',
-
-};
+}
 
 const summaryByStatus = computed(() => {
-  const acc = {};
-  for (const st of STATUS_ORDER) acc[st] = { of: 0, so: 0, pt: 0, total: 0 };
+  const acc = {}
+  for (const st of STATUS_ORDER) acc[st] = { of: 0, so: 0, pt: 0, total: 0 }
 
   for (const a of agents.value) {
-    const st = a.status || 'SIN NOVEDAD';
-    if (!acc[st]) acc[st] = { of: 0, so: 0, pt: 0, total: 0 };
-    if (a.category === 'OF') acc[st].of++;
-    else if (a.category === 'SO') acc[st].so++;
-    else if (a.category === 'PT') acc[st].pt++;
-    acc[st].total++;
+    const st = a.status || 'SIN NOVEDAD'
+    if (!acc[st]) acc[st] = { of: 0, so: 0, pt: 0, total: 0 }
+    if (a.category === 'OF') acc[st].of++
+    else if (a.category === 'SO') acc[st].so++
+    else if (a.category === 'PT') acc[st].pt++
+    acc[st].total++
   }
 
-  const list = [];
+  const list = []
   for (const st of STATUS_ORDER) {
-    const r = acc[st];
+    const r = acc[st]
     if (r && r.total > 0) {
       list.push({
         status: st,
         label: STATUS_LABEL[st] || st,
         of: r.of,
-        me: r.so,  // mostrar "ME" aunque la categoría sea SO
+        me: r.so,
         pt: r.pt,
         total: r.total,
-      });
+      })
     }
   }
-  return list;
-});
+  return list
+})
 
-// Fecha corta
 const reportDateShort = computed(() => {
   try {
     return new Date(`${reportDate.value}T00:00:00`).toLocaleDateString('es-CO', {
@@ -1837,7 +1787,6 @@ const reportDateShort = computed(() => {
     })
   } catch { return reportDate.value }
 })
-
 
 function getUnitLabel(a) {
   return a.unitName || a.unitCode || a.unitShort || ''
@@ -1849,12 +1798,12 @@ function logout() {
 }
 
 function onMuniInput(agent) {
-  const query = agent.municipalityName || '';
-  const value = query.trim().toLowerCase();
+  const query = agent.municipalityName || ''
+  const value = query.trim().toLowerCase()
   const m = municipalities.value.find(
     m => (`${m.dept} - ${m.name}`.toLowerCase().trim() === value)
-  );
-  agent.municipalityId = m ? m.id : null;
+  )
+  agent.municipalityId = m ? m.id : null
 }
 
 const agentSearch = ref('')
@@ -1870,9 +1819,8 @@ async function onAgentSearchInput() {
 
   if (!q.length) { agentSearchResults.value = []; return }
 
-  const { data } = await axios.get('/catalogs/agents', {
-    params: { q, limit: 20 },
-    headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
+  const { data } = await http.get('/catalogs/agents', {
+    params: { q, limit: 20 }
   })
 
   agentSearchResults.value = Array.isArray(data) ? data : []
@@ -1883,17 +1831,13 @@ async function onAgentSearchInput() {
   const sameUnit  = !!me.value?.unitId && match.unitId === me.value.unitId
   const inOtherUnit = !!match.unitId && !sameUnit
 
-  if (sameUnit) {
-    agentOwnershipMsg.value = 'Agente ya está en su unidad'
-    return
-  }
+  if (sameUnit) { agentOwnershipMsg.value = 'Agente ya está en su unidad'; return }
   if (inOtherUnit) {
-    const unitLabel  = getUnitLabel(match) || 'otra unidad'
+    const unitLabel = getUnitLabel(match) || 'otra unidad'
     agentOwnershipMsg.value = `Agente pertenece a ${unitLabel}`
     return
   }
 
-  // ✅ NUEVO: permitir agregar si es de mi grupo y no tiene unidad
   if (!match.unitId && sameGroup) {
     selectedAgentToAdd.value = match.id
     canAddSelected.value = true
@@ -1901,7 +1845,6 @@ async function onAgentSearchInput() {
     return
   }
 
-  // Libre total (sin grupo ni unidad) → también se puede agregar
   if (!match.unitId && !match.groupId) {
     selectedAgentToAdd.value = match.id
     canAddSelected.value = true
@@ -1927,7 +1870,7 @@ function onSelectAgent(code) {
 
   if (sameUnit) { agentOwnershipMsg.value = 'Agente ya está en su unidad'; return }
   if (inOtherUnit) {
-    const unitLabel  = getUnitLabel(a) || 'otra unidad'
+    const unitLabel = getUnitLabel(a) || 'otra unidad'
     agentOwnershipMsg.value = `Agente pertenece a ${unitLabel}`
     return
   }
@@ -1951,27 +1894,22 @@ async function addFreeAgent() {
   const q = agentSearch.value.trim().toUpperCase()
   const agent = agentSearchResults.value.find(a => String(a.code).toUpperCase() === q)
 
-  if (!agent) { msg.value = "Selecciona un agente válido"; return }
+  if (!agent) { msg.value = 'Selecciona un agente válido'; return }
 
-  // Evitar duplicados en la misma unidad
   if (agents.value.some(x => String(x.code).toUpperCase().trim() === agent.code)) {
     msg.value = `El agente ${agent.code} ya está en tu unidad`
     return
   }
 
-  // Solo si está libre
   if (!canAddSelected.value) return
 
   try {
-    await axios.post('/my/agents/add', { agentId: agent.id }, {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-    })
+    await http.post('/my/agents/add', { agentId: agent.id })
 
-    msg.value = "Agregado con éxito ✅"
+    msg.value = 'Agregado con éxito ✅'
     showToast(`Agente ${agent.code} agregado a su unidad`, 'success')
     setTimeout(() => { if (msg.value.includes('✅')) msg.value = '' }, 3000)
 
-    // limpiar buscador/estado
     agentSearch.value = ''
     agentSearchResults.value = []
     agentOwnershipMsg.value = ''
@@ -1980,67 +1918,69 @@ async function addFreeAgent() {
 
     await loadAgents()
   } catch (e) {
-    msg.value = e.response?.data?.detail || e.response?.data?.error || 'No se pudo agregar'
+    msg.value = e?.response?.data?.detail || e?.response?.data?.error || 'No se pudo agregar'
     showToast(msg.value, 'warn')
   }
 }
 
 async function checkIfReportExists() {
   try {
-    const { data } = await axios.get('/reports', {
-      params: { date: reportDate.value },
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
-    });
-    existeReporte.value = !!(data && data.length > 0);
-  } catch { existeReporte.value = false }
+    const { data } = await http.get('/reports', { params: { date: reportDate.value } })
+    existeReporte.value = !!(data && data.length > 0)
+  } catch {
+    existeReporte.value = false
+  }
 }
 
 // === Helpers de fechas ===
 function toDate(s) {
   if (!s) return null
-  // forzamos formato YYYY-MM-DD a Date (00:00 local)
   const [y, m, d] = String(s).split('-').map(Number)
   if (!y || !m || !d) return null
   return new Date(y, m - 1, d)
 }
 function isRangeInvalid(start, end) {
   const d1 = toDate(start), d2 = toDate(end)
-  if (!d1 || !d2) return false // solo validamos cuando ambas existen
+  if (!d1 || !d2) return false
   return d2 < d1
 }
-// Estados que piden dos fechas (inicio y fin)
 function needsBothDates(state) {
   const s = String(state || '').toUpperCase()
   return [
     'SERVICIO',
     'SUSPENDIDO',
-    // genéricos: todas las que en tu UI piden inicio y fin
     'VACACIONES','LICENCIA DE MATERNIDAD','LICENCIA DE LUTO','LICENCIA REMUNERADA',
-    'LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD','PERMISO', 'DESCANSO ESPECIAL', 'PERMISO ACTIVIDAD PERSONAL',
+    'LICENCIA NO REMUNERADA','EXCUSA DEL SERVICIO','LICENCIA PATERNIDAD',
+    'PERMISO','DESCANSO ESPECIAL','PERMISO ACTIVIDAD PERSONAL',
     'COMISIÓN EN EL EXTERIOR','COMISIÓN DE ESTUDIO'
   ].includes(s)
 }
-// ¿El agente tiene error de rango?
 function agentHasRangeError(a) {
   if (!needsBothDates(a.status)) return false
   return isRangeInvalid(a.novelty_start, a.novelty_end)
 }
-// Computado global: ¿hay algún error de fechas en el listado?
 const hasDateErrors = computed(() => agents.value.some(agentHasRangeError))
 
+// ✅ Montaje robusto: nada bloquea agentes
 onMounted(async () => {
-  await loadMe() // <--- Carga el usuario y unidad
-  await loadMunicipalities();
-  await loadGroups()   
-  await loadUnits()  
-  await loadDestUnits()
-  await loadDepts()  
-  await loadAgents();
-  await checkIfReportExists();
-});
+  await loadMe()
+
+  await Promise.allSettled([
+    loadMunicipalities(),
+    loadGroups(),
+    loadUnits(),
+    loadDepts(),
+  ])
+
+  await Promise.allSettled([
+    loadAgents(),
+    checkIfReportExists(),
+    loadDestUnits(), // si falla 404, ya no rompe
+  ])
+})
 
 // === Sidebar/menú como AgentDashboard ===
-const section = ref('captura')  // 'captura' | 'perfil'
+const section = ref('captura')
 const menu = [
   { key: 'captura', label: 'Captura de novedades' },
   { key: 'proyeccion', label: 'Proyección funcionarios' },
@@ -2050,7 +1990,6 @@ const titleBySection = computed(() => ({
   captura: 'Captura de novedades',
   proyeccion: 'Proyección funcionarios',
   perfil: 'Perfil de usuario',
-
 }[section.value]))
 
 // --- estado perfil/cambio contraseña ---
@@ -2111,18 +2050,14 @@ async function onSubmitPassword () {
   }
   submittingPwd.value = true
   try {
-    await axios.post('/me/change-password', {
+    await http.post('/me/change-password', {
       oldPassword: formPwd.value.old,
       newPassword: formPwd.value.new1
-    }, {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') }
     })
     pwdMsg.value = 'Contraseña actualizada correctamente.'
     pwdMsgOk.value = true
-    // Limpia el form **después de un pequeño delay**, así el usuario ve el mensaje
     setTimeout(() => resetPwdForm(), 1500)
   } catch (err) {
-    // Toma el mensaje correcto del backend
     const apiMsg =
       err?.response?.data?.error ||
       err?.response?.data?.detail ||
@@ -2136,14 +2071,12 @@ async function onSubmitPassword () {
   }
 }
 
-
 // ---------- Historial (calendario + timeline) ----------
 const historyModal = ref({ open: false, agent: null })
 const viewTab = ref('calendar')
 const monthCursor = ref(new Date())
 const historyItems = ref([])
 
-// Helpers de fechas
 function ymd(d){ return d.toISOString().slice(0,10) }
 function startOfMonth(d){ const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x }
 function endOfMonth(d){ const x=new Date(d); x.setMonth(x.getMonth()+1,0); x.setHours(0,0,0,0); return x }
@@ -2153,34 +2086,31 @@ function dowMonday0(d){ return (d.getDay()+6)%7 }
 function startOfWeekMonday(d){ const x=new Date(d); const off=(x.getDay()+6)%7; x.setDate(x.getDate()-off); x.setHours(0,0,0,0); return x }
 function endOfWeekSunday(d){ const x=new Date(d); const off=(7-((x.getDay()+6)%7))-1; x.setDate(x.getDate()+off); x.setHours(0,0,0,0); return x }
 
-
-// Rango para pedir al backend (3 meses: mes visible + 2 hacia atrás), extendido a semanas completas
 const historyFrom = computed(() => ymd(startOfWeekMonday(startOfMonth(addMonths(monthCursor.value, -2)))))
 const historyTo   = computed(()   => ymd(endOfWeekSunday(endOfMonth(monthCursor.value))))
 
-// Rango VISUAL del calendario del mes actual (1 mes + padding lun-dom)
 const calendarStartDate = computed(() => startOfWeekMonday(startOfMonth(monthCursor.value)))
 const calendarEndDate   = computed(() => endOfWeekSunday(endOfMonth(monthCursor.value)))
 
-// Etiquetas mostradas en el modal
 const monthLabel = computed(() =>
   new Intl.DateTimeFormat('es-CO',{month:'long',year:'numeric'}).format(monthCursor.value)
 )
 const monthFrom = computed(() => ymd(calendarStartDate.value))
 const monthTo   = computed(() => ymd(calendarEndDate.value))
 
-// Colores/Iconos
 function iconFor(state){
   const s = String(state || '').toUpperCase()
   const map = {
     'SIN NOVEDAD':'✅','SERVICIO':'🧭','COMISIÓN DEL SERVICIO':'📌','FRANCO FRANCO':'🛌',
     'VACACIONES':'🏖️','LICENCIA DE MATERNIDAD':'👶','LICENCIA DE LUTO':'🕊️',
     'LICENCIA REMUNERADA':'📝','LICENCIA NO REMUNERADA':'📝','EXCUSA DEL SERVICIO':'📝',
-    'LICENCIA PATERNIDAD':'🍼','PERMISO':'⏳', 'DESCANSO ESPECIAL':'🎆', 'PERMISO ACTIVIDAD PERSONAL':'⏳','COMISIÓN EN EL EXTERIOR':'✈️','COMISIÓN DE ESTUDIO':'🎓',
+    'LICENCIA PATERNIDAD':'🍼','PERMISO':'⏳','DESCANSO ESPECIAL':'🎆','PERMISO ACTIVIDAD PERSONAL':'⏳',
+    'COMISIÓN EN EL EXTERIOR':'✈️','COMISIÓN DE ESTUDIO':'🎓',
     'SUSPENDIDO':'⛔','HOSPITALIZADO':'🏥'
   }
   return map[s] || '•'
 }
+
 function colorClass(state){
   const s = String(state || '').toUpperCase()
   const c = {
@@ -2194,78 +2124,37 @@ function colorClass(state){
   }
   return c[s] || { bg:'bg-slate-100', pill:'bg-slate-100 text-slate-700', dot:'bg-slate-400' }
 }
+
 function shortState(s){ const t=String(s||''); return t.length<=16?t:(t.slice(0,16)+'…') }
-const legendStates = [
-  'SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','VACACIONES','FRANCO FRANCO','SUSPENDIDO','HOSPITALIZADO'
-]
-// === Mapeo a códigos cortos y colores estilo ADMIN ===
+const legendStates = ['SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','VACACIONES','FRANCO FRANCO','SUSPENDIDO','HOSPITALIZADO']
+
 function projStateCode (state) {
   const raw = String(state || '')
   const upper = raw.toUpperCase()
-
   if (!raw) return ''
 
-  if (upper === 'NC' || upper.includes('SIN NOVEDAD')) {
-    return 'NC' // SIN NOVEDAD
-  }
-  if (
-    upper === 'CS' ||
-    upper.includes('COMISION DEL SERVICIO') ||
-    upper.includes('COMISIÓN DEL SERVICIO')
-  ) {
-    return 'CS' // COMISIÓN DEL SERVICIO
-  }
-  if (
-    upper === 'CE' ||
-    upper.includes('COMISION DE ESTUDIO') ||
-    upper.includes('COMISIÓN DE ESTUDIO') ||
-    upper.includes('COMISION DE ESTUDIOS') ||
-    upper.includes('COMISIÓN DE ESTUDIOS')
-  ) {
-    return 'CE' // COMISIÓN DE ESTUDIOS
-  }
-  if (upper === 'PR' || upper.includes('PERMISO') || upper.includes('DESCANSO ESPECIAL')) {
-    return 'PR' // PERMISO / DESCANSO ESPECIAL
-  }
-
-  if (upper === 'VC' || upper.includes('VACACION')) {
-    return 'VC' // VACACIONES
-  }
-  if (
-    upper === 'SR' ||
-    upper === 'SERVICIO' ||
-    upper.includes('SERVICIO')
-  ) {
-    return 'SR' // SERVICIO
-  }
-  if (upper === 'FR' || upper.includes('FRANCO')) {
-    return 'FR' // FRANCO
-  }
-
+  if (upper === 'NC' || upper.includes('SIN NOVEDAD')) return 'NC'
+  if (upper === 'CS' || upper.includes('COMISION DEL SERVICIO') || upper.includes('COMISIÓN DEL SERVICIO')) return 'CS'
+  if (upper === 'CE' || upper.includes('COMISION DE ESTUDIO') || upper.includes('COMISIÓN DE ESTUDIO') || upper.includes('COMISION DE ESTUDIOS') || upper.includes('COMISIÓN DE ESTUDIOS')) return 'CE'
+  if (upper === 'PR' || upper.includes('PERMISO') || upper.includes('DESCANSO ESPECIAL')) return 'PR'
+  if (upper === 'VC' || upper.includes('VACACION')) return 'VC'
+  if (upper === 'SR' || upper === 'SERVICIO' || upper.includes('SERVICIO')) return 'SR'
+  if (upper === 'FR' || upper.includes('FRANCO')) return 'FR'
   return ''
 }
 
 function projStateColorClass (code) {
   switch (code) {
-    case 'NC':
-      return 'bg-sky-700 text-white border-sky-900'
-    case 'CS':
-      return 'bg-emerald-500 text-white border-emerald-700'
-    case 'CE':
-      return 'bg-amber-400 text-slate-900 border-amber-600'
-    case 'PR':
-      return 'bg-amber-600 text-slate-900 border-amber-400'
-    case 'VC':
-      return 'bg-red-500 text-white border-red-700'
-    case 'SR':
-      return 'bg-orange-500 text-white border-orange-700'
-    case 'FR':
-      return 'bg-cyan-400 text-slate-900 border-cyan-600'
-    default:
-      return 'bg-slate-100 text-slate-500 border-slate-300'
+    case 'NC': return 'bg-sky-700 text-white border-sky-900'
+    case 'CS': return 'bg-emerald-500 text-white border-emerald-700'
+    case 'CE': return 'bg-amber-400 text-slate-900 border-amber-600'
+    case 'PR': return 'bg-amber-600 text-slate-900 border-amber-400'
+    case 'VC': return 'bg-red-500 text-white border-red-700'
+    case 'SR': return 'bg-orange-500 text-white border-orange-700'
+    case 'FR': return 'bg-cyan-400 text-slate-900 border-cyan-600'
+    default:   return 'bg-slate-100 text-slate-500 border-slate-300'
   }
 }
-
 
 function diasLaboradosColor(n) {
   if (n == null) return 'text-slate-400'
@@ -2275,47 +2164,36 @@ function diasLaboradosColor(n) {
 }
 
 function contarDiasLaborados(historial, fechaReferencia) {
-  // Historial debe estar ordenado ASCENDENTE (viejo -> reciente)
-  // Vamos a asegurarnos:
   const sorted = [...historial]
     .filter(d => d.date && d.state)
-    .sort((a, b) => String(a.date).localeCompare(String(b.date))); // ascendente
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
 
-  let streak = 0;
-  // Recorremos de la fechaReferencia hacia atrás (del día más reciente al más antiguo)
+  let streak = 0
   for (let i = sorted.length - 1; i >= 0; i--) {
-    const day = sorted[i];
-    if (day.date > fechaReferencia) continue; // saltar futuras
-    const estado = String(day.state).toUpperCase();
-    if (["SIN NOVEDAD", "SERVICIO", "COMISIÓN DEL SERVICIO" , "PERMISO ACTIVIDAD PERSONAL"].includes(estado)) {
-      streak++;
-    } else {
-      break; // ¡En cuanto encuentra otra novedad, termina el conteo!
-    }
+    const day = sorted[i]
+    if (day.date > fechaReferencia) continue
+    const estado = String(day.state).toUpperCase()
+    if (["SIN NOVEDAD", "SERVICIO", "COMISIÓN DEL SERVICIO", "PERMISO ACTIVIDAD PERSONAL"].includes(estado)) streak++
+    else break
   }
-  return streak;
+  return streak
 }
 
 async function setDiasLaboradosTodos() {
-  const fechaReferencia = reportDate.value; // o la fecha actual
+  const fechaReferencia = reportDate.value
   for (const agente of agents.value) {
-    const url = `/admin/agents/${agente.id}/history`;
-    // Saca TODO el historial (puedes limitar from si tu base es muy grande)
-    const params = { from: '2000-01-01', to: fechaReferencia };
+    const url = `/admin/agents/${agente.id}/history`
+    const params = { from: '2000-01-01', to: fechaReferencia }
     try {
-      const { data } = await axios.get(url, {
-        headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
-        params
-      });
-      const historial = Array.isArray(data?.items) ? data.items : [];
-      agente.diasLaborados = contarDiasLaborados(historial, fechaReferencia);
+      const { data } = await http.get(url, { params })
+      const historial = Array.isArray(data?.items) ? data.items : []
+      agente.diasLaborados = contarDiasLaborados(historial, fechaReferencia)
     } catch {
-      agente.diasLaborados = 0;
+      agente.diasLaborados = 0
     }
   }
 }
 
-// --- Modal Historial ---
 async function openHistory(a){
   viewTab.value = 'calendar'
   historyModal.value = { open:true, agent:a }
@@ -2328,10 +2206,9 @@ function closeHistory(){
 }
 
 async function loadHistory() {
-  if (!historyModal.value.agent) return;
+  if (!historyModal.value.agent) return
   try {
-    const { data } = await axios.get(`/admin/agents/${historyModal.value.agent.id}/history`, {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('token') || '') },
+    const { data } = await http.get(`/admin/agents/${historyModal.value.agent.id}/history`, {
       params: { from: historyFrom.value, to: historyTo.value }
     })
     historyItems.value = Array.isArray(data?.items) ? data.items : []
@@ -2341,12 +2218,10 @@ async function loadHistory() {
   }
 }
 
-// Navegación meses
 async function prevMonth(){ monthCursor.value = addMonths(monthCursor.value,-1); await loadHistory() }
 async function nextMonth(){ monthCursor.value = addMonths(monthCursor.value, 1); await loadHistory() }
 async function todayMonth(){ monthCursor.value = new Date(); await loadHistory() }
 
-// Calendario
 const calendarCells = computed(() => {
   const start = calendarStartDate.value
   const end   = calendarEndDate.value
@@ -2359,16 +2234,12 @@ const calendarCells = computed(() => {
     const state = rec?.state || null
     const title = state ? `${key} — ${state}${rec?.municipalityName ? ' — '+rec.municipalityName : ''}` : key
     const isToday = key === ymd(new Date())
-
-    // ¿Este día pertenece al mes visible o es padding?
     const isPadding = dt.getMonth() !== monthCursor.value.getMonth()
-
     cells.push({ key, day: dt.getDate(), state, title, isToday, isPadding })
   }
   return cells
 })
 
-// Timeline
 const segments = computed(() => {
   const days = [...historyItems.value].sort((a,b)=> String(a.date).localeCompare(String(b.date)))
   const out = []
@@ -2386,26 +2257,9 @@ const segments = computed(() => {
 
 // ======================= PROYECCIÓN DE DESCANSO =======================
 
-// Rango global de proyección (por ej. 2025-11-25 → 2026-01-05)
-const projRange = ref({
-  from: '',
-  to: ''
-})
-
-// Mapa: agentId -> [ { from, to, state } ]
+const projRange = ref({ from: '', to: '' })
 const projByAgent = ref({})
-
-// Draft de rango para el formulario
-const projDraft = ref({
-  from: '',
-  to: '',
-  state: '',
-  destGroupId: null,
-  destUnitId: null,
-  depts: []              
-})
-
-
+const projDraft = ref({ from: '', to: '', state: '', destGroupId: null, destUnitId: null, depts: [] })
 const projDraftError = ref('')
 
 const projCanAddDraft = computed(() => {
@@ -2416,23 +2270,16 @@ const projCanAddDraft = computed(() => {
   const d1 = toDate(f)
   const d2 = toDate(t)
   if (!d1 || !d2 || d2 < d1) return false
-
-  // Si es COMISIÓN, solo exigimos unidad (grupo lo derivamos)
   if (s === 'COMISIÓN DEL SERVICIO') {
     if (!projDraft.value.destUnitId) return false
   }
-
   return true
 })
 
-// Agente actualmente seleccionado en el editor
 const projSelectedAgentId = ref(null)
-
-// Mensajes
 const projMsg = ref('')
 const projMsgOk = ref(false)
 
-// Cargar proyección existente desde el backend para el rango [from,to]
 async function loadProjectionFromBackend () {
   const from = projRange.value.from
   const to   = projRange.value.to
@@ -2440,31 +2287,14 @@ async function loadProjectionFromBackend () {
   projMsg.value = ''
   projMsgOk.value = false
 
-  // Si no hay rango, limpiamos proyección en memoria
-  if (!from || !to) {
-    projByAgent.value = {}
-    return
-  }
+  if (!from || !to) { projByAgent.value = {}; return }
 
   const d1 = toDate(from)
   const d2 = toDate(to)
-  if (!d1 || !d2 || d2 < d1) {
-    projByAgent.value = {}
-    return
-  }
+  if (!d1 || !d2 || d2 < d1) { projByAgent.value = {}; return }
 
   try {
-    const { data } = await axios.get('/rest-planning', {
-      params: {
-        from,
-        to
-        // NO enviamos unitId: el backend ya filtra por unidad del usuario
-      },
-      headers: {
-        Authorization: 'Bearer ' + (localStorage.getItem('token') || '')
-      }
-    })
-
+    const { data } = await http.get('/rest-planning', { params: { from, to } })
     const items = Array.isArray(data?.items) ? data.items : []
 
     const map = {}
@@ -2472,11 +2302,9 @@ async function loadProjectionFromBackend () {
       const aid = Number(it.agentId)
       if (!aid) continue
 
-      // 👇 reconstruimos depts si el backend envía dept1/2/3 o array
       let segDepts = []
-      if (Array.isArray(it.depts)) {
-        segDepts = it.depts.filter(Boolean)
-      } else {
+      if (Array.isArray(it.depts)) segDepts = it.depts.filter(Boolean)
+      else {
         const tmp = []
         if (it.dept1) tmp.push(it.dept1)
         if (it.dept2) tmp.push(it.dept2)
@@ -2491,49 +2319,33 @@ async function loadProjectionFromBackend () {
         state: it.state,
         destGroupId: it.destGroupId || null,
         destUnitId:  it.destUnitId  || null,
-        depts: segDepts             // 👈 NUEVO
+        depts: segDepts
       })
     }
 
-
-    // 🔄 sustituimos todo el mapa por lo que hay en BD
     projByAgent.value = map
 
-    // Mantener selección si sigue teniendo rangos
-    if (
-      projSelectedAgentId.value &&
-      map[projSelectedAgentId.value] &&
-      map[projSelectedAgentId.value].length
-    ) {
-      // ok, dejamos la selección como está
+    if (projSelectedAgentId.value && map[projSelectedAgentId.value]?.length) {
+      // keep
     } else if (agents.value.length) {
-      // Si no, elegimos alguno que tenga algo
       const withRanges = agents.value.find(a => map[a.id]?.length)
       projSelectedAgentId.value = withRanges?.id || null
     }
   } catch (err) {
     console.warn('Error cargando proyección existente:', err?.response?.data || err)
     projByAgent.value = {}
-    projMsg.value =
-      err?.response?.data?.error ||
-      err?.response?.data?.detail ||
-      'No se pudo cargar la proyección existente.'
+    projMsg.value = err?.response?.data?.error || err?.response?.data?.detail || 'No se pudo cargar la proyección existente.'
     projMsgOk.value = false
   }
 }
 
-// Devuelve el arreglo reactivo de rangos para el agente actual
 const projCurrentAgentRanges = computed(() => {
   const id = projSelectedAgentId.value
   if (!id) return []
-  if (!projByAgent.value[id]) {
-    // inicializa array para ese agente
-    projByAgent.value[id] = []
-  }
+  if (!projByAgent.value[id]) projByAgent.value[id] = []
   return projByAgent.value[id]
 })
 
-// Label amigable del agente actual
 const projCurrentAgentLabel = computed(() => {
   const id = projSelectedAgentId.value
   if (!id) return ''
@@ -2542,24 +2354,20 @@ const projCurrentAgentLabel = computed(() => {
   return `${a.code}${a.nickname ? ' — "' + a.nickname + '"' : ''} (${displayCategory(a.category)})`
 })
 
-// Agente actual como objeto completo (para sugerencias de grupo/unidad)
 const projCurrentAgent = computed(() => {
   if (!projSelectedAgentId.value) return null
   return agents.value.find(a => a.id === projSelectedAgentId.value) || null
 })
 
-// Helper: itera días entre dos YYYY-MM-DD (incluye ambos)
 function projEnumerateDays(from, to) {
   const s = toDate(from)
   const e = toDate(to)
   const out = []
   if (!s || !e || e < s) return out
-  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
-    out.push(ymd(d))
-  }
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) out.push(ymd(d))
   return out
 }
-// 👇 Helper: ¿el rango es COMISIÓN y destino GIG / GEO?
+
 function isGigGeoDraft(draft) {
   if (!draft?.destGroupId || !draft?.destUnitId) return false
   const g = groupById.value[draft.destGroupId]
@@ -2578,59 +2386,40 @@ function isGigGeoSegment(seg) {
   return gLabel === 'GIG' && uLabel === 'GEO'
 }
 
-// Límite máx. 3 departamentos en el draft
 function limitDraftDepts() {
-  if (!Array.isArray(projDraft.value.depts)) {
-    projDraft.value.depts = []
-    return
-  }
-  if (projDraft.value.depts.length > 3) {
-    projDraft.value.depts = projDraft.value.depts.slice(0, 3)
-  }
+  if (!Array.isArray(projDraft.value.depts)) { projDraft.value.depts = []; return }
+  if (projDraft.value.depts.length > 3) projDraft.value.depts = projDraft.value.depts.slice(0, 3)
 }
 
 function toggleDept(dept, checked) {
-  if (!Array.isArray(projDraft.value.depts)) {
-    projDraft.value.depts = []
-  }
-
+  if (!Array.isArray(projDraft.value.depts)) projDraft.value.depts = []
   if (checked) {
-    // ya estaba marcado → nada
     if (projDraft.value.depts.includes(dept)) return
-
-    // límite de 3
     if (projDraft.value.depts.length >= 3) {
-      // opcional: mostrar mensaje
       projMsg.value = 'Solo puedes seleccionar hasta 3 departamentos.'
       projMsgOk.value = false
       return
     }
-
     projDraft.value.depts = [...projDraft.value.depts, dept]
   } else {
     projDraft.value.depts = projDraft.value.depts.filter(d => d !== dept)
   }
 }
 
-// Construye mapa de días -> estado y detecta solapamientos
 function projBuildDayMap(ranges) {
   const map = new Map()
   const overlaps = new Set()
-
   for (const r of ranges) {
     if (!r.from || !r.to || !r.state) continue
     const days = projEnumerateDays(r.from, r.to)
     for (const day of days) {
-      if (map.has(day)) {
-        overlaps.add(day)
-      }
+      if (map.has(day)) overlaps.add(day)
       map.set(day, r.state)
     }
   }
   return { map, overlaps }
 }
 
-// Set de días sin estado para el agente actual
 const projMissingDaysSet = computed(() => {
   const missing = new Set()
   const id = projSelectedAgentId.value
@@ -2639,117 +2428,75 @@ const projMissingDaysSet = computed(() => {
   const ranges = projCurrentAgentRanges.value
   if (!ranges.length) return missing
 
-  // Rango real de proyección de ESTE agente (no el global)
   let agentFrom = null
   let agentTo = null
   for (const r of ranges) {
     if (!r.from || !r.to) continue
     if (!agentFrom || r.from < agentFrom) agentFrom = r.from
-    if (!agentTo || r.to > agentTo)       agentTo   = r.to
+    if (!agentTo || r.to > agentTo) agentTo = r.to
   }
   if (!agentFrom || !agentTo) return missing
 
   const { map } = projBuildDayMap(ranges)
   const days = projEnumerateDays(agentFrom, agentTo)
-  for (const d of days) {
-    if (!map.has(d)) missing.add(d)
-  }
+  for (const d of days) if (!map.has(d)) missing.add(d)
   return missing
 })
 
-// Días de vista previa (horizontal) para agente actual
 const projPreviewDays = computed(() => {
   const from = projRange.value.from
   const to = projRange.value.to
   const id = projSelectedAgentId.value
   if (!from || !to || !id) return []
-
   const { map } = projBuildDayMap(projCurrentAgentRanges.value)
   const days = projEnumerateDays(from, to)
   return days.map(d => {
     const state = map.get(d) || null
-    return {
-      date: d,
-      day: Number(d.slice(8, 10)),
-      state,
-      title: state ? `${d} — ${state}` : `${d} — sin estado`
-    }
+    return { date: d, day: Number(d.slice(8, 10)), state, title: state ? `${d} — ${state}` : `${d} — sin estado` }
   })
 })
 
-// Errores de validación (solo UI, antes del guardado)
 const projErrors = computed(() => {
   const errors = []
-
   const from = projRange.value.from
   const to = projRange.value.to
-  if (!from || !to) {
-    errors.push('Debes definir el rango completo de proyección (desde / hasta).')
-    return errors
-  }
+  if (!from || !to) { errors.push('Debes definir el rango completo de proyección (desde / hasta).'); return errors }
   const d1 = toDate(from)
   const d2 = toDate(to)
-  if (!d1 || !d2 || d2 < d1) {
-    errors.push('El rango de proyección es inválido: "hasta" no puede ser menor que "desde".')
-    return errors
-  }
+  if (!d1 || !d2 || d2 < d1) { errors.push('El rango de proyección es inválido: "hasta" no puede ser menor que "desde".'); return errors }
 
-  // Si hay agente seleccionado, mostraremos errores de huecos/solapes de ese agente
   if (projSelectedAgentId.value) {
     const ranges = projCurrentAgentRanges.value
     const { overlaps } = projBuildDayMap(ranges)
-    if (overlaps.size) {
-      errors.push('Este funcionario tiene solapamientos de rangos (mismo día con dos estados distintos).')
-    }
-    if (projMissingDaysSet.value.size) {
-      errors.push('Este funcionario tiene días sin estado dentro del rango proyectado.')
-    }
+    if (overlaps.size) errors.push('Este funcionario tiene solapamientos de rangos (mismo día con dos estados distintos).')
+    if (projMissingDaysSet.value.size) errors.push('Este funcionario tiene días sin estado dentro del rango proyectado.')
   }
-
   return errors
 })
 
-// Puede guardar si:
-// - hay rango válido
-// - hay al menos un agente en la proyección
-// - no hay errores globales (se validarán de nuevo en saveProjection)
 const projCanSave = computed(() => {
   const from = projRange.value.from
   const to = projRange.value.to
   if (!from || !to) return false
-
-  // ✅ Debe haber al menos UN funcionario con al menos un rango válido
   const hasAny = agents.value.some(a => {
     const arr = projByAgent.value[a.id] || []
     return arr.some(r => r.from && r.to && r.state)
   })
-
   return hasAny
 })
 
-// Añadir rango para el agente actual
 function projAddRangeForCurrent() {
   projDraftError.value = ''
   const id = projSelectedAgentId.value
-  if (!id) {
-    projDraftError.value = 'Selecciona un funcionario primero.'
-    return
-  }
+  if (!id) { projDraftError.value = 'Selecciona un funcionario primero.'; return }
 
   const { from, to, state } = projDraft.value
-  if (!from || !to || !state) {
-    projDraftError.value = 'Completa fecha inicio, fin y estado.'
-    return
-  }
+  if (!from || !to || !state) { projDraftError.value = 'Completa fecha inicio, fin y estado.'; return }
 
   const d1 = toDate(from)
   const d2 = toDate(to)
-  if (!d1 || !d2 || d2 < d1) {
-    projDraftError.value = 'El rango es inválido: la fecha fin no puede ser menor que la fecha inicio.'
-    return
-  }
+  if (!d1 || !d2 || d2 < d1) { projDraftError.value = 'El rango es inválido: la fecha fin no puede ser menor que la fecha inicio.'; return }
 
-  // Validar que caiga dentro del rango global (si está definido)
   const gFrom = toDate(projRange.value.from)
   const gTo   = toDate(projRange.value.to)
   if (gFrom && gTo) {
@@ -2762,23 +2509,16 @@ function projAddRangeForCurrent() {
   if (!projByAgent.value[id]) projByAgent.value[id] = []
   const arr = projByAgent.value[id]
 
-  // Evitar solapes con rangos ya existentes de ese agente
   for (const r of arr) {
     const r1 = toDate(r.from)
     const r2 = toDate(r.to)
     if (!r1 || !r2) continue
-    // solapan si NO se cumple (nuevo antes de todos) ni (nuevo después de todos)
     const noOverlap = (d2 < r1) || (d1 > r2)
-    if (!noOverlap) {
-      projDraftError.value = `Este rango se solapa con ${r.from} → ${r.to}.`
-      return
-    }
+    if (!noOverlap) { projDraftError.value = `Este rango se solapa con ${r.from} → ${r.to}.`; return }
   }
 
-  // Añadir rango
   let destGroupId = null
   let destUnitId = null
-
   if (projDraft.value.state === 'COMISIÓN DEL SERVICIO' && projDraft.value.destUnitId) {
     destUnitId = Number(projDraft.value.destUnitId)
     const u = units.value.find(x => Number(x.id) === destUnitId)
@@ -2797,26 +2537,17 @@ function projAddRangeForCurrent() {
         : []
   })
 
-  // Limpiar formulario
-    projDraft.value = {
-    from: '',
-    to: '',
-    state: '',
-    destGroupId: null,
-    destUnitId: null,
-    depts: []
-  }
+  projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null, depts: [] }
 }
 
 function onProjDraftStateChange() {
   const s = projDraft.value.state
   if (s === 'COMISIÓN DEL SERVICIO' && projCurrentAgent.value) {
     projDraft.value.destGroupId = projCurrentAgent.value.groupId || null
-    projDraft.value.destUnitId  = null // 👈 que el usuario escoja
+    projDraft.value.destUnitId  = null
   }
 }
 
-// Quitar rango del agente actual
 function projRemoveRangeForCurrent(idx) {
   const id = projSelectedAgentId.value
   if (!id) return
@@ -2833,7 +2564,6 @@ function projUpdateSegmentField(segIndex, field, value) {
 
   const current = arr[segIndex]
 
-  // ✅ Validar fechas
   if (field === 'from' || field === 'to') {
     const tmp = { ...current, [field]: value }
     const d1 = toDate(tmp.from)
@@ -2847,25 +2577,20 @@ function projUpdateSegmentField(segIndex, field, value) {
     return
   }
 
-  // ✅ Cambiar estado: si deja de ser COMISIÓN, limpiamos destino
   if (field === 'state') {
     const newState = value
     const updated = { ...current, state: newState }
-
     if (newState !== 'COMISIÓN DEL SERVICIO') {
       updated.destGroupId = null
       updated.destUnitId  = null
       updated.depts       = []
     }
-
     arr[segIndex] = updated
     return
   }
 
-  // ✅ Cambiar unidad: de ahí sacamos el grupo
   if (field === 'destUnitId') {
     const newUnitId = value ? Number(value) : null
-
     let newGroupId = null
     if (newUnitId) {
       const u = units.value.find(x => Number(x.id) === newUnitId)
@@ -2873,29 +2598,16 @@ function projUpdateSegmentField(segIndex, field, value) {
     }
 
     const tmpSeg = { destGroupId: newGroupId, destUnitId: newUnitId }
-
     const keepDepts = isGigGeoSegment(tmpSeg)
-    const newDepts = keepDepts && Array.isArray(current.depts)
-      ? current.depts.slice(0, 3)
-      : []
+    const newDepts = keepDepts && Array.isArray(current.depts) ? current.depts.slice(0, 3) : []
 
-    arr[segIndex] = {
-      ...current,
-      destUnitId: newUnitId,
-      destGroupId: newGroupId,
-      depts: newDepts
-    }
+    arr[segIndex] = { ...current, destUnitId: newUnitId, destGroupId: newGroupId, depts: newDepts }
     return
   }
 
-  // Otros campos genéricos si hicieras algo más
-  arr[segIndex] = {
-    ...current,
-    [field]: value
-  }
+  arr[segIndex] = { ...current, [field]: value }
 }
 
-// Validación completa para TODOS los agentes incluidos antes de guardar
 function projValidateAll() {
   const problems = []
   const from = projRange.value.from
@@ -2908,24 +2620,13 @@ function projValidateAll() {
     return problems
   }
 
-  // ✅ Solo validamos a los funcionarios que REALMENTE tienen rangos
   for (const a of agents.value) {
-    const arr = (projByAgent.value[a.id] || []).filter(
-      r => r.from && r.to && r.state
-    )
-
-    if (!arr.length) {
-      // Sin rangos para este agente → no es obligatorio proyectarlo
-      continue
-    }
+    const arr = (projByAgent.value[a.id] || []).filter(r => r.from && r.to && r.state)
+    if (!arr.length) continue
 
     const { map, overlaps } = projBuildDayMap(arr)
+    if (overlaps.size) problems.push(`El agente ${a.code} tiene días con dos estados distintos en la proyección.`)
 
-    if (overlaps.size) {
-      problems.push(`El agente ${a.code} tiene días con dos estados distintos en la proyección.`)
-    }
-
-    // 🔎 Rango propio de este agente (lo que él sí tiene proyectado)
     let agentFrom = null
     let agentTo = null
     for (const r of arr) {
@@ -2936,24 +2637,16 @@ function projValidateAll() {
 
     const missing = []
     const agentDays = projEnumerateDays(agentFrom, agentTo)
-    for (const d of agentDays) {
-      if (!map.has(d)) missing.push(d)
-    }
-    if (missing.length) {
-      problems.push(
-        `El agente ${a.code} tiene días sin estado entre ${agentFrom} y ${agentTo} en su proyección.`
-      )
-    }
+    for (const d of agentDays) if (!map.has(d)) missing.push(d)
+    if (missing.length) problems.push(`El agente ${a.code} tiene días sin estado entre ${agentFrom} y ${agentTo} en su proyección.`)
   }
 
   return problems
 }
 
-// --- Timeline de proyección para el agente actual ---
 const projTimelineSegments = computed(() => {
   const id = projSelectedAgentId.value
   if (!id) return []
-
   const arr = projByAgent.value[id] || []
   const out = []
 
@@ -2967,17 +2660,14 @@ const projTimelineSegments = computed(() => {
       count: projEnumerateDays(r.from, r.to).length,
       destGroupId: r.destGroupId || null,
       destUnitId:  r.destUnitId  || null,
-      depts: Array.isArray(r.depts) ? r.depts : []   // 👈 NUEVO
+      depts: Array.isArray(r.depts) ? r.depts : []
     })
   })
 
-  // Opcional: ordenar por fecha inicio, pero manteniendo index real
   out.sort((a, b) => String(a.from).localeCompare(String(b.from)))
-
   return out
 })
 
-// --- Calendario cuadrado de proyección para el agente actual ---
 const projCalendarCells = computed(() => {
   const from = projRange.value.from
   const to   = projRange.value.to
@@ -2998,15 +2688,7 @@ const projCalendarCells = computed(() => {
     const ymdStr = ymd(dt)
     const state  = map.get(ymdStr) || null
     const isOutside = dt < d1 || dt > d2
-
-    cells.push({
-      key: ymdStr,
-      date: ymdStr,
-      day: dt.getDate(),
-      state,
-      isOutside,
-      title: state ? `${ymdStr} — ${state}` : `${ymdStr} — sin estado`
-    })
+    cells.push({ key: ymdStr, date: ymdStr, day: dt.getDate(), state, isOutside, title: state ? `${ymdStr} — ${state}` : `${ymdStr} — sin estado` })
   }
   return cells
 })
@@ -3019,8 +2701,6 @@ const projCalendarLabel = computed(() => {
   return `${from} → ${to}`
 })
 
-
-// Guardar proyección
 async function saveProjection() {
   projMsg.value = ''
   projMsgOk.value = false
@@ -3036,122 +2716,67 @@ async function saveProjection() {
     const globalFrom = projRange.value.from
     const globalTo   = projRange.value.to
 
-    // 🔑 Agentes “involucrados” en la proyección:
-    // - los que ya tenían algo en BD (cargados en projByAgent)
-    // - y los que se les agregó al menos un rango nuevo
-    const involvedIds = new Set(
-      Object.keys(projByAgent.value).map(id => Number(id))
-    )
+    const involvedIds = new Set(Object.keys(projByAgent.value).map(id => Number(id)))
 
-    // Por seguridad: si por alguna razón agregaste rangos a un agente
-    // que no estaba en projByAgent, lo incluimos también.
     for (const a of agents.value) {
       const arr = projByAgent.value[a.id] || []
-      if (arr.some(r => r.from && r.to && r.state)) {
-        involvedIds.add(a.id)
-      }
+      if (arr.some(r => r.from && r.to && r.state)) involvedIds.add(a.id)
     }
 
     const items = []
-
     for (const agentId of involvedIds) {
       const a = agents.value.find(x => x.id === agentId)
       if (!a) continue
 
       const raw = projByAgent.value[agentId] || []
-
       const segments = raw
         .filter(r => r.from && r.to && r.state)
         .map(r => ({
           from: r.from,
           to:   r.to,
           state: r.state,
-          destGroupId: r.state === 'COMISIÓN DEL SERVICIO'
-            ? (r.destGroupId || null)
-            : null,
-          destUnitId: r.state === 'COMISIÓN DEL SERVICIO'
-            ? (r.destUnitId || null)
-            : null,
-          depts:
-            Array.isArray(r.depts)
-              ? r.depts.slice(0, 3)    // enviamos máx 3
-              : []
+          destGroupId: r.state === 'COMISIÓN DEL SERVICIO' ? (r.destGroupId || null) : null,
+          destUnitId:  r.state === 'COMISIÓN DEL SERVICIO' ? (r.destUnitId  || null) : null,
+          depts: Array.isArray(r.depts) ? r.depts.slice(0, 3) : []
         }))
 
-
-      // 🔁 IMPORTANTÍSIMO:
-      // - Si segments.length > 0 → guardar/actualizar esos rangos
-      // - Si segments.length === 0 → BORRAR proyección en ese rango global
-      items.push({
-        agentId: agentId,
-        segments
-      })
+      items.push({ agentId, segments })
     }
 
-    const payload = {
-      from: globalFrom,
-      to:   globalTo,
-      items
-    }
-
-    await axios.post('/rest-planning/bulk', payload, {
-      headers: {
-        Authorization: 'Bearer ' + (localStorage.getItem('token') || '')
-      }
-    })
+    await http.post('/rest-planning/bulk', { from: globalFrom, to: globalTo, items })
 
     projMsg.value = 'Proyección de descanso guardada correctamente. ✅'
     projMsgOk.value = true
   } catch (err) {
-    projMsg.value =
-      err?.response?.data?.error ||
-      err?.response?.data?.detail ||
-      err?.message ||
-      'Error al guardar la proyección.'
+    projMsg.value = err?.response?.data?.error || err?.response?.data?.detail || err?.message || 'Error al guardar la proyección.'
     projMsgOk.value = false
   }
 }
 
 async function loadRestProjection() {
   if (!restViewer.from || !restViewer.to) return
-
   restViewer.loading = true
   restViewer.error = ''
+
   try {
     const { data } = await http.get('/rest-planning', {
-      params: {
-        from: restViewer.from,
-        to:   restViewer.to,
-        // Para líder de unidad NO es obligatorio enviar unitId,
-        // el backend usa req.user.unitId.
-        agentId: restViewer.agentId || undefined
-      }
+      params: { from: restViewer.from, to: restViewer.to, agentId: restViewer.agentId || undefined }
     })
 
     const map = {}
-
     for (const r of (data.items || [])) {
       if (!map[r.agentId]) map[r.agentId] = []
-      map[r.agentId].push({
-        from: r.start_date,   // viene así del backend
-        to:   r.end_date,
-        state: r.state
-      })
+      map[r.agentId].push({ from: r.start_date, to: r.end_date, state: r.state })
     }
-
     restViewer.byAgent = map
   } catch (err) {
     console.error('Error cargando /rest-planning', err)
-    restViewer.error =
-      err?.response?.data?.error ||
-      err?.response?.data?.detail ||
-      'Error al cargar la proyección de descanso'
+    restViewer.error = err?.response?.data?.error || err?.response?.data?.detail || 'Error al cargar la proyección de descanso'
   } finally {
     restViewer.loading = false
   }
 }
 
-// Quitar un segmento directamente desde la línea de tiempo
 function projRemoveSegment(idx) {
   const id = projSelectedAgentId.value
   if (!id) return
@@ -3162,7 +2787,6 @@ function projRemoveSegment(idx) {
   arr.splice(idx, 1)
 }
 
-// ✅ MT: solo dígitos y guiones, opcional, hasta 32 chars
 function isMtInvalid(val) {
   if (!val) return false
   return !/^[0-9-]{1,120}$/.test(String(val).trim())
@@ -3185,20 +2809,16 @@ watch(
   }
 )
 
-// GEO y UNCO pueden seleccionar departamentos (en COMISIÓN DEL SERVICIO)
 const isDeptUnitDraft = computed(() => {
   const unitId = projDraft.value.destUnitId ?? null
   if (!unitId) return false
-
-  // 👇 OJO: usar destUnits (el mismo listado del <select>)
   const u = destUnits.value.find(x => Number(x.id) === Number(unitId))
   if (!u) return false
-
   const name = String(u.name || '').toUpperCase().trim()
   return name === 'GEO' || name === 'UNCO' || name.includes('GEO') || name.includes('UNCO')
 })
-
 </script>
+
 
 <style scoped>
 .fade-enter-active,.fade-leave-active { transition: opacity .15s ease; }
