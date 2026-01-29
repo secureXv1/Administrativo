@@ -667,6 +667,34 @@ router.delete(
   }
 )
 
+// GET /rest-planning/units/:id/subunits
+router.get(
+  '/units/:id/subunits',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos', 'agent'),
+  async (req, res) => {
+    try {
+      const parentId = Number(req.params.id)
+      if (!parentId) return res.status(400).json({ error: 'ParentUnitId inválido' })
+
+      const [rows] = await pool.query(
+        `
+        SELECT id, groupId, name
+        FROM unit
+        WHERE parentUnitId = ?
+        ORDER BY name ASC
+        `,
+        [parentId]
+      )
+
+      res.json({ items: rows })
+    } catch (e) {
+      console.error('[GET /rest-planning/units/:id/subunits] error', e)
+      res.status(500).json({ error: 'SubunitsListError', detail: e.message })
+    }
+  }
+)
+
 // Valida que un usuario pueda tocar info de un agente
 async function validateAgentScope(req, agentId) {
   const role = String(req.user?.role || '').toLowerCase()
@@ -1199,7 +1227,7 @@ router.get(
   }
 )
 
-// === Catálogo de unidades (para proyección de descanso) ===
+// === Catálogo de unidades (SOLO PADRES; excluye subunidades) ===
 router.get(
   '/units',
   requireAuth,
@@ -1215,14 +1243,15 @@ router.get(
           u.name,
           u.id AS code
         FROM unit u
+        WHERE u.parentUnitId IS NULL
       `
       const args = []
 
       if (role === 'leader_group') {
-        sql += ` WHERE u.groupId = ? `
+        sql += ` AND u.groupId = ? `
         args.push(Number(req.user.groupId))
       } else if (role === 'leader_unit') {
-        sql += ` WHERE u.id = ? `
+        sql += ` AND u.id = ? `
         args.push(Number(req.user.unitId))
       }
 
@@ -1311,28 +1340,6 @@ router.get(
     }
   }
 )
-
-// routes/rest_planning.js (o donde tengas ese router)
-
-router.get(
-  '/units-dest',
-  requireAuth,
-  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit'),
-  async (_req, res) => {
-    try {
-      const [rows] = await pool.query(`
-        SELECT u.id, u.groupId, u.name
-        FROM unit u
-        ORDER BY u.name
-      `)
-      res.json(rows)
-    } catch (e) {
-      console.error('[GET /rest-planning/units-dest] error', e.code, e.sqlMessage || e.message)
-      res.status(500).json({ error: 'CatalogUnitsDestError', detail: e.sqlMessage || e.message })
-    }
-  }
-)
-
 
 export default router
 

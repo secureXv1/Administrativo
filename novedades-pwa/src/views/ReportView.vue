@@ -850,8 +850,30 @@
                         </option>
 
                       </select>
-                    </div>
+                      <!-- Subunidad destino (solo si la unidad tiene subunidades) -->
+                      <div v-if="!loadingSubunits && destSubunits.length" class="mt-2">
+                        <label class="text-[11px] font-medium text-slate-600 mb-1 block">
+                          Subunidad destino
+                        </label>
+                        <select
+                          class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
+                          v-model="projDraft.destSubunitId"
+                        >
+                          <option :value="null">— Selecciona subunidad…</option>
+                          <option v-for="su in destSubunits" :key="su.id" :value="su.id">
+                            {{ su.name }}
+                          </option>
+                        </select>
+                      </div>
 
+                      <p v-if="loadingSubunits" class="mt-2 text-[11px] text-slate-500">
+                        Cargando subunidades…
+                      </p>
+
+                      <p v-if="subunitsError" class="mt-2 text-[11px] text-rose-700">
+                        {{ subunitsError }}
+                      </p>
+                    </div>
 
                     <!-- SOLO si la unidad seleccionada es GEO -->
                     <div v-if="isDeptUnitDraft" class="grid gap-1">
@@ -1411,6 +1433,9 @@ const groups = ref([])
 const units = ref([])
 const destUnits = ref([])
 const depts = ref([])
+const destSubunits = ref([])          // lista que llega del backend
+const loadingSubunits = ref(false)
+const subunitsError = ref('')
 
 const unitsByGroup = computed(() => {
   const map = {}
@@ -1536,6 +1561,23 @@ async function loadUnits () {
   const list = Array.isArray(data) ? data : []
   units.value = list
   // ❌ ya NO seteamos destUnits aquí
+}
+
+async function loadSubunitsForUnit(parentUnitId) {
+  destSubunits.value = []
+  subunitsError.value = ''
+  if (!parentUnitId) return
+
+  loadingSubunits.value = true
+  try {
+    const { data } = await http.get(`/rest-planning/units/${Number(parentUnitId)}/subunits`)
+    destSubunits.value = Array.isArray(data?.items) ? data.items : []
+  } catch (e) {
+    subunitsError.value = e?.response?.data?.error || 'No se pudieron cargar subunidades'
+    destSubunits.value = []
+  } finally {
+    loadingSubunits.value = false
+  }
 }
 
 async function loadDepts () {
@@ -2286,7 +2328,15 @@ const segments = computed(() => {
 
 const projRange = ref({ from: '', to: '' })
 const projByAgent = ref({})
-const projDraft = ref({ from: '', to: '', state: '', destGroupId: null, destUnitId: null, depts: [] })
+const projDraft = ref({
+  from: '',
+  to: '',
+  state: '',
+  destGroupId: null,
+  destUnitId: null,
+  destSubunitId: null,
+  depts: []
+})
 const projDraftError = ref('')
 
 const projCanAddDraft = computed(() => {
@@ -2564,7 +2614,7 @@ function projAddRangeForCurrent() {
         : []
   })
 
-  projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null, depts: [] }
+  projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null, destSubunitId: null, depts: [] }
 }
 
 function onProjDraftStateChange() {
@@ -2833,6 +2883,15 @@ watch(
     const d2 = toDate(to)
     if (!d1 || !d2 || d2 < d1) return
     await loadProjectionFromBackend()
+  }
+)
+
+watch(
+  () => projDraft.value.destUnitId,
+  async (unitId) => {
+    // reset subunidad cuando cambie unidad
+    projDraft.value.destSubunitId = null
+    await loadSubunitsForUnit(unitId)
   }
 )
 
