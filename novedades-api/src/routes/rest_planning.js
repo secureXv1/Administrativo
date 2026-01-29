@@ -1031,9 +1031,9 @@ router.get(
         unitId = req.user.unitId
       }
       if (role === 'leader_group') {
-        // restringimos por groupId vía join
-        where.push('g.id = ?')
-        args.push(req.user.groupId)
+        // restringimos por groupId del agente (unidad/grupo actual)
+        where.push('a.groupId = ?')
+        args.push(Number(req.user.groupId))
       }
       if (role === 'agent') {
         const myAgentId = req.user?.agentId ?? req.user?.agent_id ?? null
@@ -1043,8 +1043,9 @@ router.get(
         agentId = myAgentId
       }
 
+      // ✅ IMPORTANTE: filtrar por la unidad ACTUAL del agente, no por la unidad guardada en rp
       if (unitId) {
-        where.push('rp.unit_id = ?')
+        where.push('a.unitId = ?')
         args.push(Number(unitId))
       }
       if (agentId) {
@@ -1067,8 +1068,11 @@ router.get(
           a.groupId     AS agentGroupId,
 
           -- Unidad actual del rango
-          rp.unit_id    AS unitId,
-          u.name        AS unitName,
+          a.unitId        AS unitId,
+          ucur.name       AS unitName,
+
+          rp.unit_id      AS projectedUnitId,
+          u.name          AS projectedUnitName,
 
           DATE_FORMAT(rp.start_date,'%Y-%m-%d') AS start_date,
           DATE_FORMAT(rp.end_date  ,'%Y-%m-%d') AS end_date,
@@ -1083,12 +1087,17 @@ router.get(
           rp.vigencia_id   AS vigenciaId
         FROM rest_plans rp
         JOIN agent a ON a.id = rp.agent_id
-        JOIN unit  u ON u.id = rp.unit_id
+
+        -- ✅ unidad ACTUAL del agente (para mostrar y para leader scopes)
+        JOIN unit ucur ON ucur.id = a.unitId
+
+        -- unidad “histórica” guardada en el rango (puede quedar vieja si moviste el agente)
+        LEFT JOIN unit u ON u.id = rp.unit_id
+
         LEFT JOIN \`group\` g2 ON g2.id = rp.dest_group_id  
         LEFT JOIN unit   u2 ON u2.id = rp.dest_unit_id
-        LEFT JOIN \`group\` g  ON g.id = u.groupId
         ${whereSql}
-        ORDER BY a.code, rp.start_date
+        ORDER BY a.code, rp.start_date      
         `,
         args
       )

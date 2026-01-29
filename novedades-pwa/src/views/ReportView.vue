@@ -1449,11 +1449,34 @@ async function loadMe() {
 
 // ✅ FIX: NO rompe el montaje si falla en host
 async function loadDestUnits () {
+  // 1) intenta endpoint nuevo (si existe en el backend actualizado)
+  const urls = ['/rest-planning/units-dest', '/api/rest-planning/units-dest']
+
+  for (const url of urls) {
+    try {
+      const { data } = await http.get(url)
+      destUnits.value = Array.isArray(data) ? data : []
+      return
+    } catch (e) {
+      console.warn('[loadDestUnits] fail:', url, e?.response?.status, e?.response?.data || e?.message)
+    }
+  }
+
+  // 2) fallback: usa el listado normal de unidades (que ya te funciona en host)
   try {
-    const { data } = await http.get('/rest-planning/units-dest')
+    // si ya están cargadas por loadUnits(), úsalo directo
+    if (Array.isArray(units.value) && units.value.length) {
+      destUnits.value = units.value.slice()
+      console.warn('[loadDestUnits] usando fallback desde units.value (units-dest no existe en backend host)')
+      return
+    }
+
+    // si por algún motivo aún no están, las pedimos
+    const { data } = await http.get('/rest-planning/units')
     destUnits.value = Array.isArray(data) ? data : []
+    console.warn('[loadDestUnits] usando fallback desde GET /rest-planning/units (units-dest no existe en backend host)')
   } catch (e) {
-    console.warn('[loadDestUnits] 404/err (no bloquea):', e?.response?.status, e?.response?.data || e?.message)
+    console.warn('[loadDestUnits] fallback units también falló:', e?.response?.status, e?.response?.data || e?.message)
     destUnits.value = []
   }
 }
@@ -1510,7 +1533,11 @@ async function loadGroups () {
 
 async function loadUnits () {
   const { data } = await http.get('/rest-planning/units')
-  units.value = Array.isArray(data) ? data : []
+  const list = Array.isArray(data) ? data : []
+  units.value = list
+
+  // ✅ Usa las mismas unidades como destino (evita /units-dest)
+  destUnits.value = list.slice()
 }
 
 async function loadDepts () {
@@ -1975,7 +2002,6 @@ onMounted(async () => {
   await Promise.allSettled([
     loadAgents(),
     checkIfReportExists(),
-    loadDestUnits(), // si falla 404, ya no rompe
   ])
 })
 

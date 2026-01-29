@@ -133,6 +133,7 @@ async function main() {
   // ...otros routers
   app.use('/vehicles', vehiclesRouter);
   app.use('/rest-planning', restPlanning) 
+  app.use('/api/rest-planning', restPlanning)
   app.use('/service-commissions', serviceCommissionsRouter)
   app.use('/admin/depts', adminDeptsRouter)
 
