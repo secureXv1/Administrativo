@@ -1535,9 +1535,7 @@ async function loadUnits () {
   const { data } = await http.get('/rest-planning/units')
   const list = Array.isArray(data) ? data : []
   units.value = list
-
-  // ✅ Usa las mismas unidades como destino (evita /units-dest)
-  destUnits.value = list.slice()
+  // ❌ ya NO seteamos destUnits aquí
 }
 
 async function loadDepts () {
@@ -1995,9 +1993,12 @@ onMounted(async () => {
   await Promise.allSettled([
     loadMunicipalities(),
     loadGroups(),
-    loadUnits(),
+    loadUnits(),     // catálogo normal
     loadDepts(),
   ])
+
+  // ✅ cargar unidades DESTINO (pueden incluir otras unidades del grupo o todas según rol)
+  await loadDestUnits()
 
   await Promise.allSettled([
     loadAgents(),

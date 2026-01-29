@@ -301,6 +301,52 @@ router.get(
   }
 )
 
+// =====================================================
+// GET /rest-planning/units-dest
+// Unidades destino para "COMISIÓN DEL SERVICIO"
+// - superadmin/supervision: todas
+// - leader_group/leader_unit: todas las del mismo grupo
+// =====================================================
+router.get(
+  '/units-dest',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos'),
+  async (req, res) => {
+    try {
+      const role = String(req.user?.role || '').toLowerCase()
+
+      // superadmin/supervision => todas
+      if (role === 'superadmin' || role === 'supervision') {
+        const [rows] = await pool.query(`
+          SELECT id, name, groupId
+          FROM unit
+          ORDER BY name ASC
+        `)
+        return res.json(rows)
+      }
+
+      // leader_group / leader_unit / gastos => por grupo (evita que solo vea su unidad)
+      const gid = Number(req.user?.groupId || 0)
+      if (!gid) return res.json([])
+
+      const [rows] = await pool.query(
+        `
+        SELECT id, name, groupId
+        FROM unit
+        WHERE groupId = ?
+        ORDER BY name ASC
+        `,
+        [gid]
+      )
+
+      res.json(rows)
+    } catch (e) {
+      console.error('[GET /rest-planning/units-dest] error', e)
+      res.status(500).json({ error: 'UnitsDestError', detail: e.message })
+    }
+  }
+)
+
 // === Editar vigencia (projection_periods) ===
 router.put(
   '/periods/:id',
