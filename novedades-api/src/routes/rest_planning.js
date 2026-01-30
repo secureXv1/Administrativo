@@ -315,17 +315,18 @@ router.get(
     try {
       const role = String(req.user?.role || '').toLowerCase()
 
-      // superadmin/supervision => todas
+      // superadmin/supervision => TODAS las unidades PADRE (sin subunidades)
       if (role === 'superadmin' || role === 'supervision') {
         const [rows] = await pool.query(`
           SELECT id, name, groupId
           FROM unit
+          WHERE parentUnitId IS NULL
           ORDER BY name ASC
         `)
         return res.json(rows)
       }
 
-      // leader_group / leader_unit / gastos => por grupo (evita que solo vea su unidad)
+      // leader_group / leader_unit / gastos => por grupo (pero SIN subunidades)
       const gid = Number(req.user?.groupId || 0)
       if (!gid) return res.json([])
 
@@ -334,12 +335,14 @@ router.get(
         SELECT id, name, groupId
         FROM unit
         WHERE groupId = ?
+          AND parentUnitId IS NULL
         ORDER BY name ASC
         `,
         [gid]
       )
 
       res.json(rows)
+
     } catch (e) {
       console.error('[GET /rest-planning/units-dest] error', e)
       res.status(500).json({ error: 'UnitsDestError', detail: e.message })
@@ -1169,7 +1172,7 @@ router.get(
         LEFT JOIN unit u ON u.id = rp.unit_id
 
         LEFT JOIN \`group\` g2 ON g2.id = rp.dest_group_id  
-        LEFT JOIN unit   u2 ON u2.id = rp.dest_unit_id
+        LEFT JOIN unit u2 ON u2.id = rp.dest_unit_id AND u2.parentUnitId IS NULL
         ${whereSql}
         ORDER BY a.code, rp.start_date      
         `,
@@ -1327,6 +1330,7 @@ router.get(
         FROM rest_plans rp
         JOIN agent a ON a.id = rp.agent_id
         JOIN unit  u2 ON u2.id = rp.dest_unit_id
+                  AND u2.parentUnitId IS NULL
         WHERE ${where.join(' AND ')}
         ORDER BY u2.name
         `,

@@ -975,7 +975,7 @@
                         <select
                           v-if="seg.state === 'COMISIÓN DEL SERVICIO'"
                           class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[140px]"
-                          :value="seg.destUnitId || ''"
+                          :value="seg.destParentUnitId || ''"
                           @change="projUpdateSegmentField(
                             seg.index,
                             'destUnitId',
@@ -988,6 +988,16 @@
                           </option>
 
                         </select>
+                        <!-- ✅ Mostrar unidad padre y subunidad (si aplica) -->
+                        <span
+                          v-if="seg.destParentLabel"
+                          class="ml-1 text-[8px] opacity-80 flex-none"
+                          :title="seg.destSubunitLabel ? (seg.destParentLabel + ' / ' + seg.destSubunitLabel) : seg.destParentLabel"
+                        >
+                          🏢 {{ seg.destParentLabel }}
+                          <template v-if="seg.destSubunitLabel"> / {{ seg.destSubunitLabel }}</template>
+                        </span>
+
 
                         <!-- Días -->
                         <span class="opacity-70 flex-none">{{ seg.count }}d</span>
@@ -1437,6 +1447,51 @@ const destSubunits = ref([])          // lista que llega del backend
 const loadingSubunits = ref(false)
 const subunitsError = ref('')
 
+// Cache: parentUnitId -> subunits[]
+const subunitsByParent = ref({})
+
+// Busca una subunidad por ID en el cache
+function findSubunitById(subunitId) {
+  const id = Number(subunitId)
+  if (!id) return null
+  const cache = subunitsByParent.value || {}
+  for (const parentId of Object.keys(cache)) {
+    const list = cache[parentId] || []
+    const hit = list.find(su => Number(su.id) === id)
+    if (hit) return { ...hit, parentUnitId: Number(parentId) }
+  }
+  return null
+}
+
+// Resuelve labels (padre + subunidad) a partir de destUnitId
+function resolveDestLabels(destUnitId) {
+  const id = Number(destUnitId)
+  if (!id) return { parent: '', sub: '' }
+
+  // 1) Si es unidad padre (está en destUnits / units)
+  const u = (destUnits.value || []).find(x => Number(x.id) === id) || (units.value || []).find(x => Number(x.id) === id)
+  if (u) {
+    const g = groupById.value?.[u.groupId]
+    const gLabel = (g?.code || g?.name || '—')
+    return { parent: `${gLabel} — ${u.name}`, sub: '' }
+  }
+
+  // 2) Si NO es unidad, asumimos que es subunidad guardada en dest_unit_id
+  const su = findSubunitById(id)
+  if (!su) return { parent: `ID ${id}`, sub: '' }
+
+  // padre
+  const parentUnit = (destUnits.value || []).find(x => Number(x.id) === Number(su.parentUnitId))
+    || (units.value || []).find(x => Number(x.id) === Number(su.parentUnitId))
+
+  if (!parentUnit) return { parent: `Unidad ${su.parentUnitId}`, sub: su.name || `Subunidad ${id}` }
+
+  const g = groupById.value?.[parentUnit.groupId]
+  const gLabel = (g?.code || g?.name || '—')
+  return { parent: `${gLabel} — ${parentUnit.name}`, sub: su.name || `Subunidad ${id}` }
+}
+
+
 const unitsByGroup = computed(() => {
   const map = {}
   for (const u of units.value) {
@@ -1570,8 +1625,16 @@ async function loadSubunitsForUnit(parentUnitId) {
 
   loadingSubunits.value = true
   try {
-    const { data } = await http.get(`/rest-planning/units/${Number(parentUnitId)}/subunits`)
-    destSubunits.value = Array.isArray(data?.items) ? data.items : []
+    const pid = Number(parentUnitId)
+    const { data } = await http.get(`/rest-planning/units/${pid}/subunits`)
+    const items = Array.isArray(data?.items) ? data.items : []
+    destSubunits.value = items
+
+    // ✅ guardar en cache para resolver labels luego (timeline)
+    subunitsByParent.value = {
+      ...(subunitsByParent.value || {}),
+      [pid]: items
+    }
   } catch (e) {
     subunitsError.value = e?.response?.data?.error || 'No se pudieron cargar subunidades'
     destSubunits.value = []
@@ -2390,12 +2453,27 @@ async function loadProjectionFromBackend () {
       }
 
       if (!map[aid]) map[aid] = []
+            // ✅ intentar reconstruir el padre si destUnitId es una subunidad
+      const savedDestId = it.destUnitId ? Number(it.destUnitId) : null
+
+      let parentId = null
+
+      // si coincide con una unidad padre, ese es el padre
+      if (savedDestId && (units.value || []).some(u => Number(u.id) === savedDestId)) {
+        parentId = savedDestId
+      } else if (savedDestId) {
+        // si es subunidad, intentamos resolver padre desde cache
+        const su = findSubunitById(savedDestId)
+        parentId = su?.parentUnitId || null
+      }
+
       map[aid].push({
         from: String(it.start_date).slice(0, 10),
         to:   String(it.end_date).slice(0, 10),
         state: it.state,
         destGroupId: it.destGroupId || null,
-        destUnitId:  it.destUnitId  || null,
+        destUnitId:  savedDestId,
+        destParentUnitId: parentId, // ✅ nuevo
         depts: segDepts
       })
     }
@@ -2594,25 +2672,35 @@ function projAddRangeForCurrent() {
     if (!noOverlap) { projDraftError.value = `Este rango se solapa con ${r.from} → ${r.to}.`; return }
   }
 
-  let destGroupId = null
-  let destUnitId = null
-  if (projDraft.value.state === 'COMISIÓN DEL SERVICIO' && projDraft.value.destUnitId) {
-    destUnitId = Number(projDraft.value.destUnitId)
-    const u = units.value.find(x => Number(x.id) === destUnitId)
-    destGroupId = u ? (u.groupId || null) : null
-  }
+    let destGroupId = null
+    let destUnitId = null          // 👈 este será el ID EFECTIVO que va al backend (subunidad si existe)
+    let destParentUnitId = null    // 👈 solo para UI (select de padre)
 
-  arr.push({
-    from,
-    to,
-    state,
-    destGroupId,
-    destUnitId,
-    depts:
-      isGigGeoDraft({ destGroupId, destUnitId }) && Array.isArray(projDraft.value.depts)
-        ? projDraft.value.depts.slice(0, 3)
-        : []
-  })
+    if (projDraft.value.state === 'COMISIÓN DEL SERVICIO' && projDraft.value.destUnitId) {
+      destParentUnitId = Number(projDraft.value.destUnitId)
+
+      // ✅ si seleccionó subunidad, esa es la que se guarda en dest_unit_id
+      const subId = Number(projDraft.value.destSubunitId || 0)
+      destUnitId = subId ? subId : destParentUnitId
+
+      // groupId siempre se toma del PADRE
+      const parent = units.value.find(x => Number(x.id) === destParentUnitId)
+      destGroupId = parent ? (parent.groupId || null) : null
+    }
+
+    arr.push({
+      from,
+      to,
+      state,
+      destGroupId,
+      destUnitId,
+      destParentUnitId, // ✅ nuevo
+      depts:
+        isGigGeoDraft({ destGroupId, destUnitId: destParentUnitId }) && Array.isArray(projDraft.value.depts)
+          ? projDraft.value.depts.slice(0, 3)
+          : []
+    })
+
 
   projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null, destSubunitId: null, depts: [] }
 }
@@ -2729,15 +2817,24 @@ const projTimelineSegments = computed(() => {
 
   arr.forEach((r, idx) => {
     if (!r.from || !r.to || !r.state) return
+
+    const { parent, sub } =
+      (r.state === 'COMISIÓN DEL SERVICIO' && r.destUnitId)
+        ? resolveDestLabels(r.destUnitId)
+        : { parent: '', sub: '' }
+
     out.push({
       index: idx,
       state: r.state,
       from: r.from,
-      to:   r.to,
+      to: r.to,
       count: projEnumerateDays(r.from, r.to).length,
       destGroupId: r.destGroupId || null,
-      destUnitId:  r.destUnitId  || null,
-      depts: Array.isArray(r.depts) ? r.depts : []
+      destUnitId: r.destUnitId || null,
+      destParentUnitId: r.destParentUnitId || null, 
+      depts: Array.isArray(r.depts) ? r.depts : [],
+      destParentLabel: parent,
+      destSubunitLabel: sub
     })
   })
 
