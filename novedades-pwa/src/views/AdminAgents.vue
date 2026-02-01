@@ -37,7 +37,32 @@
             Nuevo agente
           </button>
         </div>
-      </div>
+        <!-- ✅ Export Excel (CSV) por rango -->
+          <div class="sm:col-span-2">
+            <label class="label">Novedades nómina</label>
+            <div class="flex flex-wrap gap-2 items-end">
+              <div>
+                <label class="text-[11px] text-slate-500">Desde</label>
+                <input type="date" class="input !w-44" v-model="exportFrom" />
+              </div>
+
+              <div>
+                <label class="text-[11px] text-slate-500">Hasta</label>
+                <input type="date" class="input !w-44" v-model="exportTo" />
+              </div>
+
+              <button
+                class="btn-ghost border border-slate-300 hover:bg-slate-50 inline-flex items-center gap-2"
+                :disabled="exporting || !exportFrom || !exportTo"
+                @click="downloadNoveltiesExcel"
+                title="Descarga CSV compatible con Excel"
+              >
+                <span v-if="!exporting">📥 Descargar Excel</span>
+                <span v-else>Descargando…</span>
+              </button>
+            </div>
+          </div>
+      </div>  
     </div>
 
     <!-- Filtros -->
@@ -75,7 +100,6 @@
             <input type="date" class="input" v-model="today" />
           </div>
         </div>
-
         <!-- Tabla -->
         <div class="mt-4 overflow-x-auto">
           <table class="table min-w-[860px]">
@@ -651,6 +675,63 @@ function formatDateISO(d) {
   return d.toISOString().slice(0,10)
 }
 const today = ref(formatDateISO(new Date))
+
+// ✅ Export novedades (CSV para Excel)
+const exporting = ref(false)
+
+// Por defecto: del 1 del mes → hoy
+function firstDayOfMonthISO(d = new Date()) {
+  const x = new Date(d)
+  x.setDate(1)
+  return formatDateISO(x)
+}
+const exportFrom = ref(firstDayOfMonthISO(new Date()))
+const exportTo = ref(formatDateISO(new Date()))
+
+async function downloadNoveltiesExcel() {
+  if (!exportFrom.value || !exportTo.value) return
+
+  exporting.value = true
+  try {
+    const token = localStorage.getItem('token') || ''
+    const headers = { Authorization: 'Bearer ' + token }
+
+    // Si quieres mandar filtros opcionales (solo si admin los usa):
+    // - líder_group y líder_unit el backend ya limita con req.user
+    const params = {
+      from: exportFrom.value,
+      to: exportTo.value
+    }
+
+    // (Opcional) si estás como admin/supervision y quieres respetar filtro de grupo:
+    if (isAdminLike.value && filters.value.groupId !== 'ALL') {
+      params.groupId = Number(filters.value.groupId)
+    }
+
+    const resp = await axios.get('/admin/agents/novelties-export', {
+      params,
+      headers,
+      responseType: 'blob'
+    })
+
+    const blob = new Blob([resp.data], { type: 'text/csv;charset=utf-8' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `novedades_agentes_${exportFrom.value}_a_${exportTo.value}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    window.URL.revokeObjectURL(url)
+
+    toast?.({ type:'success', title:'Excel generado', desc:'Se descargó el archivo (CSV compatible con Excel).' })
+  } catch (e) {
+    const detail = e?.response?.data?.detail || e?.response?.data?.error || e?.message || 'No se pudo exportar'
+    toast?.({ type:'error', title:'Export falló', desc: detail })
+  } finally {
+    exporting.value = false
+  }
+}
 
 /* ===== Filtros ===== */
 const filters = ref({ q:'', cat:'ALL', groupId:'ALL' })

@@ -2858,6 +2858,248 @@ app.get('/admin/agents-streaks', auth, requireRole('superadmin', 'supervision', 
   }
 });
 
+// Exportar novedades (CSV compatible con Excel) por rango de fechas
+app.get(
+  '/admin/agents/novelties-export',
+  auth,
+  requireRole('superadmin', 'supervision', 'leader_group'),
+  async (req, res) => {
+    try {
+      const { from, to, groupId } = req.query;
+
+      // validar fechas mínimas
+      const isYMD = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+      if (!isYMD(from) || !isYMD(to)) {
+        return res.status(400).json({ error: 'Parámetros inválidos', detail: 'from/to deben ser YYYY-MM-DD' });
+      }
+
+      // estados que SÍ se exportan
+      const STATES = [
+        'VACACIONES',
+        'EXCUSA DEL SERVICIO',
+        'LICENCIA DE MATERNIDAD',
+        'LICENCIA DE LUTO',
+        'LICENCIA REMUNERADA',
+        'LICENCIA NO REMUNERADA',
+        'LICENCIA PATERNIDAD',
+        'COMISIÓN EN EL EXTERIOR',
+        'COMISIÓN DE ESTUDIO',
+        'SUSPENDIDO',
+        'HOSPITALIZADO'
+      ];
+
+      // filtros RBAC
+      let extraWhere = '';
+      const params = [from, to, ...STATES];
+
+      if (req.user.role === 'leader_group') {
+        extraWhere += ' AND a.groupId = ?';
+        params.push(req.user.groupId);
+      } else if (groupId) {
+        extraWhere += ' AND a.groupId = ?';
+        params.push(Number(groupId));
+      }
+
+      const [rows] = await pool.query(
+        `
+        SELECT
+          dr.reportDate AS date,
+          a.code,
+          a.category,
+          a.nickname,
+          g.code AS groupCode,
+          u.name AS unitName,
+          da.state,
+          da.novelty_description AS novelty_description,
+          m.name AS municipalityName,
+          m.dept AS municipalityDept
+        FROM dailyreport_agent da
+        JOIN dailyreport dr ON dr.id = da.reportId
+        JOIN agent a ON a.id = da.agentId
+        LEFT JOIN \`group\` g ON g.id = a.groupId
+        LEFT JOIN unit u ON u.id = a.unitId
+        LEFT JOIN municipality m ON m.id = da.municipalityId
+        WHERE dr.reportDate BETWEEN ? AND ?
+          AND da.state IN (${STATES.map(() => '?').join(',')})
+          ${extraWhere}
+        ORDER BY a.rank_order ASC, a.code ASC, dr.reportDate ASC
+        `,
+        params
+      );
+
+      // helpers CSV
+      const csvEscape = (v) => {
+        const s = (v === null || v === undefined) ? '' : String(v);
+        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      };
+
+      // ===== Fechas robustas (UTC) =====
+      const toYMD = (v) => {
+        if (!v) return '';
+        if (v instanceof Date) return v.toISOString().slice(0, 10);
+
+        const s = String(v);
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+
+        return '';
+      };
+
+      const ymdToUtcMs = (ymd) => {
+        const [Y, M, D] = String(ymd).split('-').map(Number);
+        return Date.UTC(Y, (M || 1) - 1, D || 1);
+      };
+
+      const isNextDay = (prevYmd, curYmd) => {
+        if (!prevYmd || !curYmd) return false;
+        const a = ymdToUtcMs(prevYmd);
+        const b = ymdToUtcMs(curYmd);
+        return (a + 24 * 3600 * 1000) === b;
+      };
+
+      // Si quieres que "COMISIÓN DEL SERVICIO" se agrupe solo si el municipio es el mismo
+      const muniKeyOf = (r) => {
+        const st = String(r.state || '').toUpperCase();
+        if (st === 'COMISIÓN DEL SERVICIO') {
+          return String(r.municipalityName || '');
+        }
+        return '';
+      };
+
+      // ===== Agrupar por agente + estado cuando sean consecutivos =====
+      const segments = [];
+      let cur = null;
+
+      for (const r of rows) {
+        const code = String(r.code || '');
+        const state = String(r.state || '');
+        const dateYMD = toYMD(r.date);
+        const muniKey = muniKeyOf(r);
+
+        const groupCode = r.groupCode || '';
+        const unitName  = r.unitName || '';
+
+        // ✅ DESCIFRAR descripción (igual que nickname)
+        let noveltyDescription = '';
+        try {
+          noveltyDescription = r.novelty_description ? (decNullable(r.novelty_description) || '') : '';
+        } catch {
+          noveltyDescription = r.novelty_description ? String(r.novelty_description) : '';
+        }
+        noveltyDescription = String(noveltyDescription).trim();
+
+        if (!cur) {
+          cur = {
+            code,
+            category: r.category,
+            nicknameEnc: r.nickname,
+            groupCode,
+            unitName,
+            state,
+            noveltyDescription,
+            municipalityName: r.municipalityName,
+            municipalityDept: r.municipalityDept,
+            muniKey,
+            start: dateYMD,
+            end: dateYMD
+          };
+          continue;
+        }
+
+        const sameAgent = cur.code === code;
+        const sameState = cur.state === state;
+        const sameMuni  = cur.muniKey === muniKey;
+        const sameGroup = String(cur.groupCode || '') === String(groupCode || '');
+        const sameUnit  = String(cur.unitName || '') === String(unitName || '');
+        const consecutive = isNextDay(cur.end, dateYMD);
+
+        // ✅ comparar por texto DESCIFRADO (si de verdad quieres cortar cuando cambia la descripción)
+        const sameDesc = String(cur.noveltyDescription || '') === String(noveltyDescription || '');
+
+        if (sameAgent && sameState && sameMuni && sameGroup && sameUnit && consecutive) {
+          cur.end = dateYMD;
+        } else {
+          segments.push(cur);
+          cur = {
+            code,
+            category: r.category,
+            nicknameEnc: r.nickname,
+            groupCode,
+            unitName,
+            state,
+            noveltyDescription, // ✅ IMPORTANTE: antes faltaba, y dañaba el agrupado
+            municipalityName: r.municipalityName,
+            municipalityDept: r.municipalityDept,
+            muniKey,
+            start: dateYMD,
+            end: dateYMD
+          };
+        }
+      }
+      if (cur) segments.push(cur);
+
+      // ===== CSV =====
+      const out = [];
+      out.push([
+        'Código',
+        'Nickname',
+        'Categoría',
+        'Grupo',
+        'Unidad',
+        'Estado',
+        'Descripción',
+        'Fecha inicio',
+        'Fecha fin',
+        'Días',
+        'Municipio',
+        'Depto'
+      ].join(','));
+
+      for (const s of segments) {
+        let nick = '';
+        try {
+          nick = s.nicknameEnc ? (decNullable(s.nicknameEnc) || '') : '';
+        } catch {
+          nick = '';
+        }
+
+        const startMs = ymdToUtcMs(s.start);
+        const endMs   = ymdToUtcMs(s.end);
+        const days = Math.round((endMs - startMs) / (24 * 3600 * 1000)) + 1;
+
+        out.push([
+          csvEscape(s.code),
+          csvEscape(nick),
+          csvEscape(s.category),
+          csvEscape(s.groupCode),
+          csvEscape(s.unitName),
+          csvEscape(s.state),
+          csvEscape(s.noveltyDescription),
+          csvEscape(s.start),
+          csvEscape(s.end),
+          csvEscape(days),
+          csvEscape(s.municipalityName),
+          csvEscape(s.municipalityDept)
+        ].join(','));
+      }
+
+      const csv = '\ufeff' + out.join('\n');
+
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="novedades_${from}_a_${to}.csv"`);
+      return res.status(200).send(csv);
+
+    } catch (e) {
+      console.error('Error en /admin/agents/novelties-export:', e);
+      return res.status(500).json({ error: 'Error interno export', detail: e.message });
+    }
+  }
+);
+
+
 // Reordenar escalafón global de agentes
 app.post(
   '/admin/agents/reorder',
@@ -3098,6 +3340,9 @@ app.get(
     }
   }
 );
+
+
+
 // ===================== UNITS =====================
 
 // --- Mi grupo (leader_group) -> SOLO LECTURA ---
