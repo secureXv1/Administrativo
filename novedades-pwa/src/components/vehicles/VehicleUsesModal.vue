@@ -547,6 +547,9 @@ const motoTopSrc   = new URL('@/assets/moto_top.png', import.meta.url).href
 const motoLeftSrc  = new URL('@/assets/moto_left.png', import.meta.url).href
 const motoRightSrc = new URL('@/assets/moto_right.png', import.meta.url).href
 
+// Imágenes panel
+const panelTopSrc = new URL('@/assets/panel_top.png', import.meta.url).href
+
 
 const uses = ref([])
 const loading = ref(false)
@@ -621,17 +624,25 @@ function onPhoto(e) {
   newNovedad.value.file = e.target.files?.[0] || null
 }
 
-// --- Catálogos de partes físicas ---
-const isMoto = computed(() => String(props.vehicle?.category || '') === 'MT')
+// category: CM = pickup, MT = moto, LP = panel
+const cat = computed(() => String(props.vehicle?.category || '').toUpperCase())
+
+const isPickup = computed(() => cat.value === 'CM')
+const isMoto   = computed(() => cat.value === 'MT')
+const isPanel  = computed(() => cat.value === 'LP')
+
+// Imagen superior según tipo (moto -> panel -> pickup)
 const topSrc = computed(() =>
-  isMoto.value ? motoTopSrc : pickupTopSrc
+  isMoto.value ? motoTopSrc : (isPanel.value ? panelTopSrc : pickupTopSrc)
 )
+
 const leftSrc = computed(() =>
   isMoto.value ? motoLeftSrc : pickupLeftSrc
 )
 const rightSrc = computed(() =>
   isMoto.value ? motoRightSrc : pickupRightSrc
 )
+
 
 
 const PARTS_AUTO = [
@@ -681,7 +692,7 @@ const PARTS_AUTO = [
   { key: 'EMI', label: 'Espejo izq.' },
   { key: 'EMD', label: 'Espejo der.' },
 
-  // Costados (por si ya tienes novedades antiguas con estos textos)
+  // Costados (por si existen novedades antiguas en costado derecho e izquierdo)
   { key: 'CRD',  label: 'Costado derecho' },
   { key: 'CRI',  label: 'Costado izquierdo' },
 

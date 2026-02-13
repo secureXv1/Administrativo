@@ -31,6 +31,7 @@
                 :rightSrc="rightSrc"
                 :highlight-keys="partKeysConNovedades"
                 :isMoto="isMoto"
+                :vehicleCategory="cat"
               />
               <!-- Campo 'Otro' -->
               <div v-if="selectedPartKey === 'OTRO'">
@@ -351,21 +352,34 @@ const pickupTopSrc   = new URL('@/assets/pickup_top.png', import.meta.url).href
 const pickupLeftSrc  = new URL('@/assets/pickup_left.png', import.meta.url).href
 const pickupRightSrc = new URL('@/assets/pickup_right.png', import.meta.url).href
 
-// 🏍️ imágenes moto (créate estos PNG en src/assets/)
+// 🏍️ imágenes moto (alojar PNG en src/assets/)
 const motoTopSrc   = new URL('@/assets/moto_top.png', import.meta.url).href
 const motoLeftSrc  = new URL('@/assets/moto_left.png', import.meta.url).href
 const motoRightSrc = new URL('@/assets/moto_right.png', import.meta.url).href
 
-const isMoto = computed(() => String(props.vehicle?.category || '') === 'MT')
+// Imágenes panel
+const panelTopSrc = new URL('@/assets/panel_top.png', import.meta.url).href
+
+// category: CM = pickup, MT = moto, LP = panel
+const cat = computed(() => String(props.vehicle?.category || '').toUpperCase())
+
+const isPickup = computed(() => cat.value === 'CM')
+const isMoto   = computed(() => cat.value === 'MT')
+const isPanel  = computed(() => cat.value === 'LP')
+
+// Imagen superior según tipo (moto -> panel -> pickup)
 const topSrc = computed(() =>
-  isMoto.value ? motoTopSrc : pickupTopSrc
+  isMoto.value ? motoTopSrc : (isPanel.value ? panelTopSrc : pickupTopSrc)
 )
+
+// (En VehiclePartsPickerPro solo se usa 'top', pero los dejamos listos)
 const leftSrc = computed(() =>
   isMoto.value ? motoLeftSrc : pickupLeftSrc
 )
 const rightSrc = computed(() =>
   isMoto.value ? motoRightSrc : pickupRightSrc
 )
+
 
 
 // partes vehículo

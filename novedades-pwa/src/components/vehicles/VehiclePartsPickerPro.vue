@@ -85,6 +85,9 @@ const props = defineProps({
 
   // 🏍️ modo moto
   isMoto: { type: Boolean, default: false },
+
+  //categoría real vehículo (CM, MT, LP)
+  vehicleCategory: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:modelValue', 'otro-change'])
@@ -246,6 +249,65 @@ const HS_MOTO = {
   ],
 }
 
+// 🚐 Croquis panel (vista superior)
+// Keys propias para panel
+const PARTS_PANEL = {
+  top: [
+    { key:'CAP',      label:'Capó' },
+    { key:'VID',      label:'Parabrisas delantero' },
+    { key:'PDI',      label:'Puerta conductor' },
+    { key:'PDD',      label:'Puerta pasajero' },
+    { key:'CORR',     label:'Puerta corredera' },
+    { key:'LAT_IZQ',  label:'Costado izquierdo' },
+    { key:'LAT_DER',  label:'Costado derecho' },
+    { key:'TECHO',    label:'Techo' },
+    { key:'TRAS',     label:'Puertas traseras' },
+    { key:'PAR_DEL',  label:'Parachoques delantero' },
+    { key:'PAR_TRA',  label:'Parachoques trasero' },
+    { key:'LTI',      label:'Llanta delantera izq.' },
+    { key:'LTD',      label:'Llanta delantera der.' },
+    { key:'LLI',      label:'Llanta trasera izq.' },
+    { key:'LLD',      label:'Llanta trasera der.' },
+    { key:'LFD',      label:'Luz delantera izq.' },
+    { key:'LFA',      label:'Luz delantera der.' },
+    { key:'LTI_T',    label:'Luz trasera izq.' },
+    { key:'LTD_T',    label:'Luz trasera der.' },
+  ],
+}
+
+const HS_PANEL = {
+  top: [
+    // Frente
+    { key:'CAP',     type:'rect',   x:95,  y:70,  w:160, h:90,  r:18 },
+    { key:'VID',     type:'rect',   x:270, y:70,  w:170, h:85,  r:14 },
+    { key:'PAR_DEL', type:'rect',   x:590,  y:175, w:180, h:40,  r:10 },
+    { key:'LFD',     type:'rect',   x:120,  y:373, w:45,  h:30,  r:14 },
+    { key:'LFA',     type:'rect',   x:470, y:130, w:45,  h:30,  r:14 },
+
+    // Cabina / puertas
+    { key:'PDI',     type:'rect',   x:285, y:165, w:115, h:85,  r:10 },
+    { key:'PDD',     type:'rect',   x:285, y:255, w:115, h:85,  r:10 },
+    { key:'CORR',    type:'rect',   x:420, y:-150, w:240, h:190, r:14 },
+
+    // Laterales y techo
+    { key:'LAT_IZQ', type:'rect',   x:420, y:480, w:330, h:70,  r:14 },
+    { key:'LAT_DER', type:'rect',   x:420, y:60,  w:330, h:70,  r:14 },
+    { key:'TECHO',   type:'rect',   x:830, y:140, w:310, h:120, r:18 },
+
+    // Trasera
+    { key:'TRAS',    type:'rect',   x:605, y:305, w:145, h:120, r:14 },
+    { key:'PAR_TRA', type:'rect',   x:600, y:430, w:170, h:30,  r:10 },
+    { key:'LTI_T',   type:'rect',   x:590, y:340, w:15,  h:70,  r:6 },
+    { key:'LTD_T',   type:'rect',   x:755, y:340, w:15,  h:70,  r:6 },
+
+    // Llantas (aprox)
+    { key:'LTI',     type:'circle', cx:190, cy:445, r:30 },
+    { key:'LLI',     type:'circle', cx:440, cy:445, r:30 },
+    { key:'LTD',     type:'circle', cx:445, cy:200, r:30 },
+    { key:'LLD',     type:'circle', cx:195, cy:200, r:30 },
+  ],
+}
+
 
 /** estado local */
 const otroText = ref(props.initialOtroText)
@@ -255,12 +317,27 @@ const hoverLabel = ref('')
 const tooltip = ref({ x: 0, y: 0 })
 
 /** Derivados */
-const partsSource = computed(() =>
-  props.isMoto ? PARTS_MOTO : PARTS_AUTO
-)
-const hsSource = computed(() =>
-  props.isMoto ? HS_MOTO : HS_AUTO
-)
+const vehicleCat = computed(() => String(props.vehicleCategory || '').toUpperCase())
+
+const mode = computed(() => {
+  if (vehicleCat.value === 'MT') return 'moto'
+  if (vehicleCat.value === 'LP') return 'panel'
+  if (vehicleCat.value === 'CM') return 'pickup'
+  // compatibilidad hacia atrás
+  return props.isMoto ? 'moto' : 'pickup'
+})
+
+const partsSource = computed(() => {
+  if (mode.value === 'moto') return PARTS_MOTO
+  if (mode.value === 'panel') return PARTS_PANEL
+  return PARTS_AUTO
+})
+const hsSource = computed(() => {
+  if (mode.value === 'moto') return HS_MOTO
+  if (mode.value === 'panel') return HS_PANEL
+  return HS_AUTO
+})
+
 
 const partsListForView = computed(
   () => partsSource.value[view.value] || []
