@@ -163,19 +163,45 @@
       <div v-else class="bg-white border border-slate-200 rounded-xl overflow-auto">
         <table class="min-w-full text-[11px] border-collapse">
           <thead class="bg-amber-500 text-white sticky top-0 z-10">
+            <!-- Fila de MESES -->
             <tr>
-              <th class="px-3 py-2 text-left font-semibold w-56">
+              <th
+                class="px-3 py-2 text-left font-semibold w-56"
+                rowspan="2"
+              >
                 FUNCIONARIO
               </th>
+
               <th
-                v-for="day in dayRange"
+                v-for="m in monthSpans"
+                :key="m.key"
+                class="px-1 py-1 text-center font-semibold text-white"
+                :class="monthColorClass(m.index)"
+                :colspan="m.colspan"
+              >
+                {{ m.label }}
+              </th>
+            </tr>
+
+
+            <!-- Fila de DÍAS -->
+            <tr>
+              <th
+                v-for="(day, i) in dayRange"
                 :key="day.date"
-                class="px-1 py-1 text-center font-semibold min-w-[24px]"
+                class="px-1 py-1 text-center font-semibold min-w-[24px] text-white"
+                :class="monthColorClass(
+                  monthSpans.findIndex(m =>
+                    day.date.startsWith(m.key)
+                  )
+                )"
               >
                 {{ day.day }}
               </th>
             </tr>
+
           </thead>
+
           <tbody>
             <tr
               v-for="agent in groupedAgents"
@@ -605,6 +631,54 @@ const dayRange = computed(() => {
   }
   return res
 })
+
+const monthSpans = computed(() => {
+  const fmt = new Intl.DateTimeFormat('es-CO', { month: 'short', year: 'numeric' })
+
+  const out = []
+  let currentKey = null
+  let current = null
+  let monthIndex = -1
+
+  for (const d of dayRange.value) {
+    const dt = new Date(d.date + 'T00:00:00')
+    const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
+
+    if (key !== currentKey) {
+      currentKey = key
+      monthIndex++
+
+      const label = fmt.format(dt).replace('.', '').toUpperCase()
+
+      current = {
+        key,
+        label,
+        colspan: 1,
+        index: monthIndex
+      }
+
+      out.push(current)
+    } else {
+      current.colspan++
+    }
+  }
+
+  return out
+})
+
+function monthColorClass(index) {
+  const colors = [
+    'bg-amber-500',
+    'bg-indigo-600',
+    'bg-emerald-600',
+    'bg-rose-600',
+    'bg-sky-600',
+    'bg-purple-600'
+  ]
+
+  return colors[index % colors.length]
+}
+
 
 async function consultarProyeccion () {
   error.value = ''
