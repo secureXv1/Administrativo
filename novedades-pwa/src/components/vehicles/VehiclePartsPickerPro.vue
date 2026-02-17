@@ -278,20 +278,20 @@ const PARTS_PANEL = {
 const HS_PANEL = {
   top: [
     // Frente
-    { key:'CAP',     type:'rect',   x:95,  y:70,  w:160, h:90,  r:18 },
-    { key:'VID',     type:'rect',   x:270, y:70,  w:170, h:85,  r:14 },
+    { key:'CAP',     type:'rect',   x:600,  y:125,  w:160, h:20,  r:18 },
+    { key:'VID',     type:'rect',   x:620, y:70,  w:130, h:45,  r:14 },
     { key:'PAR_DEL', type:'rect',   x:590,  y:175, w:180, h:40,  r:10 },
     { key:'LFD',     type:'rect',   x:120,  y:373, w:45,  h:30,  r:14 },
     { key:'LFA',     type:'rect',   x:470, y:130, w:45,  h:30,  r:14 },
 
     // Cabina / puertas
-    { key:'PDI',     type:'rect',   x:285, y:165, w:115, h:85,  r:10 },
-    { key:'PDD',     type:'rect',   x:285, y:255, w:115, h:85,  r:10 },
+    { key:'PDI',     type:'rect',   x:210, y:365, w:90, h:80,  r:10 },
+    { key:'PDD',     type:'rect',   x:335, y:125, w:90, h:80,  r:10 },
     { key:'CORR',    type:'rect',   x:420, y:-150, w:240, h:190, r:14 },
 
     // Laterales y techo
     { key:'LAT_IZQ', type:'rect',   x:420, y:480, w:330, h:70,  r:14 },
-    { key:'LAT_DER', type:'rect',   x:420, y:60,  w:330, h:70,  r:14 },
+    { key:'LAT_DER', type:'rect',   x:120, y:-10,  w:330, h:70,  r:14 },
     { key:'TECHO',   type:'rect',   x:830, y:140, w:310, h:120, r:18 },
 
     // Trasera

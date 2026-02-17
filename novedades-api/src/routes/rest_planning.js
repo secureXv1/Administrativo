@@ -823,184 +823,232 @@ router.post(
       }
 
       for (const item of items) {
-        const agentId = Number(item.agentId)
-        const segments = Array.isArray(item.segments) ? item.segments : []
+  const agentId = Number(item.agentId)
+  const segments = Array.isArray(item.segments) ? item.segments : []
 
-        if (!agentId || !segments.length) {
-          throw { status: 422, message: 'Cada item debe tener agentId y segments no vacío' }
+  if (!agentId) {
+    throw { status: 422, message: 'Cada item debe tener agentId' }
+  }
+
+  const okScope = await validateAgentScope(req, agentId)
+  if (!okScope) {
+    throw { status: 403, message: `Sin permiso para proyectar descanso de agente ${agentId}` }
+  }
+
+  // Traer unitId del agente (lo guardamos en la tabla)
+  const [[agentRow]] = await conn.query(
+    'SELECT unitId FROM agent WHERE id=? LIMIT 1',
+    [agentId]
+  )
+  if (!agentRow || !agentRow.unitId) {
+    throw { status: 422, message: `Agente ${agentId} no tiene unidad asignada` }
+  }
+
+  // Si es líder de unidad, refuerza que sea SU unidad
+  if (role === 'leader_unit' && Number(agentRow.unitId) !== Number(req.user.unitId)) {
+    throw { status: 403, message: `Agente ${agentId} no pertenece a su unidad` }
+  }
+
+  // ==========================================================
+  // ✅ NUEVO: segments vacío => BORRAR proyección en rango global
+  // ==========================================================
+  if (segments.length === 0) {
+    const globalFrom = formatYMD(gStart)
+    const globalTo   = formatYMD(gEnd)
+
+    if (usedVigenciaId) {
+      await conn.query(
+        `
+        DELETE FROM rest_plans
+        WHERE agent_id = ?
+          AND vigencia_id = ?
+          AND NOT (end_date < ? OR start_date > ?)
+        `,
+        [agentId, usedVigenciaId, globalFrom, globalTo]
+      )
+    } else {
+      await conn.query(
+        `
+        DELETE FROM rest_plans
+        WHERE agent_id = ?
+          AND NOT (end_date < ? OR start_date > ?)
+        `,
+        [agentId, globalFrom, globalTo]
+      )
+    }
+
+    // Audit de borrado
+    try {
+      await logEvent({
+        req,
+        userId: req.user.uid,
+        action: Actions.REST_PLAN_DELETE ?? 'REST_PLAN_DELETE',
+        details: {
+          agentId,
+          unitId: agentRow.unitId,
+          vigenciaId: usedVigenciaId || null,
+          from: globalFrom,
+          to: globalTo
         }
+      })
+    } catch {}
 
-        const okScope = await validateAgentScope(req, agentId)
-        if (!okScope) {
-          throw { status: 403, message: `Sin permiso para proyectar descanso de agente ${agentId}` }
-        }
+    continue
+  }
 
-        // Traer unitId del agente (lo guardamos en la tabla)
-        const [[agentRow]] = await conn.query(
-          'SELECT unitId FROM agent WHERE id=? LIMIT 1',
-          [agentId]
-        )
-        if (!agentRow || !agentRow.unitId) {
-          throw { status: 422, message: `Agente ${agentId} no tiene unidad asignada` }
-        }
+  // ================== Normalizar y validar segmentos ==================
+  const normSegs = segments.map((s, idx) => {
+    const d1raw = toDate(s.from)
+    const d2raw = toDate(s.to)
+    const state = String(s.state || '').trim().toUpperCase()
 
-        // Si es líder de unidad, refuerza que sea SU unidad
-        if (role === 'leader_unit' && Number(agentRow.unitId) !== Number(req.user.unitId)) {
-          throw { status: 403, message: `Agente ${agentId} no pertenece a su unidad` }
-        }
-
-        // ================== Normalizar y validar segmentos ==================
-        const normSegs = segments.map((s, idx) => {
-          const d1raw = toDate(s.from)
-          const d2raw = toDate(s.to)
-          const state = String(s.state || '').trim().toUpperCase()
-
-          if (!d1raw || !d2raw || !state) {
-            throw {
-              status: 422,
-              message: `Segmento inválido para agente ${agentId} en índice ${idx}`
-            }
-          }
-
-          const from = formatYMD(d1raw)
-          const to   = formatYMD(d2raw)
-
-          const d1 = d1raw
-          const d2 = d2raw
-          if (d2 < d1) {
-            throw {
-              status: 422,
-              message: `Fecha fin menor a inicio en agente ${agentId} (${from} → ${to})`
-            }
-          }
-
-          // 👇 tomamos los deptos que vengan del frontend (máx 3)
-          const depts = Array.isArray(s.depts) ? s.depts.slice(0, 3) : []
-
-          return {
-            from,
-            to,
-            state,
-            destGroupId: s.destGroupId ?? null,
-            destUnitId:  s.destUnitId ?? null,
-            depts, // <<--- AQUÍ
-            fromDate: d1,
-            toDate: d2
-          }
-        })
-
-        // Ordenar por fecha inicio
-        normSegs.sort((a, b) => a.fromDate - b.fromDate)
-
-        // 1) Revisar solapes entre segmentos
-        for (let i = 1; i < normSegs.length; i++) {
-          const prev = normSegs[i - 1]
-          const curr = normSegs[i]
-          if (curr.fromDate <= prev.toDate) {
-            throw {
-              status: 422,
-              message: `Solapamiento de rangos para agente ${agentId}: ${prev.from}→${prev.to} con ${curr.from}→${curr.to}`
-            }
-          }
-        }
-
-        // 2) Construir mapa día → estado
-        let dayMap = new Map()
-        for (const seg of normSegs) {
-          for (let d = new Date(seg.fromDate); d <= seg.toDate; d.setDate(d.getDate() + 1)) {
-            dayMap.set(formatYMD(d), seg.state)
-          }
-        }
-
-        // 3) Validar días faltantes usando el rango global gStart/gEnd
-        let missing = []
-        for (let d = new Date(gStart); d <= gEnd; d.setDate(d.getDate() + 1)) {
-          const y = formatYMD(d)
-          if (!dayMap.has(y)) missing.push(y)
-        }
-
-        if (missing.length) {
-          throw {
-            status: 422,
-            message: `El agente ${agentId} tiene días sin estado en el rango global: ${missing[0]} → ${missing[missing.length - 1]}`
-          }
-        }
-
-        // Rango completo a limpiar (primer inicio → última fin)
-        const firstFrom = normSegs[0].from
-        const lastTo = normSegs[normSegs.length - 1].to
-
-        // Borrar proyección anterior que se solape con ese rango
-        if (usedVigenciaId) {
-          await conn.query(
-            `
-            DELETE FROM rest_plans
-            WHERE agent_id = ?
-              AND vigencia_id = ?
-              AND NOT (end_date < ? OR start_date > ?)
-            `,
-            [agentId, usedVigenciaId, firstFrom, lastTo]
-          )
-        } else {
-          await conn.query(
-            `
-            DELETE FROM rest_plans
-            WHERE agent_id = ?
-              AND NOT (end_date < ? OR start_date > ?)
-            `,
-            [agentId, firstFrom, lastTo]
-          )
-        }
-
-        // Insertar nuevos rangos
-        for (const seg of normSegs) {
-          await conn.query(
-            `
-            INSERT INTO rest_plans
-              (agent_id, unit_id, start_date, end_date, state,
-              dest_group_id, dest_unit_id,
-              dept1, dept2, dept3,
-              created_by, vigencia_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-            `,
-            [
-              agentId,
-              agentRow.unitId,
-              seg.from,
-              seg.to,
-              seg.state,
-              seg.destGroupId || null,
-              seg.destUnitId || null,
-              seg.depts?.[0] || null,
-              seg.depts?.[1] || null,
-              seg.depts?.[2] || null,
-              req.user.uid ?? null,
-              usedVigenciaId || null
-            ]
-          )
-        }
-
-        // Audit por agente
-        try {
-          await logEvent({
-            req,
-            userId: req.user.uid,
-            action: Actions.REST_PLAN_SAVE ?? 'REST_PLAN_SAVE',
-            details: {
-              agentId,
-              unitId: agentRow.unitId,
-              vigenciaId: usedVigenciaId || null,
-              from: firstFrom,
-              to: lastTo,
-              segments: normSegs.map(s => ({
-                from: s.from,
-                to: s.to,
-                state: s.state
-              }))
-            }
-          })
-        } catch { }
+    if (!d1raw || !d2raw || !state) {
+      throw {
+        status: 422,
+        message: `Segmento inválido para agente ${agentId} en índice ${idx}`
       }
+    }
+
+    const from = formatYMD(d1raw)
+    const to   = formatYMD(d2raw)
+
+    const d1 = d1raw
+    const d2 = d2raw
+    if (d2 < d1) {
+      throw {
+        status: 422,
+        message: `Fecha fin menor a inicio en agente ${agentId} (${from} → ${to})`
+      }
+    }
+
+    // 👇 tomamos los deptos que vengan del frontend (máx 3)
+    const depts = Array.isArray(s.depts) ? s.depts.slice(0, 3) : []
+
+    return {
+      from,
+      to,
+      state,
+      destGroupId: s.destGroupId ?? null,
+      destUnitId:  s.destUnitId ?? null,
+      depts,
+      fromDate: d1,
+      toDate: d2
+    }
+  })
+
+  // Ordenar por fecha inicio
+  normSegs.sort((a, b) => a.fromDate - b.fromDate)
+
+  // 1) Revisar solapes entre segmentos
+  for (let i = 1; i < normSegs.length; i++) {
+    const prev = normSegs[i - 1]
+    const curr = normSegs[i]
+    if (curr.fromDate <= prev.toDate) {
+      throw {
+        status: 422,
+        message: `Solapamiento de rangos para agente ${agentId}: ${prev.from}→${prev.to} con ${curr.from}→${curr.to}`
+      }
+    }
+  }
+
+  // 2) Construir mapa día → estado
+  let dayMap = new Map()
+  for (const seg of normSegs) {
+    for (let d = new Date(seg.fromDate); d <= seg.toDate; d.setDate(d.getDate() + 1)) {
+      dayMap.set(formatYMD(d), seg.state)
+    }
+  }
+
+  // 3) Validar días faltantes usando el rango global gStart/gEnd
+  let missing = []
+  for (let d = new Date(gStart); d <= gEnd; d.setDate(d.getDate() + 1)) {
+    const y = formatYMD(d)
+    if (!dayMap.has(y)) missing.push(y)
+  }
+
+  if (missing.length) {
+    throw {
+      status: 422,
+      message: `El agente ${agentId} tiene días sin estado en el rango global: ${missing[0]} → ${missing[missing.length - 1]}`
+    }
+  }
+
+  // Rango completo a limpiar (primer inicio → última fin)
+  const firstFrom = normSegs[0].from
+  const lastTo = normSegs[normSegs.length - 1].to
+
+  // Borrar proyección anterior que se solape con ese rango
+  if (usedVigenciaId) {
+    await conn.query(
+      `
+      DELETE FROM rest_plans
+      WHERE agent_id = ?
+        AND vigencia_id = ?
+        AND NOT (end_date < ? OR start_date > ?)
+      `,
+      [agentId, usedVigenciaId, firstFrom, lastTo]
+    )
+  } else {
+    await conn.query(
+      `
+      DELETE FROM rest_plans
+      WHERE agent_id = ?
+        AND NOT (end_date < ? OR start_date > ?)
+      `,
+      [agentId, firstFrom, lastTo]
+    )
+  }
+
+  // Insertar nuevos rangos
+  for (const seg of normSegs) {
+    await conn.query(
+      `
+      INSERT INTO rest_plans
+        (agent_id, unit_id, start_date, end_date, state,
+        dest_group_id, dest_unit_id,
+        dept1, dept2, dept3,
+        created_by, vigencia_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+      `,
+      [
+        agentId,
+        agentRow.unitId,
+        seg.from,
+        seg.to,
+        seg.state,
+        seg.destGroupId || null,
+        seg.destUnitId || null,
+        seg.depts?.[0] || null,
+        seg.depts?.[1] || null,
+        seg.depts?.[2] || null,
+        req.user.uid ?? null,
+        usedVigenciaId || null
+      ]
+    )
+  }
+
+  // Audit por agente
+  try {
+    await logEvent({
+      req,
+      userId: req.user.uid,
+      action: Actions.REST_PLAN_SAVE ?? 'REST_PLAN_SAVE',
+      details: {
+        agentId,
+        unitId: agentRow.unitId,
+        vigenciaId: usedVigenciaId || null,
+        from: firstFrom,
+        to: lastTo,
+        segments: normSegs.map(s => ({
+          from: s.from,
+          to: s.to,
+          state: s.state
+        }))
+      }
+    })
+  } catch { }
+}
+
 
       await conn.commit()
       res.json({ ok: true, vigenciaId: usedVigenciaId || null })
