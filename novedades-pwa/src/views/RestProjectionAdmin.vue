@@ -175,7 +175,7 @@
               <th
                 v-for="m in monthSpans"
                 :key="m.key"
-                class="px-1 py-1 text-center font-semibold text-white"
+                class="px-1 py-1 text-center font-semibold text-black"
                 :class="monthColorClass(m.index)"
                 :colspan="m.colspan"
               >
@@ -189,7 +189,7 @@
               <th
                 v-for="(day, i) in dayRange"
                 :key="day.date"
-                class="px-1 py-1 text-center font-semibold min-w-[24px] text-white"
+                class="px-1 py-1 text-center font-semibold min-w-[24px] text-black"
                 :class="monthColorClass(
                   monthSpans.findIndex(m =>
                     day.date.startsWith(m.key)
@@ -199,7 +199,6 @@
                 {{ day.day }}
               </th>
             </tr>
-
           </thead>
 
           <tbody>
@@ -668,12 +667,12 @@ const monthSpans = computed(() => {
 
 function monthColorClass(index) {
   const colors = [
-    'bg-amber-500',
-    'bg-indigo-600',
-    'bg-emerald-600',
-    'bg-rose-600',
-    'bg-sky-600',
-    'bg-purple-600'
+    'bg-amber-200 text-amber-900',
+    'bg-indigo-200 text-indigo-900',
+    'bg-emerald-200 text-emerald-900',
+    'bg-rose-200 text-rose-900',
+    'bg-sky-200 text-sky-900',
+    'bg-purple-200 text-purple-900'
   ]
 
   return colors[index % colors.length]
