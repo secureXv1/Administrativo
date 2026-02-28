@@ -359,183 +359,206 @@
   </div>
 
  <!-- Modal Agregar vehículo -->
-  <div v-if="showAddVehicle" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
-    <div class="bg-white rounded-2xl shadow-xl p-8 w-[96vw] max-w-md relative">
+<div
+  v-if="showAddVehicle"
+  class="fixed inset-0 z-50 bg-black/40 overflow-y-auto"
+>
+  <div class="min-h-full flex items-start sm:items-center justify-center p-4">
+    <div
+      class="bg-white rounded-2xl shadow-xl w-[96vw] max-w-md relative max-h-[85vh] overflow-y-auto"
+      style="-webkit-overflow-scrolling: touch;"
+    >
       <button
         class="absolute top-2 right-2 text-xl text-slate-500 hover:text-slate-800"
         @click="showAddVehicle = false"
         aria-label="Cerrar"
       >&times;</button>
-      <h3 class="font-semibold text-lg mb-4">Agregar vehículo</h3>
 
-      <form @submit.prevent="submitAddVehicle" class="space-y-4">
-        <div>
-          <label class="label">Placa</label>
-          <input v-model="addVehicleForm.code" class="input w-full" maxlength="20" required />
-        </div>
+      <div class="p-8">
+        <h3 class="font-semibold text-lg mb-4">Agregar vehículo</h3>
 
-        <div>
-          <label class="label">Estado</label>
-          <select v-model="addVehicleForm.estado" class="input w-full" required>
-            <option value="SERVICIO">SERVICIO</option>
-            <option value="EN TALLER">EN TALLER</option>
-            <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
-            <option value="PENDIENTE BAJA">PENDIENTE BAJA</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="label">Kilometraje</label>
-          <input v-model.number="addVehicleForm.odometer" type="number" min="0" class="input w-full" required />
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <form @submit.prevent="submitAddVehicle" class="space-y-4">
           <div>
-            <label class="label">Km último cambio de aceite (opcional)</label>
-            <input v-model.number="addVehicleForm.oil_last_km" type="number" min="0" class="input w-full" />
+            <label class="label">Placa</label>
+            <input v-model="addVehicleForm.code" class="input w-full" maxlength="20" required />
           </div>
+
           <div>
-            <label class="label">Intervalo cambio aceite (km, opcional)</label>
-            <input v-model.number="addVehicleForm.oil_interval_km" type="number" min="1" class="input w-full" />
+            <label class="label">Estado</label>
+            <select v-model="addVehicleForm.estado" class="input w-full" required>
+              <option value="SERVICIO">SERVICIO</option>
+              <option value="EN TALLER">EN TALLER</option>
+              <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
+              <option value="PENDIENTE BAJA">PENDIENTE BAJA</option>
+            </select>
           </div>
-        </div>
 
-        <div>
-          <label class="label">SOAT (YYYY-MM-DD)</label>
-          <input v-model="addVehicleForm.soatDate" type="date" class="input w-full" required />
-        </div>
+          <div>
+            <label class="label">Kilometraje</label>
+            <input v-model.number="addVehicleForm.odometer" type="number" min="0" class="input w-full" required />
+          </div>
 
-        <div>
-          <label class="label">Tecno (YYYY-MM-DD)</label>
-          <input v-model="addVehicleForm.tecnoDate" type="date" class="input w-full" required />
-        </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="label">Km último cambio de aceite (opcional)</label>
+              <input v-model.number="addVehicleForm.oil_last_km" type="number" min="0" class="input w-full" />
+            </div>
+            <div>
+              <label class="label">Intervalo cambio aceite (km, opcional)</label>
+              <input v-model.number="addVehicleForm.oil_interval_km" type="number" min="1" class="input w-full" />
+            </div>
+          </div>
 
-        <div>
-          <label class="label">Categoría</label>
-          <select v-model="addVehicleForm.category" class="input" required>
-            <option value="">— Selecciona —</option>
-            <option value="CM">Camioneta</option>
-            <option value="VH">Vehículo</option>
-            <option value="MT">Moto</option>
-            <option value="LP">Panel</option>
-            <option value="CP">Campero</option>
-          </select>
-        </div>
+          <div>
+            <label class="label">SOAT (YYYY-MM-DD)</label>
+            <input v-model="addVehicleForm.soatDate" type="date" class="input w-full" required />
+          </div>
 
-        <div>
-          <label class="label">Grupo</label>
-          <select v-model="addVehicleForm.groupId" @change="addVehicleForm.unitId=''" class="input" required>
-            <option value="">— Selecciona —</option>
-            <option v-for="g in grupos" :key="g.id" :value="String(g.id)">{{ g.code }}</option>
-          </select>
-        </div>
+          <div>
+            <label class="label">Tecno (YYYY-MM-DD)</label>
+            <input v-model="addVehicleForm.tecnoDate" type="date" class="input w-full" required />
+          </div>
 
-        <div>
-          <label class="label">Unidad</label>
-          <select v-model="addVehicleForm.unitId" class="input" required>
-            <option value="">— Selecciona —</option>
-            <option v-for="u in unidadesPorGrupoAdd" :key="u.id" :value="String(u.id)">{{ u.name }}</option>
-          </select>
-        </div>
+          <div>
+            <label class="label">Categoría</label>
+            <select v-model="addVehicleForm.category" class="input w-full" required>
+              <option value="">— Selecciona —</option>
+              <option value="CM">Camioneta</option>
+              <option value="VH">Vehículo</option>
+              <option value="MT">Moto</option>
+              <option value="LP">Panel</option>
+              <option value="CP">Campero</option>
+            </select>
+          </div>
 
-        <div v-if="addVehicleError" class="text-red-600 text-sm">{{ addVehicleError }}</div>
-        <div class="flex gap-3">
-          <button class="btn-secondary flex-1" type="button" @click="showAddVehicle = false">Cancelar</button>
-          <button class="btn-primary flex-1" :disabled="addVehicleLoading">
-            <span v-if="addVehicleLoading">Guardando…</span>
-            <span v-else>Guardar</span>
-          </button>
-        </div>
-      </form>
+          <div>
+            <label class="label">Grupo</label>
+            <select v-model="addVehicleForm.groupId" @change="addVehicleForm.unitId=''" class="input w-full" required>
+              <option value="">— Selecciona —</option>
+              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">{{ g.code }}</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="label">Unidad</label>
+            <select v-model="addVehicleForm.unitId" class="input w-full" required>
+              <option value="">— Selecciona —</option>
+              <option v-for="u in unidadesPorGrupoAdd" :key="u.id" :value="String(u.id)">{{ u.name }}</option>
+            </select>
+          </div>
+
+          <div v-if="addVehicleError" class="text-red-600 text-sm">{{ addVehicleError }}</div>
+
+          <div class="flex gap-3">
+            <button class="btn-secondary flex-1" type="button" @click="showAddVehicle = false">Cancelar</button>
+            <button class="btn-primary flex-1" :disabled="addVehicleLoading">
+              <span v-if="addVehicleLoading">Guardando…</span>
+              <span v-else>Guardar</span>
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
+</div>
 
   <!-- Modal Editar vehículo -->
-  <div v-if="showEditVehicle" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
-    <div class="bg-white rounded-2xl shadow-xl p-8 w-[96vw] max-w-md relative">
+<div
+  v-if="showEditVehicle"
+  class="fixed inset-0 z-50 bg-black/40 overflow-y-auto"
+>
+  <div class="min-h-full flex items-start sm:items-center justify-center p-4">
+    <div
+      class="bg-white rounded-2xl shadow-xl w-[96vw] max-w-md relative max-h-[85vh] overflow-y-auto"
+      style="-webkit-overflow-scrolling: touch;"
+    >
       <button
         class="absolute top-2 right-2 text-xl text-slate-500 hover:text-slate-800"
         @click="showEditVehicle = false"
         aria-label="Cerrar"
       >&times;</button>
-      <h3 class="font-semibold text-lg mb-4">Editar vehículo</h3>
 
-      <form @submit.prevent="submitEditVehicle" class="space-y-4">
-        <div>
-          <label class="label">Placa</label>
-          <input v-model="editVehicleForm.code" class="input w-full" maxlength="20" required />
-        </div>
+      <div class="p-8">
+        <h3 class="font-semibold text-lg mb-4">Editar vehículo</h3>
 
-        <div>
-          <label class="label">Estado</label>
-          <select v-model="editVehicleForm.estado" class="input w-full" required>
-            <option value="SERVICIO">SERVICIO</option>
-            <option value="EN TALLER">EN TALLER</option>
-            <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
-            <option value="PENDIENTE BAJA">PENDIENTE BAJA</option>
-          </select>
-        </div>
-
-        <div>
-          <label class="label">Kilometraje</label>
-          <input v-model.number="editVehicleForm.odometer" type="number" min="0" class="input w-full" required />
-        </div>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <form @submit.prevent="submitEditVehicle" class="space-y-4">
           <div>
-            <label class="label">Km último cambio de aceite (opcional)</label>
-            <input v-model.number="editVehicleForm.oil_last_km" type="number" min="0" class="input w-full" />
+            <label class="label">Placa</label>
+            <input v-model="editVehicleForm.code" class="input w-full" maxlength="20" required />
           </div>
+
           <div>
-            <label class="label">Intervalo cambio aceite (km, opcional)</label>
-            <input v-model.number="editVehicleForm.oil_interval_km" type="number" min="1" class="input w-full" />
+            <label class="label">Estado</label>
+            <select v-model="editVehicleForm.estado" class="input w-full" required>
+              <option value="SERVICIO">SERVICIO</option>
+              <option value="EN TALLER">EN TALLER</option>
+              <option value="MANTENIMIENTO N.C">MANTENIMIENTO N.C</option>
+              <option value="PENDIENTE BAJA">PENDIENTE BAJA</option>
+            </select>
           </div>
-        </div>
 
-        <div>
-          <label class="label">SOAT</label>
-          <input v-model="editVehicleForm.soatDate" type="date" class="input w-full" required />
-        </div>
+          <div>
+            <label class="label">Kilometraje</label>
+            <input v-model.number="editVehicleForm.odometer" type="number" min="0" class="input w-full" required />
+          </div>
 
-        <div>
-          <label class="label">Tecno</label>
-          <input v-model="editVehicleForm.tecnoDate" type="date" class="input w-full" required />
-        </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="label">Km último cambio de aceite (opcional)</label>
+              <input v-model.number="editVehicleForm.oil_last_km" type="number" min="0" class="input w-full" />
+            </div>
+            <div>
+              <label class="label">Intervalo cambio aceite (km, opcional)</label>
+              <input v-model.number="editVehicleForm.oil_interval_km" type="number" min="1" class="input w-full" />
+            </div>
+          </div>
 
-        <div>
-          <label class="label">Categoría</label>
-          <select v-model="editVehicleForm.category" class="input w-full" required>
-            <option value="CM">Camioneta</option>
-            <option value="VH">Vehículo</option>
-            <option value="MT">Moto</option>
-            <option value="LP">Panel</option>
-            <option value="CP">Campero</option>
-          </select>
-        </div>
+          <div>
+            <label class="label">SOAT</label>
+            <input v-model="editVehicleForm.soatDate" type="date" class="input w-full" required />
+          </div>
 
-        <div>
-          <label class="label">Grupo</label>
-          <select v-model="editVehicleForm.groupId" class="input w-full" required>
-            <option v-for="g in grupos" :key="g.id" :value="String(g.id)">{{ g.code }}</option>
-          </select>
-        </div>
+          <div>
+            <label class="label">Tecno</label>
+            <input v-model="editVehicleForm.tecnoDate" type="date" class="input w-full" required />
+          </div>
 
-        <div>
-          <label class="label">Unidad</label>
-          <select v-model="editVehicleForm.unitId" class="input w-full" required>
-            <option v-for="u in unidadesPorGrupoEdit" :key="u.id" :value="String(u.id)">
-              {{ u.name }}
-            </option>
-          </select>
-        </div>
+          <div>
+            <label class="label">Categoría</label>
+            <select v-model="editVehicleForm.category" class="input w-full" required>
+              <option value="CM">Camioneta</option>
+              <option value="VH">Vehículo</option>
+              <option value="MT">Moto</option>
+              <option value="LP">Panel</option>
+              <option value="CP">Campero</option>
+            </select>
+          </div>
 
-        <div class="flex gap-3">
-          <button class="btn-secondary flex-1" type="button" @click="showEditVehicle = false">Cancelar</button>
-          <button class="btn-primary flex-1">Guardar cambios</button>
-        </div>
-      </form>
+          <div>
+            <label class="label">Grupo</label>
+            <select v-model="editVehicleForm.groupId" class="input w-full" required>
+              <option v-for="g in grupos" :key="g.id" :value="String(g.id)">{{ g.code }}</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="label">Unidad</label>
+            <select v-model="editVehicleForm.unitId" class="input w-full" required>
+              <option v-for="u in unidadesPorGrupoEdit" :key="u.id" :value="String(u.id)">
+                {{ u.name }}
+              </option>
+            </select>
+          </div>
+
+          <div class="flex gap-3">
+            <button class="btn-secondary flex-1" type="button" @click="showEditVehicle = false">Cancelar</button>
+            <button class="btn-primary flex-1">Guardar cambios</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
+</div>
 
   <!-- Modal: Cambiar estado -->
   <div v-if="showState" class="fixed inset-0 bg-black/40 z-50 grid place-items-center">

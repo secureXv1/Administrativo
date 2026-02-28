@@ -963,7 +963,7 @@ router.post(
 router.patch(
   '/:vehicleId/assignments/:assignmentId',
   requireAuth,
-  requireRole('superadmin','supervision', 'leader_vehicles', 'leader_vehicles'),
+  requireRole('superadmin','supervision', 'leader_vehicles'),
   async (req, res) => {
     const { vehicleId, assignmentId } = req.params
     const { end_date, odometer_end, notes } = req.body
@@ -1309,16 +1309,6 @@ router.patch(
       details:{ useId:Number(id), vehicleId:Number(useRow.vehicle_id), agentId:Number(useRow.agent_id), odometer_end: endKm }
     })
     res.json({ ok:true })
-  }
-)
-
-// PATCH /vehicles/uses/:id/end
-router.patch(
-  '/uses/:id/end',
-  requireAuth,
-  requireRole('superadmin','supervision','leader_group','leader_unit','agent', 'leader_vehicles'),
-  async (req, res) => {
-    // ... (este lo dejas tal cual lo tienes)
   }
 )
 
