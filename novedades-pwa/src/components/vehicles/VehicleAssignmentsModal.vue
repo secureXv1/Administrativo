@@ -101,7 +101,12 @@
               class="border-t align-top hover:bg-slate-50 transition-colors cursor-pointer"
               @click="verNota(a)"
             >
-              <td class="py-2 pr-3 font-medium">{{ a.agentCode }}</td>
+              <td class="py-2 pr-3 font-medium">
+                {{ a.agentCode }}
+                <span v-if="a.agentNickname" class="text-slate-500 font-normal ml-1">
+                  ({{ a.agentNickname }})
+                </span>
+              </td>
               <td class="py-2 pr-3">{{ a.start_date }}</td>
               <td class="py-2 pr-3">{{ a.end_date || '—' }}</td>
 

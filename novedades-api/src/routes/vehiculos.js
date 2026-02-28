@@ -657,12 +657,12 @@ router.get(
         va.vehicle_id                         AS vehicle_id,
         va.agent_id                           AS agentId, 
         a.code                                AS agentCode,
+        a.nickname                            AS agentNickname, -- ✅ AQUI
         DATE_FORMAT(va.start_date,'%Y-%m-%d') AS start_date,
         DATE_FORMAT(va.end_date  ,'%Y-%m-%d') AS end_date,
         va.odometer_start, 
         va.odometer_end,
         va.notes,
-        -- ✅ Campos correctos que sí existen en tu tabla:
         va.agent_ack_at                       AS agent_ack_at,
         va.agent_ack_note                     AS agent_ack_note,
         va.agent_ack_locked                   AS agent_ack_locked,
@@ -673,7 +673,12 @@ router.get(
       WHERE va.vehicle_id=?
       ORDER BY (va.end_date IS NULL) DESC, va.start_date DESC, va.id DESC
     `,[id])
-    // Formato que tu front entiende (items o array directo):
+
+    // ✅ descifrar nickname (igual que en /vehicles list)
+    for (const r of rows) {
+      r.agentNickname = decNullable(r.agentNickname)
+    }
+
     res.json({ items: rows })
   }
 )

@@ -207,7 +207,7 @@
                       v-if="!isAgentView"
                       type="button"
                       class="text-xs text-rose-600 hover:underline"
-                      @click="deleteNovedad(item.id)"
+                      @click="deleteNovedad(n.id)"
                     >
                       Eliminar
                     </button>
@@ -300,7 +300,7 @@
                         v-if="!isAgentView"
                         type="button"
                         class="text-xs text-rose-600 hover:underline"
-                        @click="deleteNovedad(item.id)"
+                        @click="deleteNovedad(n.id)"
                       >
                         Eliminar
                       </button>
@@ -444,6 +444,38 @@ const PARTS_MOTO = [
   { key:'ESC',   label:'Tubo de escape' },
 ]
 
+const PARTS_PANEL = [
+  { key:'CAP',      label:'Capó' },
+  { key:'VID',      label:'Parabrisas delantero' },
+  { key:'PDI',      label:'Puerta conductor' },
+  { key:'VID_PDI',  label:'Vidrio puerta conductor' },
+  { key:'PDD',      label:'Puerta pasajero' },
+  { key:'VID_PDD',  label:'Vidrio puerta pasajero' },
+  { key:'CORR_IZQ', label:'Puerta corredera izquierda' },
+  { key:'CORR_DER', label:'Puerta corredera derecha' },
+  { key:'LAT_IZQ',  label:'Guardabarro trasero izquierdo' },
+  { key:'VID_TIZ',  label:'Vidrio trasero izquierdo' },
+  { key:'LAT_DER',  label:'Guardabarro trasero derecho' },
+  { key:'VID_TDE',  label:'Vidrio trasero derecho' },
+  { key:'LAT_DEL_IZQ', label:'Guardabarro delantero izquierdo' },
+  { key:'LAT_DEL_DER', label:'Guardabarro delantero derecho' },
+  { key:'TECHO',    label:'Techo' },
+  { key:'TRAS',     label:'Puerta trasera' },
+  { key:'PAR_DEL',  label:'Parachoques delantero' },
+  { key:'PAR_TRA',  label:'Parachoques trasero' },
+  { key:'LTI',      label:'Llanta delantera izq.' },
+  { key:'LTD',      label:'Llanta delantera der.' },
+  { key:'LLI',      label:'Llanta trasera izq.' },
+  { key:'LLD',      label:'Llanta trasera der.' },
+  { key:'LFD',      label:'Luz delantera izq.' },
+  { key:'LFA',      label:'Luz delantera der.' },
+  { key:'LTI_T',    label:'Luz trasera izq.' },
+  { key:'LTD_T',    label:'Luz trasera der.' },
+  { key:'OTRO',     label:'Otro (especificar)' },
+  { key:'ESPR',    label:'Espejo retrovisor der.' },
+  { key:'SPRL',    label:'Espejo retrovisor izq.' },
+]
+
 // internas / sistemas
 const INTERNAL_SECTIONS = [
   { key: 'COJ',  label: 'Cojinería / asientos' },
@@ -483,15 +515,22 @@ function selectInternal (key) {
   selectedPartKey.value = ''
 }
 
+function partsListForCategory() {
+  if (isMoto.value) return PARTS_MOTO
+  if (isPanel.value) return PARTS_PANEL
+  return PARTS_AUTO
+}
+
 function labelForPartKey (key) {
-  const list = isMoto.value ? PARTS_MOTO : PARTS_AUTO
+  const list = partsListForCategory()
   return list.find(x => x.key === key)?.label || ''
 }
 
 function selectedPartLabel () {
-  const list = isMoto.value ? PARTS_MOTO : PARTS_AUTO
+  const list = partsListForCategory()
   const found = list.find(x => x.key === selectedPartKey.value)
   if (!found) return ''
+
   if (found.key === 'OTRO') {
     return customPartName.value.trim() || 'Parte no especificada'
   }

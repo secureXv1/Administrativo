@@ -279,6 +279,8 @@ const PARTS_PANEL = {
     { key:'LFA',      label:'Luz delantera der.' },
     { key:'LTI_T',    label:'Luz trasera izq.' },
     { key:'LTD_T',    label:'Luz trasera der.' },
+    { key:'ESPR',    label:'Espejo retrovisor der.' },
+    { key:'SPRL',    label:'Espejo retrovisor izq.' },
   ],
 }
 
@@ -286,10 +288,12 @@ const HS_PANEL = {
   top: [
     // Frente
     { key:'CAP',     type:'rect',   x:600,  y:125,  w:160, h:20,  r:18 },
-    { key:'VID',     type:'rect',   x:620, y:70,  w:130, h:45,  r:14 },
+    { key:'VID',     type:'rect',   x:617, y:75,  w:130, h:45,  r:14 },
     { key:'PAR_DEL', type:'rect',   x:590,  y:175, w:180, h:40,  r:10 },
-    { key:'LFD',     type:'rect',   x:120,  y:373, w:45,  h:30,  r:14 },
-    { key:'LFA',     type:'rect',   x:470, y:130, w:45,  h:30,  r:14 },
+    { key:'LFD',     type:'rect',   x:730,  y:150, w:40,  h:15,  r:14 },
+    { key:'LFA',     type:'rect',   x:595, y:150, w:40,  h:15,  r:14 },
+    { key:'ESPR',    type:'rect',   x:570, y:100, w:35, h:25, r:14 },
+    { key:'SPRL',    type:'rect',   x:757, y:100, w:35, h:25, r:14 },
 
     // Cabina / puertas
     { key:'PDI',     type:'rect',   x:210, y:365, w:90, h:80,  r:10 },
@@ -316,10 +320,10 @@ const HS_PANEL = {
     { key:'LTD_T',   type:'rect',   x:755, y:340, w:15,  h:70,  r:6 },
 
     // Llantas (aprox)
-    { key:'LTI',     type:'circle', cx:190, cy:445, r:30 },
-    { key:'LLI',     type:'circle', cx:440, cy:445, r:30 },
-    { key:'LTD',     type:'circle', cx:445, cy:200, r:30 },
-    { key:'LLD',     type:'circle', cx:195, cy:200, r:30 },
+    { key:'LTI',     type:'circle', cx:188, cy:445, r:25 },
+    { key:'LLI',     type:'circle', cx:438, cy:445, r:25 },
+    { key:'LTD',     type:'circle', cx:447, cy:202, r:25 },
+    { key:'LLD',     type:'circle', cx:196, cy:202, r:25 },
   ],
 }
 
@@ -392,7 +396,7 @@ function baseHS(key){
   let stroke, fill
   if (hasIssue) {
     // rojo cuando tiene novedades
-    stroke = active ? '#b91c1c' : '#'
+    stroke = active ? '#b91c1c' : 'rgba(185,28,28,0.55)'
     fill   = active ? 'rgba(185,28,28,0.28)' : 'rgba(248,113,113,0.24)'
   } else {
     // azul para selección normal
