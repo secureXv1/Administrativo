@@ -1050,44 +1050,44 @@
                           </option>
                         </select>
 
-                        <!-- Unidad destino (solo Comisión de Servicio) -->
-                        <select
-                          v-if="seg.state === 'COMISIÓN DEL SERVICIO'"
-                          class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[140px]"
-                          :value="seg.destParentUnitId || ''"
-                          @change="projUpdateSegmentField(
-                            seg.index,
-                            'destParentUnitId',
-                            $event.target.value ? Number($event.target.value) : null
-                          )"
-                        >
-                          <option value="">Unidad…</option>
-                          <option v-for="u in destUnits" :key="u.id" :value="u.id">
-                            {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
-                          </option>
-                        </select>
-
-                        <select
-                          v-if="seg.state === 'COMISIÓN DEL SERVICIO'
-                                && seg.destParentUnitId
-                                && (subunitsByParent?.[seg.destParentUnitId]?.length || 0) > 0"
-                          class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[120px]"
-                          :value="seg.destSubunitId || ''"
-                          @change="projUpdateSegmentField(
-                            seg.index,
-                            'destSubunitId',
-                            $event.target.value ? Number($event.target.value) : null
-                          )"
-                        >
-                          <option value="">Sub…</option>
-                          <option
-                            v-for="su in (subunitsByParent?.[seg.destParentUnitId] || [])"
-                            :key="su.id"
-                            :value="su.id"
+                        
+                        <!-- Unidad/Subunidad destino (SOLO Comisión del servicio) -->
+                        <template v-if="seg.state === 'COMISIÓN DEL SERVICIO'">
+                          <select
+                            class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[140px]"
+                            :value="seg.destParentUnitId || ''"
+                            @change="projUpdateSegmentField(
+                              seg.index,
+                              'destParentUnitId',
+                              $event.target.value ? Number($event.target.value) : null
+                            )"
                           >
-                            {{ su.name }}
-                          </option>
-                        </select>
+                            <option value="">Unidad…</option>
+                            <option v-for="u in destUnits" :key="u.id" :value="u.id">
+                              {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
+                            </option>
+                          </select>
+
+                          <select
+                            v-if="seg.destParentUnitId && (subunitsByParent?.[Number(seg.destParentUnitId)]?.length || 0) > 0"
+                            class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[120px]"
+                            :value="seg.destSubunitId || ''"
+                            @change="projUpdateSegmentField(
+                              seg.index,
+                              'destSubunitId',
+                              $event.target.value ? Number($event.target.value) : null
+                            )"
+                          >
+                            <option value="">Sub…</option>
+                            <option
+                              v-for="su in (subunitsByParent?.[Number(seg.destParentUnitId)] || [])"
+                              :key="su.id"
+                              :value="su.id"
+                            >
+                              {{ su.name }}
+                            </option>
+                          </select>
+                        </template>
                         
 
                         <!-- Mostrar unidad padre y subunidad (si aplica) -->
@@ -1808,6 +1808,44 @@ async function loadSubunitsForUnit(parentUnitId) {
   } finally {
     loadingSubunits.value = false
   }
+}
+
+// Cache extra: subunitId -> parentUnitId (para reconstruir selects)
+const subunitParentCache = ref({})
+
+async function resolveParentForSubunitId(subId) {
+  const sid = Number(subId)
+  if (!sid) return null
+
+  // 1) cache directo
+  if (subunitParentCache.value?.[sid]) return Number(subunitParentCache.value[sid])
+
+  // 2) buscar en cache subunitsByParent
+  const cache = subunitsByParent.value || {}
+  for (const pidStr of Object.keys(cache)) {
+    const pid = Number(pidStr)
+    const list = cache[pid] || []
+    if (list.some(su => Number(su.id) === sid)) {
+      subunitParentCache.value = { ...(subunitParentCache.value || {}), [sid]: pid }
+      return pid
+    }
+  }
+
+  // 3) fuerza carga: probar padres conocidos (destUnits suele ser pequeño en leader_unit)
+  const parents = (destUnits.value || units.value || []).map(u => Number(u.id)).filter(Boolean)
+  for (const pid of parents) {
+    // carga subunidades de ese padre y mira si está el sid
+    if (!(subunitsByParent.value?.[pid]?.length)) {
+      await loadSubunitsForUnit(pid)
+    }
+    const list = subunitsByParent.value?.[pid] || []
+    if (list.some(su => Number(su.id) === sid)) {
+      subunitParentCache.value = { ...(subunitParentCache.value || {}), [sid]: pid }
+      return pid
+    }
+  }
+
+  return null
 }
 
 async function loadDepts () {
@@ -2579,8 +2617,11 @@ const projCanAddDraft = computed(() => {
   const d2 = toDate(t)
   if (!d1 || !d2 || d2 < d1) return false
   if (s === 'COMISIÓN DEL SERVICIO') {
-    if (!projDraft.value.destUnitId) return false
-  }
+  const parent = projDraft.value.destParentUnitId ? Number(projDraft.value.destParentUnitId) : null
+  const sub = projDraft.value.destSubunitId ? Number(projDraft.value.destSubunitId) : null
+  const effective = sub || parent
+  if (!effective) return false
+}
   return true
 })
 
@@ -2649,15 +2690,14 @@ async function loadProjectionFromBackend () {
       let parentId = null
       let subId = null
 
-      // si coincide con unidad padre
+      // Si coincide con unidad padre
       if (savedDestId && (units.value || []).some(u => Number(u.id) === savedDestId)) {
         parentId = savedDestId
         subId = null
       } else if (savedDestId) {
-        // si es subunidad, resolvemos padre desde cache
-        const su = findSubunitById(savedDestId)
-        parentId = su?.parentUnitId || null
-        subId = savedDestId // 👈 esto es CLAVE
+        // Es subunidad: resolver padre sí o sí
+        parentId = await resolveParentForSubunitId(savedDestId)
+        subId = savedDestId
       }
 
       map[aid].push({
