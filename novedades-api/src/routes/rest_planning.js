@@ -25,7 +25,7 @@ const attachUser = (req, _res, next) => {
       req.user = payload // { uid, role, groupId, unitId, agentId, ... }
     }
   } catch {
-    // silencioso; requireAuth se encargará
+    // lo hace requireAuth
   }
   next()
 }
@@ -45,7 +45,7 @@ const requireRole = (...allowed) => (req, res, next) => {
 }
 
 /* -------------------------------------------------------
-   DESCIFRADO nickname (igual que en vehiculos.js)
+   DESCIFRADO nickname
 ------------------------------------------------------- */
 
 const ENC_KEY_B64 = process.env.NOVELTY_ENC_KEY || ''
@@ -97,14 +97,14 @@ function addDays(d, n) {
 
 /* -------------------------------------------------------
    VIGENCIAS (projection_periods)
-   - POST /rest-planning/periods  → crear vigencia
-   - GET  /rest-planning/periods  → listar vigencias
+   - POST /rest-planning/periods  => crear vigencia
+   - GET  /rest-planning/periods  => listar vigencias
 ------------------------------------------------------- */
 
 router.post(
   '/periods',
   requireAuth,
-  // aquí decides quién puede crear vigencias; yo dejé superadmin + supervision + gastos
+  // Crear vigencias => solo superadmin + supervision + gastos
   requireRole('superadmin', 'supervision', 'gastos'),
   async (req, res) => {
     try {
@@ -180,7 +180,7 @@ router.get(
   }
 )
 
-// Helpers que ya tienes:
+// Helpers:
  // toDate, formatYMD...
 
 router.post(
@@ -468,7 +468,7 @@ router.delete(
         return res.status(404).json({ error: 'Vigencia no encontrada' })
       }
 
-      // 2) ¿Tiene subvigencias?
+      // 2) Verificar si tiene subvigencias
       const [[subCount]] = await pool.query(
         'SELECT COUNT(*) AS c FROM projection_subperiods WHERE period_id=?',
         [id]
@@ -480,7 +480,7 @@ router.delete(
         })
       }
 
-      // 3) ¿Está usada por proyecciones (rest_plans)?
+      // 3) Verificar si está usada por proyecciones (rest_plans)
       const [[rpCount]] = await pool.query(
         'SELECT COUNT(*) AS c FROM rest_plans WHERE vigencia_id=?',
         [id]
@@ -492,7 +492,7 @@ router.delete(
         })
       }
 
-      // 4) ¿Está usada por comisiones reales?
+      // 4) Verificar si está usada por comisiones reales
       const [[scCount]] = await pool.query(
         'SELECT COUNT(*) AS c FROM service_commissions WHERE vigencia_id=?',
         [id]
@@ -635,7 +635,7 @@ router.delete(
         return res.status(404).json({ error: 'Subvigencia no encontrada' })
       }
 
-      // 2) ¿Está en uso por alguna comisión real?
+      // 2) Verificar si está en uso por alguna comisión real
       const [[scCount]] = await pool.query(
         'SELECT COUNT(*) AS c FROM service_commissions WHERE subperiod_id=?',
         [id]
@@ -718,11 +718,27 @@ async function validateAgentScope(req, agentId) {
   }
 
   if (role === 'leader_unit') {
+    // Permitir: agentes en mi unidad padre (req.user.unitId)
+    // o agentes en subunidades cuyo parentUnitId = mi unidad padre
     const [[row]] = await pool.query(
-      'SELECT unitId FROM agent WHERE id=? LIMIT 1',
+      `
+      SELECT
+        a.unitId,
+        u.parentUnitId
+      FROM agent a
+      LEFT JOIN unit u ON u.id = a.unitId
+      WHERE a.id=? LIMIT 1
+      `,
       [agentId]
     )
-    return row && Number(row.unitId) === Number(req.user.unitId)
+
+    if (!row) return false
+
+    const myUnitId = Number(req.user.unitId)
+    const agentUnitId = Number(row.unitId || 0)
+    const agentParentId = row.parentUnitId != null ? Number(row.parentUnitId) : null
+
+    return agentUnitId === myUnitId || agentParentId === myUnitId
   }
 
   return false
@@ -736,7 +752,7 @@ async function validateAgentScope(req, agentId) {
 /**
  * Body esperado:
  * {
- *   vigenciaId: 7,           // OPCIONAL, pero recomendado
+ *   vigenciaId: 7,           // OPCIONAL
  *   from: "2025-12-01",      // usado sólo si NO se envía vigenciaId
  *   to:   "2025-12-25",
  *   items: [
@@ -835,7 +851,7 @@ router.post(
     throw { status: 403, message: `Sin permiso para proyectar descanso de agente ${agentId}` }
   }
 
-  // Traer unitId del agente (lo guardamos en la tabla)
+  // Traer unitId del agente (se guarda en la tabla)
   const [[agentRow]] = await conn.query(
     'SELECT unitId FROM agent WHERE id=? LIMIT 1',
     [agentId]
@@ -850,7 +866,7 @@ router.post(
   }
 
   // ==========================================================
-  // ✅ NUEVO: segments vacío => BORRAR proyección en rango global
+  // Segments vacío => BORRAR proyección en rango global
   // ==========================================================
   if (segments.length === 0) {
     const globalFrom = formatYMD(gStart)
@@ -921,7 +937,7 @@ router.post(
       }
     }
 
-    // 👇 tomamos los deptos que vengan del frontend (máx 3)
+    // Tomamos los deptos que vengan del frontend (máx 3)
     const depts = Array.isArray(s.depts) ? s.depts.slice(0, 3) : []
 
     return {
@@ -951,7 +967,7 @@ router.post(
     }
   }
 
-  // 2) Construir mapa día → estado
+  // 2) Construir mapa día => estado
   let dayMap = new Map()
   for (const seg of normSegs) {
     for (let d = new Date(seg.fromDate); d <= seg.toDate; d.setDate(d.getDate() + 1)) {
@@ -973,7 +989,7 @@ router.post(
     }
   }
 
-  // Rango completo a limpiar (primer inicio → última fin)
+  // Rango completo a limpiar (primer inicio => última fin)
   const firstFrom = normSegs[0].from
   const lastTo = normSegs[normSegs.length - 1].to
 
@@ -1056,7 +1072,7 @@ router.post(
       await conn.rollback()
 
       // Detectar error de clave foránea al intentar borrar rest_plans con service_commissions existentes
-      // ER_ROW_IS_REFERENCED_2 = 1451 → "Cannot delete or update a parent row..."
+      // ER_ROW_IS_REFERENCED_2 = 1451 => "Cannot delete or update a parent row..."
       if (e && (e.code === 'ER_ROW_IS_REFERENCED_2' || e.errno === 1451)) {
         return res.status(409).json({
           error: 'Ya existe una vigencia de gastos aprobada para esta proyección',
@@ -1126,7 +1142,7 @@ router.get(
           return res.status(500).json({ error: 'Rango inválido en la vigencia' })
         }
 
-        from = period.fromYmd   // ya vienen YYYY-MM-DD
+        from = period.fromYmd   // YYYY-MM-DD
         to   = period.toYmd
         usedVigenciaId = idV
 
@@ -1168,10 +1184,15 @@ router.get(
         agentId = myAgentId
       }
 
-      // ✅ IMPORTANTE: filtrar por la unidad ACTUAL del agente, no por la unidad guardada en rp
+      // IMPORTANTE: filtrar por la unidad ACTUAL del agente, no por la unidad guardada en rp
       if (unitId) {
-        where.push('a.unitId = ?')
-        args.push(Number(unitId))
+        if (role === 'leader_unit') {
+          where.push('(a.unitId = ? OR ucur.parentUnitId = ?)')
+          args.push(Number(unitId), Number(unitId))
+        } else {
+          where.push('a.unitId = ?')
+          args.push(Number(unitId))
+        }
       }
       if (agentId) {
         where.push('rp.agent_id = ?')
@@ -1206,6 +1227,8 @@ router.get(
           rp.dest_unit_id  AS destUnitId,
           g2.name AS destGroupName,
           u2.name AS destUnitName,
+          u2.parentUnitId AS destParentUnitId,
+          u2p.name AS destParentUnitName,
           rp.dept1,
           rp.dept2,
           rp.dept3,
@@ -1220,7 +1243,8 @@ router.get(
         LEFT JOIN unit u ON u.id = rp.unit_id
 
         LEFT JOIN \`group\` g2 ON g2.id = rp.dest_group_id  
-        LEFT JOIN unit u2 ON u2.id = rp.dest_unit_id AND u2.parentUnitId IS NULL
+        LEFT JOIN unit u2 ON u2.id = rp.dest_unit_id
+        LEFT JOIN unit u2p ON u2p.id = u2.parentUnitId
         ${whereSql}
         ORDER BY a.code, rp.start_date      
         `,
@@ -1328,7 +1352,7 @@ router.get(
       let { from, to, vigenciaId } = req.query
       const role = String(req.user.role || '').toLowerCase()
 
-      // Resolver rango igual que en GET /rest-planning (tu lógica ya existe) :contentReference[oaicite:4]{index=4}
+      // Resolver rango igual que en GET /rest-planning (ya existe la lógica) :contentReference[oaicite:4]{index=4}
       if (vigenciaId) {
         const idV = Number(vigenciaId)
         const [[period]] = await pool.query(
@@ -1364,8 +1388,8 @@ router.get(
         where.push('a.groupId = ?')
         args.push(Number(req.user.groupId))
       } else if (role === 'leader_unit') {
-        where.push('a.unitId = ?')
-        args.push(Number(req.user.unitId))
+        where.push('(a.unitId = ? OR ucur.parentUnitId = ?)')
+        args.push(Number(req.user.unitId), Number(req.user.unitId))
       }
 
       const [rows] = await pool.query(
@@ -1377,8 +1401,8 @@ router.get(
           u2.id AS code
         FROM rest_plans rp
         JOIN agent a ON a.id = rp.agent_id
+        JOIN unit ucur ON ucur.id = a.unitId
         JOIN unit  u2 ON u2.id = rp.dest_unit_id
-                  AND u2.parentUnitId IS NULL
         WHERE ${where.join(' AND ')}
         ORDER BY u2.name
         `,
@@ -1389,6 +1413,37 @@ router.get(
     } catch (e) {
       console.error('[GET /rest-planning/units-projected] error', e)
       res.status(500).json({ error: 'UnitsProjectedError', detail: e.message })
+    }
+  }
+)
+
+// GET /rest-planning/units/:id  (info de unidad, sea padre o subunidad)
+router.get(
+  '/units/:id',
+  requireAuth,
+  requireRole('superadmin', 'supervision', 'leader_group', 'leader_unit', 'gastos', 'agent'),
+  async (req, res) => {
+    try {
+      const id = Number(req.params.id)
+      if (!id) return res.status(400).json({ error: 'UnitId inválido' })
+
+      const [rows] = await pool.query(
+        `
+        SELECT id, groupId, name, parentUnitId
+        FROM \`unit\`
+        WHERE id = ?
+        LIMIT 1
+        `,
+        [id]
+      )
+
+      const u = rows?.[0]
+      if (!u) return res.status(404).json({ error: 'Unidad no encontrada' })
+
+      res.json(u)
+    } catch (e) {
+      console.error('[GET /rest-planning/units/:id] error', e.code, e.sqlMessage || e.message)
+      res.status(500).json({ error: 'UnitGetError', detail: e.sqlMessage || e.message })
     }
   }
 )

@@ -922,13 +922,12 @@
                       </label>
                       <select
                         class="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs shadow-sm focus:ring-2 focus:ring-indigo-200"
-                        v-model="projDraft.destUnitId"
+                        v-model="projDraft.destParentUnitId"
                       >
                         <option :value="null" disabled>Selecciona unidad…</option>
                         <option v-for="u in destUnits" :key="u.id" :value="u.id">
                           {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
                         </option>
-
                       </select>
                       <!-- Subunidad destino (solo si la unidad tiene subunidades) -->
                       <div v-if="!loadingSubunits && destSubunits.length" class="mt-2">
@@ -1058,7 +1057,7 @@
                           :value="seg.destParentUnitId || ''"
                           @change="projUpdateSegmentField(
                             seg.index,
-                            'destUnitId',
+                            'destParentUnitId',
                             $event.target.value ? Number($event.target.value) : null
                           )"
                         >
@@ -1066,8 +1065,31 @@
                           <option v-for="u in destUnits" :key="u.id" :value="u.id">
                             {{ (groupById[u.groupId]?.code || groupById[u.groupId]?.name || '—') }} — {{ u.name }}
                           </option>
-
                         </select>
+
+                        <select
+                          v-if="seg.state === 'COMISIÓN DEL SERVICIO'
+                                && seg.destParentUnitId
+                                && (subunitsByParent?.[seg.destParentUnitId]?.length || 0) > 0"
+                          class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[120px]"
+                          :value="seg.destSubunitId || ''"
+                          @change="projUpdateSegmentField(
+                            seg.index,
+                            'destSubunitId',
+                            $event.target.value ? Number($event.target.value) : null
+                          )"
+                        >
+                          <option value="">Sub…</option>
+                          <option
+                            v-for="su in (subunitsByParent?.[seg.destParentUnitId] || [])"
+                            :key="su.id"
+                            :value="su.id"
+                          >
+                            {{ su.name }}
+                          </option>
+                        </select>
+                        
+
                         <!-- Mostrar unidad padre y subunidad (si aplica) -->
                         <span
                           v-if="seg.destParentLabel"
@@ -1457,8 +1479,9 @@ import { http } from '@/lib/http'
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import FechasBanner from '@/components/FechasBanner.vue'
 
+
 /**
- * ✅ IMPORTANTÍSIMO:
+ * IMPORTANTÍSIMO:
  * - No usamos axios “crudo” (rutas relativas) para evitar 404 en host.
  * - http ya debe traer baseURL + token por interceptor.
  * - Si algún endpoint no existe en el host (como /rest-planning/units-dest), lo capturamos y NO bloquea.
@@ -2540,8 +2563,9 @@ const projDraft = ref({
   to: '',
   state: '',
   destGroupId: null,
-  destUnitId: null,
-  destSubunitId: null,
+  destParentUnitId: null, // padre elegido en UI
+  destUnitId: null,       // lo que se guardará (padre o subunidad)
+  destSubunitId: null,    // subunidad elegida en UI
   depts: []
 })
 const projDraftError = ref('')
@@ -2561,6 +2585,27 @@ const projCanAddDraft = computed(() => {
 })
 
 const projSelectedAgentId = ref(null)
+
+watch(
+  () => projSelectedAgentId.value,
+  (aid) => {
+    if (!aid) return
+    const arr = projByAgent.value[aid] || []
+    const parents = new Set(
+      arr
+        .filter(r => r.state === 'COMISIÓN DEL SERVICIO' && r.destParentUnitId)
+        .map(r => Number(r.destParentUnitId))
+    )
+
+    for (const pid of parents) {
+      // si no está en cache, cargar
+      if (!(subunitsByParent.value?.[pid]?.length)) {
+        loadSubunitsForUnit(pid)
+      }
+    }
+  }
+)
+
 const projMsg = ref('')
 const projMsgOk = ref(false)
 
@@ -2598,17 +2643,21 @@ async function loadProjectionFromBackend () {
 
       if (!map[aid]) map[aid] = []
             // ✅ intentar reconstruir el padre si destUnitId es una subunidad
+      // ✅ intentar reconstruir padre/subunidad
       const savedDestId = it.destUnitId ? Number(it.destUnitId) : null
 
       let parentId = null
+      let subId = null
 
-      // si coincide con una unidad padre, ese es el padre
+      // si coincide con unidad padre
       if (savedDestId && (units.value || []).some(u => Number(u.id) === savedDestId)) {
         parentId = savedDestId
+        subId = null
       } else if (savedDestId) {
-        // si es subunidad, intentamos resolver padre desde cache
+        // si es subunidad, resolvemos padre desde cache
         const su = findSubunitById(savedDestId)
         parentId = su?.parentUnitId || null
+        subId = savedDestId // 👈 esto es CLAVE
       }
 
       map[aid].push({
@@ -2616,8 +2665,13 @@ async function loadProjectionFromBackend () {
         to:   String(it.end_date).slice(0, 10),
         state: it.state,
         destGroupId: it.destGroupId || null,
-        destUnitId:  savedDestId,
-        destParentUnitId: parentId, // ✅ nuevo
+
+        // lo que guarda backend (si hay subunidad: subId; si no: parentId)
+        destUnitId: savedDestId,
+
+        // ✅ para UI
+        destParentUnitId: parentId,
+        destSubunitId: subId,
         depts: segDepts
       })
     }
@@ -2817,17 +2871,15 @@ function projAddRangeForCurrent() {
   }
 
     let destGroupId = null
-    let destUnitId = null          // 👈 este será el ID EFECTIVO que va al backend (subunidad si existe)
-    let destParentUnitId = null    // 👈 solo para UI (select de padre)
+    let destUnitId = null        // ID efectivo al backend (subunidad si existe)
+    let destParentUnitId = null  // padre fijo en UI
 
-    if (projDraft.value.state === 'COMISIÓN DEL SERVICIO' && projDraft.value.destUnitId) {
-      destParentUnitId = Number(projDraft.value.destUnitId)
+    if (projDraft.value.state === 'COMISIÓN DEL SERVICIO' && projDraft.value.destParentUnitId) {
+      destParentUnitId = Number(projDraft.value.destParentUnitId)
 
-      // ✅ si seleccionó subunidad, esa es la que se guarda en dest_unit_id
       const subId = Number(projDraft.value.destSubunitId || 0)
       destUnitId = subId ? subId : destParentUnitId
 
-      // groupId siempre se toma del PADRE
       const parent = units.value.find(x => Number(x.id) === destParentUnitId)
       destGroupId = parent ? (parent.groupId || null) : null
     }
@@ -2838,7 +2890,8 @@ function projAddRangeForCurrent() {
       state,
       destGroupId,
       destUnitId,
-      destParentUnitId, // ✅ nuevo
+      destParentUnitId,
+      destSubunitId: projDraft.value.destSubunitId ? Number(projDraft.value.destSubunitId) : null, // ✅ nuevo
       depts:
         isGigGeoDraft({ destGroupId, destUnitId: destParentUnitId }) && Array.isArray(projDraft.value.depts)
           ? projDraft.value.depts.slice(0, 3)
@@ -2846,15 +2899,21 @@ function projAddRangeForCurrent() {
     })
 
 
-  projDraft.value = { from: '', to: '', state: '', destGroupId: null, destUnitId: null, destSubunitId: null, depts: [] }
+  projDraft.value = { from: '', to: '', state: '', destGroupId: null, destParentUnitId: null, destUnitId: null, destSubunitId: null, depts: [] }
 }
 
 function onProjDraftStateChange() {
   const s = projDraft.value.state
-  if (s === 'COMISIÓN DEL SERVICIO' && projCurrentAgent.value) {
-    projDraft.value.destGroupId = projCurrentAgent.value.groupId || null
-    projDraft.value.destUnitId  = null
-  }
+
+  if (s !== 'COMISIÓN DEL SERVICIO') {
+    // si cambia a otro estado, limpiar destino
+    projDraft.value.destGroupId = null
+    projDraft.value.destParentUnitId = null
+    projDraft.value.destSubunitId = null
+    projDraft.value.destUnitId = null
+    projDraft.value.depts = []
+    return
+  }  
 }
 
 function projRemoveRangeForCurrent(idx) {
@@ -2873,6 +2932,7 @@ function projUpdateSegmentField(segIndex, field, value) {
 
   const current = arr[segIndex]
 
+  // Fechas
   if (field === 'from' || field === 'to') {
     const tmp = { ...current, [field]: value }
     const d1 = toDate(tmp.from)
@@ -2886,23 +2946,82 @@ function projUpdateSegmentField(segIndex, field, value) {
     return
   }
 
+  // Estado
   if (field === 'state') {
     const newState = value
     const updated = { ...current, state: newState }
+
     if (newState !== 'COMISIÓN DEL SERVICIO') {
       updated.destGroupId = null
-      updated.destUnitId  = null
-      updated.depts       = []
+      updated.destUnitId = null
+      updated.destParentUnitId = null
+      updated.destSubunitId = null
+      updated.depts = []
+    } else {
+      // si vuelve a comisión y no tiene padre, limpia coherente
+      if (!updated.destParentUnitId) {
+        updated.destUnitId = null
+        updated.destGroupId = null
+      }
     }
+
     arr[segIndex] = updated
     return
   }
 
+  // ✅ Padre (unidad)
+  if (field === 'destParentUnitId') {
+    const parentId = value ? Number(value) : null
+
+    // groupId SIEMPRE sale del PADRE
+    let newGroupId = null
+    if (parentId) {
+      const u = (destUnits.value || []).find(x => Number(x.id) === parentId) || (units.value || []).find(x => Number(x.id) === parentId)
+      newGroupId = u ? (u.groupId || null) : null
+    }
+
+    // al cambiar padre: reset subunidad y el "dest efectivo" queda siendo el padre
+    const updated = {
+      ...current,
+      destGroupId: newGroupId,
+      destParentUnitId: parentId,
+      destSubunitId: null,
+      destUnitId: parentId, // 👈 lo que se guarda si NO hay subunidad escogida
+      depts: [] // se recalcula abajo si aplica
+    }
+
+    // cargar subunidades (cache) para que aparezca el select
+    if (parentId) loadSubunitsForUnit(parentId)
+
+    // mantener deptos solo si sigue siendo GEO (GIG/GEO) (pero ojo: GEO depende del padre)
+    const keepDepts = isGigGeoDraft({ destGroupId: newGroupId, destUnitId: parentId })
+    updated.depts = keepDepts && Array.isArray(current.depts) ? current.depts.slice(0, 3) : []
+
+    arr[segIndex] = updated
+    return
+  }
+
+  // ✅ Subunidad
+  if (field === 'destSubunitId') {
+    const subId = value ? Number(value) : null
+
+    // si escoge subunidad, el "dest efectivo" pasa a ser la subunidad
+    const updated = {
+      ...current,
+      destSubunitId: subId,
+      destUnitId: subId ? subId : (current.destParentUnitId || null)
+    }
+
+    arr[segIndex] = updated
+    return
+  }
+
+  // (compatibilidad por si aún llamas destUnitId directo desde algún lado viejo)
   if (field === 'destUnitId') {
     const newUnitId = value ? Number(value) : null
     let newGroupId = null
     if (newUnitId) {
-      const u = units.value.find(x => Number(x.id) === newUnitId)
+      const u = (destUnits.value || []).find(x => Number(x.id) === newUnitId) || (units.value || []).find(x => Number(x.id) === newUnitId)
       newGroupId = u ? (u.groupId || null) : null
     }
 
@@ -2914,6 +3033,7 @@ function projUpdateSegmentField(segIndex, field, value) {
     return
   }
 
+  // default
   arr[segIndex] = { ...current, [field]: value }
 }
 
@@ -2973,10 +3093,18 @@ const projTimelineSegments = computed(() => {
       from: r.from,
       to: r.to,
       count: projEnumerateDays(r.from, r.to).length,
+
       destGroupId: r.destGroupId || null,
+
+      // lo que realmente se guarda
       destUnitId: r.destUnitId || null,
-      destParentUnitId: r.destParentUnitId || null, 
+
+      // ✅ para UI (selects)
+      destParentUnitId: r.destParentUnitId || null,
+      destSubunitId: r.destSubunitId || null,  // 👈 CLAVE (esto te faltaba)
+
       depts: Array.isArray(r.depts) ? r.depts : [],
+
       destParentLabel: parent,
       destSubunitLabel: sub
     })
@@ -3128,11 +3256,56 @@ watch(
 )
 
 watch(
-  () => projDraft.value.destUnitId,
-  async (unitId) => {
-    // reset subunidad cuando cambie unidad
+  () => projDraft.value.destParentUnitId,
+  async (parentId) => {
+    const pid = parentId ? Number(parentId) : null
+
+    // reset subunidad al cambiar padre
     projDraft.value.destSubunitId = null
-    await loadSubunitsForUnit(unitId)
+
+    // ✅ si NO hay padre, limpiar todo lo relacionado
+    if (!pid) {
+      projDraft.value.destParentUnitId = null
+      projDraft.value.destUnitId = null
+      projDraft.value.destGroupId = null
+      projDraft.value.depts = []
+      destSubunits.value = []
+      return
+    }
+
+    // ✅ dest efectivo por defecto = padre
+    projDraft.value.destParentUnitId = pid
+    projDraft.value.destUnitId = pid
+
+    // ✅ groupId siempre sale del padre (destUnits o units)
+    const parent =
+      (destUnits.value || []).find(x => Number(x.id) === pid) ||
+      (units.value || []).find(x => Number(x.id) === pid)
+
+    projDraft.value.destGroupId = parent ? (parent.groupId || null) : null
+
+    // cargar subunidades y cachear
+    await loadSubunitsForUnit(pid)
+
+    // ✅ si NO es GEO, limpiar deptos
+    if (!isGigGeoDraft({ destGroupId: projDraft.value.destGroupId, destUnitId: pid })) {
+      projDraft.value.depts = []
+    } else {
+      // mantener máximo 3
+      if (!Array.isArray(projDraft.value.depts)) projDraft.value.depts = []
+      if (projDraft.value.depts.length > 3) projDraft.value.depts = projDraft.value.depts.slice(0, 3)
+    }
+  }
+)
+
+watch(
+  () => projDraft.value.destSubunitId,
+  (subId) => {
+    const sid = subId ? Number(subId) : null
+    const pid = projDraft.value.destParentUnitId ? Number(projDraft.value.destParentUnitId) : null
+
+    // ✅ dest efectivo = subunidad si existe; si no, queda el padre
+    projDraft.value.destUnitId = sid ? sid : (pid || null)
   }
 )
 

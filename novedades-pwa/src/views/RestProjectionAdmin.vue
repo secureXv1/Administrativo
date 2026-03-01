@@ -397,21 +397,53 @@
                               {{ codeToFull[code] }}
                             </option>
                           </select>
+                          
+                          <!-- ============================= -->
+                          <!-- UNIDAD / SUBUNIDAD (COMISIÓN) -->
+                          <!-- ============================= -->
 
-                          <!-- NUEVO: Unidad proyectada -->
-                          <select
-                            v-model.number="segment.destUnitId"
-                            class="rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[150px]"
-                          >
-                            <option :value="null">Sin cambio</option>
-                            <option
-                              v-for="u in units"
-                              :key="u.id"
-                              :value="u.id"
+                          <template v-if="isCS(segment.state)">
+                            <!-- Unidad padre -->
+                            <select
+                              v-model.number="segment.destParentUnitId"
+                              @change="onChangeParent(segment)"
+                              class="rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[170px]"
                             >
-                              {{ u.name }}
-                            </option>
-                          </select>
+                              <option :value="null">Unidad (padre)…</option>
+                              <option v-for="u in units" :key="u.id" :value="u.id">
+                                {{ u.name }}
+                              </option>
+                            </select>
+
+                            <!-- Subunidad: solo si ese padre tiene subunidades -->
+                            <select
+                              v-if="segment.destParentUnitId && (getSubunits(segment.destParentUnitId).length > 0)"
+                              v-model.number="segment.destSubUnitId"
+                              class="rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[170px]"
+                            >
+                              <option :value="null">Subunidad…</option>
+                              <option
+                                v-for="su in getSubunits(segment.destParentUnitId)"
+                                :key="su.id"
+                                :value="su.id"
+                              >
+                                {{ su.name }}
+                              </option>
+                            </select>
+                          </template>
+
+                          <!-- Estados que NO son CS -->
+                          <template v-else>
+                            <select
+                              v-model.number="segment.destUnitId"
+                              class="rounded-lg border border-slate-300 px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 w-[170px]"
+                            >
+                              <option :value="null">Sin cambio</option>
+                              <option v-for="u in units" :key="u.id" :value="u.id">
+                                {{ u.name }}
+                              </option>
+                            </select>
+                          </template>
                         </div>
 
                         
@@ -473,6 +505,44 @@ const error = ref('')
 const groups = ref([])
 const units = ref([])
 
+const subunitsByParent = ref(new Map()) // parentId -> subunits[]
+const unitById = computed(() => {
+  const m = new Map()
+  for (const u of units.value) m.set(u.id, u)
+  // también metemos las subunidades ya cargadas
+  for (const arr of subunitsByParent.value.values()) {
+    for (const su of arr) m.set(su.id, su)
+  }
+  return m
+})
+
+async function loadSubunits(parentId) {
+  if (!parentId) return []
+  if (subunitsByParent.value.has(parentId)) return subunitsByParent.value.get(parentId)
+
+  const { data } = await http.get(`/rest-planning/units/${parentId}/subunits`)
+  const list = data?.items || []
+  subunitsByParent.value.set(parentId, list)
+  return list
+}
+
+function isCS(fullState) {
+  const s = String(fullState || '').toUpperCase()
+  return s.includes('COMISIÓN DEL SERVICIO') || s.includes('COMISION DEL SERVICIO')
+}
+
+function getSubunits(parentId) {
+  const pid = Number(parentId || 0)
+  return pid ? (subunitsByParent.value.get(pid) || []) : []
+}
+
+async function onChangeParent(segment) {
+  segment.destSubUnitId = null
+  if (segment.destParentUnitId) {
+    await loadSubunits(segment.destParentUnitId)
+  }
+}
+
 // Filtros secundarios
 const filtroGrupo = ref('')
 const filtroUnidadActual = ref('')
@@ -487,7 +557,9 @@ const newSegment = ref({
   from: '',
   to: '',
   state: '',
-  destUnitId: null  // 👈 unidad proyectada (opcional)
+  destUnitId: null,
+  destParentUnitId: null, // unidad padre
+  destSubUnitId: null     // subunidad
 })
 const saving = ref(false)
 const modalDays = ref([]) // [{date, day, code}]
@@ -708,7 +780,7 @@ async function consultarProyeccion () {
 // HELPERS PARA ESTADOS
 // =========================
 
-// Devuelve { code, full } para ese agente en esa fecha
+// Devuelve { code, full } para un agente en una fecha específica
 function getStateCode (agent, dateStr) {
   const seg = agent.segments.find(
     s => dateStr >= s.start_date && dateStr <= s.end_date
@@ -745,7 +817,7 @@ function getStateCode (agent, dateStr) {
   return { code: '', full: raw }
 }
 
-// Clases de color según código (aprox colores de tu imagen)
+// Clases de color según código
 function stateColorClass (code) {
   switch (code) {
     case 'NC': return 'bg-sky-700 text-white border-sky-900'
@@ -762,7 +834,7 @@ function stateColorClass (code) {
 // =========================
 // MODAL / EDICIÓN
 // =========================
-// Nuevo: Calcula la diferencia en días entre dos fechas (inclusive)
+// Calcula la diferencia en días entre dos fechas (inclusive)
 function dateDifference(date1Str, date2Str) {
   const d1 = parseYMDLocal(date1Str)
   const d2 = parseYMDLocal(date2Str)
@@ -774,7 +846,7 @@ function dateDifference(date1Str, date2Str) {
   return diffDays + 1
 }
 
-// Nuevo: Valida si el nuevo segmento es válido para ser añadido
+// Valida si el nuevo segmento es válido para ser añadido
 const newSegmentValid = computed(() => {
     if (!newSegment.value.from || !newSegment.value.to) return false
     const diff = dateDifference(newSegment.value.from, newSegment.value.to)
@@ -785,25 +857,57 @@ const newSegmentValid = computed(() => {
 // MODAL / EDICIÓN (BASADO EN RANGOS)
 // =========================
 
-function openModal (agent) {
+async function openModal(agent) {
   selectedAgent.value = agent
 
-  // Clonamos y normalizamos los segmentos para edición,
-  // incluyendo unidad proyectada actual (si la hay)
+  // Clonamos segmentos
   editableSegments.value = agent.segments.map(s => ({
     from: s.start_date,
     to: s.end_date,
-    state: s.state, // nombre completo
+    state: s.state,
+    // lo que venga del backend
     destUnitId: s.destUnitId ?? s.dest_unit_id ?? null,
-    destGroupId: s.destGroupId ?? s.dest_group_id ?? null
+    destGroupId: s.destGroupId ?? s.dest_group_id ?? null,
+
+    // nuevos campos UI:
+    destParentUnitId: null,
+    destSubUnitId: null
   }))
 
-  // Inicializa el formulario de nuevo segmento
-  newSegment.value = { 
+  // ✅ reconstruir parent/subunit cuando sea CS
+  for (const seg of editableSegments.value) {
+    if (!isCS(seg.state) || !seg.destUnitId) continue
+
+    try {
+      // si destUnitId es una subunidad, esto lo dirá parentUnitId
+      const { data: u } = await http.get(`/rest-planning/units/${seg.destUnitId}`)
+
+      if (u?.parentUnitId) {
+        // destUnitId era subunidad
+        seg.destParentUnitId = u.parentUnitId
+        seg.destSubUnitId = u.id
+        await loadSubunits(seg.destParentUnitId)
+      } else {
+        // destUnitId era unidad padre
+        seg.destParentUnitId = u?.id || seg.destUnitId
+        seg.destSubUnitId = null
+        await loadSubunits(seg.destParentUnitId)
+      }
+    } catch (e) {
+      console.warn('No se pudo resolver unidad/subunidad del segmento', e)
+      // fallback: tratarlo como padre
+      seg.destParentUnitId = seg.destUnitId
+      seg.destSubUnitId = null
+    }
+  }
+
+  // Init newSegment
+  newSegment.value = {
     from: from.value,
     to: to.value,
     state: '',
-    destUnitId: null
+    destParentUnitId: null,
+    destSubUnitId: null
   }
 }
 
@@ -821,14 +925,25 @@ function addSegment() {
     from: newSegment.value.from,
     to: newSegment.value.to,
     state: newSegment.value.state,
+
+    // 🔥 siempre crear estos campos para que el v-model quede fijo
     destUnitId: newSegment.value.destUnitId || null,
-    destGroupId: null // lo inferiremos al guardar
+    destParentUnitId: newSegment.value.destParentUnitId || null,
+    destSubUnitId: newSegment.value.destSubUnitId || null,
+
+    destGroupId: null
   })
 
-  // Limpiar formulario para el siguiente
-  newSegment.value = { from: '', to: '', state: '', destUnitId: null }
-  
-  // Ordenar por fecha inicio
+  // reset completo conservando llaves
+  newSegment.value = {
+    from: '',
+    to: '',
+    state: '',
+    destUnitId: null,
+    destParentUnitId: null,
+    destSubUnitId: null
+  }
+
   editableSegments.value.sort((a, b) => a.from.localeCompare(b.from))
 }
 
@@ -861,8 +976,8 @@ async function saveProjection () {
 
     if (!validSegments.length) {
         // Enviar una lista vacía para "borrar" la proyección en el rango
-        // En tu lógica actual, si no hay segmentos, se asume 'NC' por defecto si no hay un segmento con el estado. 
-        // Para este ejemplo, enviaremos los segmentos válidos. Si se deben borrar, la API debería manejar la eliminación de los rangos existentes antes de guardar los nuevos.
+        // Si no hay segmentos, se asume 'NC' por defecto si no hay un segmento con el estado. 
+        // Enviamos los segmentos válidos. Si se deben borrar, la API debería manejar la eliminación de los rangos existentes antes de guardar los nuevos.
 
     } else {
         // Validación de superposiciones simple
@@ -886,17 +1001,18 @@ async function saveProjection () {
         {
           agentId: selectedAgent.value.agentId,
           segments: validSegments.map(s => {
-            const destUnitId = s.destUnitId || null
-            const unit = destUnitId
-              ? units.value.find(u => u.id === destUnitId)
-              : null
+            const effectiveDestUnitId = isCS(s.state)
+              ? (s.destSubUnitId || s.destParentUnitId || null)
+              : (s.destUnitId || null)
+
+            const unit = effectiveDestUnitId ? unitById.value.get(effectiveDestUnitId) : null
 
             return {
               from: s.from,
               to: s.to,
-              state: s.state,              // nombre completo (ej: COMISIÓN DEL SERVICIO)
-              destUnitId,                  // 👈 se guarda en rest_plans.dest_unit_id
-              destGroupId: unit ? unit.groupId : (s.destGroupId || null) // 👈 inferimos grupo
+              state: s.state,
+              destUnitId: effectiveDestUnitId,
+              destGroupId: unit ? unit.groupId : (s.destGroupId || null)
             }
           })
         }
