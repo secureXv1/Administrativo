@@ -14,7 +14,7 @@
 
     <!-- LAYOUT: Sidebar + Contenido -->
     <div class="max-w-[2000px] mx-auto px-6 py-6 grid grid-cols-1 md:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] gap-7 -mt-10 sm:-mt-12 md:-mt-12 relative z-10">
-      <!-- ===== Sidebar (idéntico estilo al del agente) ===== -->
+      <!-- ===== Sidebar (estilo similar al del agente) ===== -->
       <aside class="order-1 md:order-1 md:col-[1] space-y-4 md:sticky md:top-6">
         <!-- Tarjeta usuario -->
         <div class="bg-white rounded-2xl border border-slate-200 shadow p-4">
@@ -272,26 +272,63 @@
 
                         <!-- COMISIÓN DEL SERVICIO -->
                         <template v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
-                          <input
-                            class="w-full rounded-lg border px-3 py-2 shadow-sm focus:ring-2"
-                            :class="{
-                              'border-green-500 focus:ring-green-200 bg-white': a.municipalityId,
-                              'border-red-500 focus:ring-red-200 bg-white': a.municipalityName && !a.municipalityId,
-                              'border-slate-300 focus:ring-indigo-200 bg-white': !a.municipalityName
-                            }"
-                            list="municipios-list"
-                            v-model="a.municipalityName"
-                            @input="onMuniInput(a)"
-                            @blur="onMuniInput(a)"
-                            placeholder="Buscar municipio..."
-                            autocomplete="off"
-                          />
-                          <datalist id="municipios-list">
-                            <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
-                          </datalist>
+                          <div class="relative">
+                            <input
+                              class="w-full rounded-lg border px-3 py-2 shadow-sm focus:ring-2"
+                              :class="{
+                                'border-green-500 focus:ring-green-200 bg-white': a.municipalityId,
+                                'border-red-500 focus:ring-red-200 bg-white': a.municipalityName && !a.municipalityId,
+                                'border-slate-300 focus:ring-indigo-200 bg-white': !a.municipalityName
+                              }"
+                              v-model="a.municipalityName"
+                              @focus="muniOpen(a)"
+                              @input="onMuniTyping(a)"
+                              @blur="muniOnBlur(a)"
+                              placeholder="Buscar municipio..."
+                              autocomplete="off"
+                              autocapitalize="off"
+                              autocorrect="off"
+                              spellcheck="false"
+                            />
+
+                            <!-- Botón limpiar -->
+                            <button
+                              v-if="a.municipalityName"
+                              type="button"
+                              class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 px-2 py-1"
+                              @mousedown.prevent
+                              @click="muniClear(a)"
+                              title="Limpiar"
+                            >
+                              ✕
+                            </button>
+
+                            <!-- Dropdown sugerencias -->
+                            <div
+                              v-show="muniUi.openForAgentId === a.id"
+                              class="absolute z-50 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-lg max-h-56 overflow-auto"
+                            >
+                              <button
+                                v-for="m in muniSuggestionsFor(a)"
+                                :key="m.id"
+                                type="button"
+                                class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                                @mousedown.prevent
+                                @click="muniPick(a, m)"
+                              >
+                                {{ m.dept }} - {{ m.name }}
+                              </button>
+
+                              <div v-if="muniSuggestionsFor(a).length === 0" class="px-3 py-2 text-sm text-slate-500">
+                                Sin resultados
+                              </div>
+                            </div>
+                          </div>
+
                           <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
                             Debe seleccionar un municipio válido
                           </span>
+
                           <textarea
                             class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm focus:ring-2 focus:ring-indigo-200 mt-2"
                             v-model="a.novelty_description"
@@ -352,7 +389,7 @@
                           />
                         </template>
 
-                        <!-- Genérico (otros estados con rango) -->
+                        <!-- Otros estados con rango -->
                         <template v-else>
                           <div class="flex gap-2 mb-2">
                             <input
@@ -513,20 +550,63 @@
                     <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                   </div>
                   <div v-else-if="a.status === 'COMISIÓN DEL SERVICIO'">
-                    <input class="input w-full" list="municipios-list" v-model="a.municipalityName" @input="onMuniInput(a)" placeholder="Buscar municipio..." autocomplete="off" />
-                    <datalist id="municipios-list">
-                      <option v-for="m in municipalities" :key="m.id" :value="m.dept + ' - ' + m.name" />
-                    </datalist>
+                    <div class="relative">
+                      <input
+                        class="input w-full"
+                        v-model="a.municipalityName"
+                        @focus="muniOpen(a)"
+                        @input="onMuniTyping(a)"
+                        @blur="() => setTimeout(() => muniClose(a), 150)"
+                        placeholder="Buscar municipio..."
+                        autocomplete="off"
+                        autocapitalize="off"
+                        autocorrect="off"
+                        spellcheck="false"
+                      />
+
+                      <button
+                        v-if="a.municipalityName"
+                        type="button"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 px-2 py-1"
+                        @mousedown.prevent
+                        @click="muniClear(a)"
+                        title="Limpiar"
+                      >
+                        ✕
+                      </button>
+
+                      <div
+                        v-show="muniUi.openForAgentId === a.id"
+                        class="absolute z-50 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-lg max-h-56 overflow-auto"
+                      >
+                        <button
+                          v-for="m in muniSuggestionsFor(a)"
+                          :key="m.id"
+                          type="button"
+                          class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+                          @mousedown.prevent
+                          @click="muniPick(a, m)"
+                        >
+                          {{ m.dept }} - {{ m.name }}
+                        </button>
+
+                        <div v-if="muniSuggestionsFor(a).length === 0" class="px-3 py-2 text-sm text-slate-500">
+                          Sin resultados
+                        </div>
+                      </div>
+                    </div>
+
                     <span v-if="a.municipalityName && !a.municipalityId" class="text-red-500 text-xs">
                       Debe seleccionar un municipio válido
                     </span>
+
                     <textarea class="input w-full mt-2" v-model="a.novelty_description" placeholder="Descripción..." rows="1" />
                   </div>
                   <div v-else-if="a.status === 'FRANCO FRANCO'">
                     <span class="text-xs text-slate-400">Sin datos adicionales</span>
                   </div>
 
-                                <!-- SUSPENDIDO: inicio, fin, descripción -->
+                  <!-- SUSPENDIDO: inicio, fin, descripción -->
                   <div v-else-if="a.status === 'SUSPENDIDO'">
                     <div class="flex gap-2 mt-2">
                       <input class="input flex-1" type="date"
@@ -877,7 +957,7 @@
 
                     <!-- SOLO si la unidad seleccionada es GEO -->
                     <div v-if="isDeptUnitDraft" class="grid gap-1">
-                      <!-- 👇 Lista chuleable de departamentos (máx 3) -->
+                      <!-- Lista check de departamentos (máx 3) -->
                       <div class="border border-indigo-200 rounded-lg bg-white max-h-32 overflow-y-auto">
                         <label
                           v-for="d in depts"
@@ -941,7 +1021,7 @@
                       <div
                         class="flex items-center gap-1.5 px-2 py-1 text-[9px] shadow-sm bg-white border border-slate-200 rounded-md flex-1"
                       >
-                        <!-- Fechas (MUY COMPACTAS) -->
+                        <!-- Fechas (COMPACTAS) -->
                         <input
                           type="date"
                           class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[95px]"
@@ -956,7 +1036,7 @@
                           @change="projUpdateSegmentField(seg.index, 'to', $event.target.value)"
                         />
 
-                        <!-- Estado (más pequeño) -->
+                        <!-- Estado -->
                         <select
                           class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[95px]"
                           :value="seg.state"
@@ -971,7 +1051,7 @@
                           </option>
                         </select>
 
-                        <!-- Unidad destino (solo CS) -->
+                        <!-- Unidad destino (solo Comisión de Servicio) -->
                         <select
                           v-if="seg.state === 'COMISIÓN DEL SERVICIO'"
                           class="rounded border border-slate-300 px-1 py-0.5 text-[9px] w-[140px]"
@@ -988,7 +1068,7 @@
                           </option>
 
                         </select>
-                        <!-- ✅ Mostrar unidad padre y subunidad (si aplica) -->
+                        <!-- Mostrar unidad padre y subunidad (si aplica) -->
                         <span
                           v-if="seg.destParentLabel"
                           class="ml-1 text-[8px] opacity-80 flex-none"
@@ -1449,6 +1529,70 @@ const subunitsError = ref('')
 
 // Cache: parentUnitId -> subunits[]
 const subunitsByParent = ref({})
+
+const muniUi = reactive({
+  openForAgentId: null,   // id del agente que tiene el dropdown abierto
+  query: '',              // texto actual (por si quieres)
+})
+
+const isIOS = computed(() => {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  return /iPhone|iPad|iPod/i.test(ua)
+})
+
+function muniLabel(m) {
+  return `${m.dept} - ${m.name}`
+}
+
+function muniMatches(m, q) {
+  if (!q) return true
+  const s = muniLabel(m).toLowerCase()
+  return s.includes(q.toLowerCase())
+}
+
+function muniSuggestionsFor(agent) {
+  const q = (agent.municipalityName || '').trim()
+  // si tienes MUCHOS municipios, limita resultados
+  return (municipalities.value || [])
+    .filter(m => muniMatches(m, q))
+    .slice(0, 30)
+}
+
+function muniOpen(agent) {
+  muniUi.openForAgentId = agent.id
+}
+
+function muniClose(agent) {
+  if (muniUi.openForAgentId === agent.id) muniUi.openForAgentId = null
+}
+
+function muniOnBlur(agent) {
+  window.setTimeout(() => {
+    muniClose(agent)
+  }, 150)
+}
+
+function muniClear(agent) {
+  agent.municipalityName = ''
+  agent.municipalityId = null
+  muniOpen(agent)
+}
+
+function muniPick(agent, m) {
+  agent.municipalityName = muniLabel(m)
+  agent.municipalityId = m.id
+  muniClose(agent)
+}
+
+function onMuniTyping(agent) {
+  // cada tecla: si ya no coincide exacto, invalida id
+  const value = (agent.municipalityName || '').trim().toLowerCase()
+  const m = (municipalities.value || []).find(x => muniLabel(x).toLowerCase() === value)
+  agent.municipalityId = m ? m.id : null
+
+  muniOpen(agent)
+}
 
 // Busca una subunidad por ID en el cache
 function findSubunitById(subunitId) {
