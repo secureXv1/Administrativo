@@ -1124,15 +1124,12 @@
                     </div>
                   </div>
 
-
+                  <!-- Mensaje funcionario sin proyección -->
                   <p v-else class="text-[11px] text-slate-500 mt-1">
                     Este funcionario no tiene rangos proyectados dentro del intervalo seleccionado.
                   </p>
                 </div>
-
               </div>
-
-
               </div>
 
               <!-- === COLUMNA DERECHA: CALENDARIO CUADRADO (estilo admin) === -->
@@ -1193,7 +1190,7 @@
                   </div>
                 </div>
 
-                <!-- Leyenda estilo admin (opcional pero recomendado) -->
+                <!-- Leyenda estilo admin -->
                 <div class="mt-3 flex flex-wrap gap-2 text-[10px] text-slate-500">
                   <div class="flex items-center gap-1">
                     <span class="w-4 h-4 rounded-sm border bg-sky-700"></span> NC
@@ -1437,7 +1434,7 @@
           </div>
         </div>
 
-        <!-- Línea de tiempo (todo; si es comisión, muestra municipio) -->
+        <!-- Línea de tiempo (todo => si es comisión, muestra municipio) -->
         <div v-else class="space-y-4 relative">
           <div class="absolute left-3 top-0 bottom-0 w-px bg-gradient-to-b from-slate-300 via-slate-200 to-slate-300 dark:from-slate-700 dark:via-slate-800 dark:to-slate-700" />
           <div v-for="(s, i) in segments" :key="i" class="flex items-center gap-3 pl-4">
@@ -1484,7 +1481,7 @@ import FechasBanner from '@/components/FechasBanner.vue'
  * IMPORTANTÍSIMO:
  * - No usamos axios “crudo” (rutas relativas) para evitar 404 en host.
  * - http ya debe traer baseURL + token por interceptor.
- * - Si algún endpoint no existe en el host (como /rest-planning/units-dest), lo capturamos y NO bloquea.
+ * - Si algún endpoint no existe en el host (como /rest-planning/units-dest), se captura y NO bloquea.
  */
 
 const restViewer = reactive({
@@ -1555,9 +1552,10 @@ const subunitsByParent = ref({})
 
 const muniUi = reactive({
   openForAgentId: null,   // id del agente que tiene el dropdown abierto
-  query: '',              // texto actual (por si quieres)
+  query: '',              // texto actual
 })
 
+// Detectamos userAgent - SO (iOs)
 const isIOS = computed(() => {
   if (typeof navigator === 'undefined') return false
   const ua = navigator.userAgent || ''
@@ -1574,6 +1572,7 @@ function muniMatches(m, q) {
   return s.includes(q.toLowerCase())
 }
 
+// Limita lista de municipios
 function muniSuggestionsFor(agent) {
   const q = (agent.municipalityName || '').trim()
   // si tienes MUCHOS municipios, limita resultados
@@ -1659,6 +1658,7 @@ function resolveDestLabels(destUnitId) {
 }
 
 
+// Unidades por grupo
 const unitsByGroup = computed(() => {
   const map = {}
   for (const u of units.value) {
@@ -1685,6 +1685,7 @@ const existeReporte = ref(false)
 const agentOwnershipMsg = ref('')
 const canAddSelected = ref(false)
 
+// Perfil de usuario
 async function loadMe() {
   try {
     const { data } = await http.get('/me/profile')
@@ -1694,7 +1695,7 @@ async function loadMe() {
   }
 }
 
-// ✅ FIX: NO rompe el montaje si falla en host
+// FIX: NO rompe el montaje si falla en host
 async function loadDestUnits () {
   // 1) intenta endpoint nuevo (si existe en el backend actualizado)
   const urls = ['/rest-planning/units-dest', '/api/rest-planning/units-dest']
@@ -1709,16 +1710,16 @@ async function loadDestUnits () {
     }
   }
 
-  // 2) fallback: usa el listado normal de unidades (que ya te funciona en host)
+  // 2) fallback: usa el listado normal de unidades
   try {
-    // si ya están cargadas por loadUnits(), úsalo directo
+    // si ya están cargadas por loadUnits(), se usa directo
     if (Array.isArray(units.value) && units.value.length) {
       destUnits.value = units.value.slice()
       console.warn('[loadDestUnits] usando fallback desde units.value (units-dest no existe en backend host)')
       return
     }
 
-    // si por algún motivo aún no están, las pedimos
+    // si por algún motivo aún no cargan, se hace petición nuevamente
     const { data } = await http.get('/rest-planning/units')
     destUnits.value = Array.isArray(data) ? data : []
     console.warn('[loadDestUnits] usando fallback desde GET /rest-planning/units (units-dest no existe en backend host)')
@@ -1760,6 +1761,7 @@ async function loadAgents() {
   }
 }
 
+// Obtener lista de municipios
 async function getMunicipalityIdFromLabel(label) {
   if (!label || label === 'N/A') return null
   if (!municipalities.value.length) await loadMunicipalities()
@@ -1767,24 +1769,27 @@ async function getMunicipalityIdFromLabel(label) {
   return m ? m.id : null
 }
 
+// Cargar municipios
 async function loadMunicipalities(q = '') {
   const params = q.length >= 2 ? { q } : {}
   const { data } = await http.get('/catalogs/municipalities', { params })
   municipalities.value = data || []
 }
 
+// Obtener grupos
 async function loadGroups () {
   const { data } = await http.get('/rest-planning/groups')
   groups.value = Array.isArray(data) ? data : []
 }
 
+// Cargar Unidades 
 async function loadUnits () {
   const { data } = await http.get('/rest-planning/units')
   const list = Array.isArray(data) ? data : []
-  units.value = list
-  // ❌ ya NO seteamos destUnits aquí
+  units.value = list  
 }
 
+// Cargar subunidades por unidad
 async function loadSubunitsForUnit(parentUnitId) {
   destSubunits.value = []
   subunitsError.value = ''
@@ -1848,6 +1853,7 @@ async function resolveParentForSubunitId(subId) {
   return null
 }
 
+// Cargar departamentos
 async function loadDepts () {
   try {
     const { data } = await http.get('/admin/depts')
@@ -1858,6 +1864,7 @@ async function loadDepts () {
   }
 }
 
+// SIN NOVEDAD => carga ubicación Bogotá por defecto
 function onStateChange(agent) {
   if (agent.status === 'SIN NOVEDAD') {
     agent.municipalityId = 11001
@@ -1868,7 +1875,7 @@ function onStateChange(agent) {
     agent.novelty_description = ''
     return
   }
-
+  // SERVICIO => carga ubicación Bogotá por defecto
   if (agent.status === 'SERVICIO') {
     agent.municipalityId = 11001
     const bogota = municipalities.value.find(m => m.id === 11001)
@@ -1919,6 +1926,7 @@ function onStateChange(agent) {
   agent.novelty_description = ''
 }
 
+// Control campos obligatorios
 async function save() {
   for (const a of agents.value) {
     if (a.status === 'SIN NOVEDAD') {
@@ -1990,6 +1998,7 @@ async function save() {
   }
 }
 
+// Eliminar un funcionario del parte del Área
 async function removeAgent(agentId) {
   if (!confirm('¿Quitar este agente de tu unidad?')) return
   try {
@@ -2127,6 +2136,7 @@ function getUnitLabel(a) {
   return a.unitName || a.unitCode || a.unitShort || ''
 }
 
+// Logout (Elimina token de sesión al cerrar)
 function logout() {
   localStorage.removeItem('token')
   window.location.href = '/login/'
@@ -2352,6 +2362,7 @@ const pwdStrengthClass = computed(() => {
   return 'text-rose-700'
 })
 
+// Verificar fortaleza del passwd
 function checkStrength () {
   const s = formPwd.value.new1 || ''
   let score = 0
@@ -2378,6 +2389,7 @@ function resetPwdForm () {
   showOld.value = showNew.value = showNew2.value = false
 }
 
+// Confirmar que el passwd cumpla con los requisitos de fortaleza
 async function onSubmitPassword () {
   pwdMsg.value = ''
   pwdMsgOk.value = false
@@ -2435,6 +2447,7 @@ const monthLabel = computed(() =>
 const monthFrom = computed(() => ymd(calendarStartDate.value))
 const monthTo   = computed(() => ymd(calendarEndDate.value))
 
+// Iconos para cada novedad
 function iconFor(state){
   const s = String(state || '').toUpperCase()
   const map = {
@@ -2448,6 +2461,7 @@ function iconFor(state){
   return map[s] || '•'
 }
 
+// Clase color/estilo según según novedad
 function colorClass(state){
   const s = String(state || '').toUpperCase()
   const c = {
@@ -2465,6 +2479,7 @@ function colorClass(state){
 function shortState(s){ const t=String(s||''); return t.length<=16?t:(t.slice(0,16)+'…') }
 const legendStates = ['SIN NOVEDAD','SERVICIO','COMISIÓN DEL SERVICIO','VACACIONES','FRANCO FRANCO','SUSPENDIDO','HOSPITALIZADO']
 
+// Código o "sigla" para cada novedad
 function projStateCode (state) {
   const raw = String(state || '')
   const upper = raw.toUpperCase()
@@ -2480,6 +2495,7 @@ function projStateCode (state) {
   return ''
 }
 
+// Clase color/estilo para sigla novedad
 function projStateColorClass (code) {
   switch (code) {
     case 'NC': return 'bg-sky-700 text-white border-sky-900'
@@ -2493,6 +2509,7 @@ function projStateColorClass (code) {
   }
 }
 
+// Color días laborados según racha sin descanso
 function diasLaboradosColor(n) {
   if (n == null) return 'text-slate-400'
   if (n >= 15) return 'text-green-600 font-bold'
@@ -2500,6 +2517,7 @@ function diasLaboradosColor(n) {
   return 'text-red-600 font-bold'
 }
 
+// Contador días laborados de manera consecutiva
 function contarDiasLaborados(historial, fechaReferencia) {
   const sorted = [...historial]
     .filter(d => d.date && d.state)
@@ -2516,6 +2534,7 @@ function contarDiasLaborados(historial, fechaReferencia) {
   return streak
 }
 
+// LLama al historial días laborados
 async function setDiasLaboradosTodos() {
   const fechaReferencia = reportDate.value
   for (const agente of agents.value) {
@@ -2531,6 +2550,7 @@ async function setDiasLaboradosTodos() {
   }
 }
 
+// Abrir historial diás laborados - calendario
 async function openHistory(a){
   viewTab.value = 'calendar'
   historyModal.value = { open:true, agent:a }
@@ -2542,6 +2562,7 @@ function closeHistory(){
   historyItems.value = []
 }
 
+// Carga el historial
 async function loadHistory() {
   if (!historyModal.value.agent) return
   try {
@@ -2602,7 +2623,7 @@ const projDraft = ref({
   state: '',
   destGroupId: null,
   destParentUnitId: null, // padre elegido en UI
-  destUnitId: null,       // lo que se guardará (padre o subunidad)
+  destUnitId: null,       // guarda padre o subunidad
   destSubunitId: null,    // subunidad elegida en UI
   depts: []
 })
@@ -2650,6 +2671,7 @@ watch(
 const projMsg = ref('')
 const projMsgOk = ref(false)
 
+// Llama la proyección desde el Backend
 async function loadProjectionFromBackend () {
   const from = projRange.value.from
   const to   = projRange.value.to
@@ -2683,8 +2705,8 @@ async function loadProjectionFromBackend () {
       }
 
       if (!map[aid]) map[aid] = []
-            // ✅ intentar reconstruir el padre si destUnitId es una subunidad
-      // ✅ intentar reconstruir padre/subunidad
+            // Intentar reconstruir el padre si destUnitId es una subunidad
+      // Intentar reconstruir padre/subunidad
       const savedDestId = it.destUnitId ? Number(it.destUnitId) : null
 
       let parentId = null
@@ -2695,7 +2717,7 @@ async function loadProjectionFromBackend () {
         parentId = savedDestId
         subId = null
       } else if (savedDestId) {
-        // Es subunidad: resolver padre sí o sí
+        // Es subunidad: resolver padre (Obligatorio)
         parentId = await resolveParentForSubunitId(savedDestId)
         subId = savedDestId
       }
@@ -2709,7 +2731,7 @@ async function loadProjectionFromBackend () {
         // lo que guarda backend (si hay subunidad: subId; si no: parentId)
         destUnitId: savedDestId,
 
-        // ✅ para UI
+        // Para UI
         destParentUnitId: parentId,
         destSubunitId: subId,
         depts: segDepts
@@ -2752,6 +2774,7 @@ const projCurrentAgent = computed(() => {
   return agents.value.find(a => a.id === projSelectedAgentId.value) || null
 })
 
+// Enumera los días de la proyección
 function projEnumerateDays(from, to) {
   const s = toDate(from)
   const e = toDate(to)
@@ -2761,6 +2784,7 @@ function projEnumerateDays(from, to) {
   return out
 }
 
+// Unidad destino en proyección (para GEO) - draft
 function isGigGeoDraft(draft) {
   if (!draft?.destGroupId || !draft?.destUnitId) return false
   const g = groupById.value[draft.destGroupId]
@@ -2770,6 +2794,7 @@ function isGigGeoDraft(draft) {
   return gLabel === 'GIG' && uLabel === 'GEO'
 }
 
+// Unidad destino en proyección (para GEO) - seg
 function isGigGeoSegment(seg) {
   if (!seg?.destGroupId || !seg?.destUnitId) return false
   const g = groupById.value[seg.destGroupId]
@@ -2779,11 +2804,13 @@ function isGigGeoSegment(seg) {
   return gLabel === 'GIG' && uLabel === 'GEO'
 }
 
+// Limitar a 3 la selección de departamento (GEO)
 function limitDraftDepts() {
   if (!Array.isArray(projDraft.value.depts)) { projDraft.value.depts = []; return }
   if (projDraft.value.depts.length > 3) projDraft.value.depts = projDraft.value.depts.slice(0, 3)
 }
 
+// Verificar que la selección de departamento sea <= 3
 function toggleDept(dept, checked) {
   if (!Array.isArray(projDraft.value.depts)) projDraft.value.depts = []
   if (checked) {
@@ -2799,6 +2826,7 @@ function toggleDept(dept, checked) {
   }
 }
 
+// Constructor mapa de días
 function projBuildDayMap(ranges) {
   const map = new Map()
   const overlaps = new Set()
@@ -2878,6 +2906,7 @@ const projCanSave = computed(() => {
   return hasAny
 })
 
+// Definir rango de días a proyectar
 function projAddRangeForCurrent() {
   projDraftError.value = ''
   const id = projSelectedAgentId.value
@@ -2942,6 +2971,7 @@ function projAddRangeForCurrent() {
   projDraft.value = { from: '', to: '', state: '', destGroupId: null, destParentUnitId: null, destUnitId: null, destSubunitId: null, depts: [] }
 }
 
+// Cambiar de estado 
 function onProjDraftStateChange() {
   const s = projDraft.value.state
 
@@ -2956,6 +2986,7 @@ function onProjDraftStateChange() {
   }  
 }
 
+// Remover rango de fechas a proyectar
 function projRemoveRangeForCurrent(idx) {
   const id = projSelectedAgentId.value
   if (!id) return
@@ -2972,7 +3003,7 @@ function projUpdateSegmentField(segIndex, field, value) {
 
   const current = arr[segIndex]
 
-  // Fechas
+  // Fechas (inicio - fin)
   if (field === 'from' || field === 'to') {
     const tmp = { ...current, [field]: value }
     const d1 = toDate(tmp.from)
@@ -3009,7 +3040,7 @@ function projUpdateSegmentField(segIndex, field, value) {
     return
   }
 
-  // ✅ Padre (unidad)
+  // Padre (unidad)
   if (field === 'destParentUnitId') {
     const parentId = value ? Number(value) : null
 
@@ -3026,8 +3057,8 @@ function projUpdateSegmentField(segIndex, field, value) {
       destGroupId: newGroupId,
       destParentUnitId: parentId,
       destSubunitId: null,
-      destUnitId: parentId, // 👈 lo que se guarda si NO hay subunidad escogida
-      depts: [] // se recalcula abajo si aplica
+      destUnitId: parentId, // Lo que se guarda si NO hay subunidad escogida
+      depts: [] // se recalcula si aplica
     }
 
     // cargar subunidades (cache) para que aparezca el select
@@ -3041,7 +3072,7 @@ function projUpdateSegmentField(segIndex, field, value) {
     return
   }
 
-  // ✅ Subunidad
+  // Subunidad
   if (field === 'destSubunitId') {
     const subId = value ? Number(value) : null
 

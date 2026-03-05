@@ -73,7 +73,7 @@
           <div class="text-xs text-slate-500 mt-1">{{ kpiMarcadosTotal }}</div>
         </section>
 
-        <!-- ✅ KPI: Ausentes -->
+        <!-- KPI: Ausentes -->
         <section class="bg-white rounded-xl border border-rose-200 p-4 shadow-sm">
           <div class="text-xs text-rose-600">AUSENTES</div>
           <div class="text-2xl font-semibold text-rose-600">
@@ -170,7 +170,7 @@
       </div>
     </div>
 
-    <!-- 🔍 Modal detalle ausentes -->
+    <!-- Modal detalle ausentes -->
     <div v-if="showAbsentModal" class="fixed inset-0 z-50">
       <div class="absolute inset-0 bg-black/40" @click="showAbsentModal=false"></div>
       <div class="absolute inset-0 grid place-items-center p-4">
@@ -326,12 +326,14 @@ const agentRows = gid => {
   }
 
   filtered.sort((x, y) => {
-    const cx = catRank(normalizeCat(x.category))
-    const cy = catRank(normalizeCat(y.category))
-    if (cx !== cy) return cx - cy
+    const rx = Number(x.rank_order ?? 999999)
+    const ry = Number(y.rank_order ?? 999999)
+    if (rx !== ry) return rx - ry
+
+    // fallback estable por code (por si hay empates)
     const nx = codeNum(x.code), ny = codeNum(y.code)
     if (nx !== ny) return nx - ny
-    return String(x.code).localeCompare(String(y.code))
+    return String(x.code || '').localeCompare(String(y.code || ''), 'es', { numeric: true })
   })
 
   return filtered
@@ -426,7 +428,7 @@ const kpiMarcadosTriad = computed(() => {
   return out
 })
 
-/* ✅ Nuevos KPIs: AUSENTES */
+/* Nuevos KPIs: AUSENTES */
 const kpiAusentesTotal = computed(() => kpiFdEsperadoTotal.value - kpiMarcadosTotal.value)
 const kpiAusentesTriad = computed(() => {
   const out = [0,0,0]
@@ -437,7 +439,7 @@ const kpiAusentesTriad = computed(() => {
   return out
 })
 
-/* ✅ Listado para el modal de ausentes */
+/* Listado para el modal de ausentes */
 const absentRows = computed(() => {
   const rows = []
   for (const gid of visibleGroupIds.value) {
@@ -511,6 +513,7 @@ async function syncGroup(gid) {
       code: it.code,
       nickname: it.nickname || null,
       category: it.category,
+      rank_order: it.rank_order ?? 999999,
       status: (it.status || '').toUpperCase()
     }
     box.agentsById.set(a.id, a)
@@ -529,9 +532,10 @@ async function syncGroup(gid) {
       code: r.code,
       nickname: r.nickname || null,
       category: r.category,
+      rank_order: r.rank_order ?? (box.agentsById.get(r.agentId)?.rank_order ?? 999999),
       status: (r.state || '').toUpperCase(),
       mt: r.mt || r.mt_report || r.mt_agent || null
-    };
+    }
     box.agentsById.set(a.id, a);
 
     if (a.status === 'SIN NOVEDAD') {
