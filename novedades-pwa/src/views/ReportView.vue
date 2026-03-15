@@ -2139,7 +2139,7 @@ function getUnitLabel(a) {
 // Logout (Elimina token de sesión al cerrar)
 function logout() {
   localStorage.removeItem('token')
-  window.location.href = '/login/'
+  window.location.replace('/login/')
 }
 
 function onMuniInput(agent) {

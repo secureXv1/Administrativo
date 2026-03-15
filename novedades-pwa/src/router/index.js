@@ -31,9 +31,8 @@ function homeByRole(role) {
 }
 
 // Rutas
-const routes = [
-  { path: '/', redirect: '/login' },
-  { path: '/login', component: LoginView },
+const routes = [  
+  { path: '/', component: LoginView },
   { path: '/agent', component: AgentDashboard, meta: { requiresAuth: true, roles: ['agent'] } },
 
   // Vista simple para líder de unidad
@@ -173,7 +172,7 @@ const routes = [
   },
 
   // Fallback
-  { path: '/:pathMatch(.*)*', redirect: '/admin' }
+  { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
 
 const router = createRouter({
@@ -195,7 +194,7 @@ router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
 
   // 1) /login: si hay token, mandamos al home por rol (pero evitando bucle)
-  if (to.path === '/login') {
+  if (to.path === '/') {
     if (!token) return next()
 
     const me = await getMe()
@@ -205,37 +204,23 @@ router.beforeEach(async (to, from, next) => {
     }
 
     const target = homeByRole(me.role)
-    if (target === to.path) return next() // ya estamos donde toca
-    return next(target)
-  }
-
-  // 2) / : root → manda al home por rol o a /login
-  if (to.path === '/') {
-    if (!token) return next('/login')
-
-    const me = await getMe()
-    if (!me) {
-      localStorage.removeItem('token')
-      return next('/login')
-    }
-
-    const target = homeByRole(me.role)
     if (target === to.path) return next()
     return next(target)
   }
 
-  // 3) Resto de rutas requiere token
-  if (!token) return next('/login')
+  // Resto requieren token
+  if (!token) return next('/')
+    
+    const me = await getMe()
+    if (!me) {
+      localStorage.removeItem('token')
+      return next('/')
+    }
 
-  const me = await getMe()
-  if (!me) {
-    localStorage.removeItem('token')
-    return next('/login')
-  }
+    const role = String(me.role || '').toLowerCase()
 
-  const role = String(me.role || '').toLowerCase()
-
-  // 4) Si la ruta pide auth explícito o es /admin*/report
+  
+  // 4) Si la ruta pide auth explícito o es /admin/report
   if (to.meta?.requiresAuth || to.path.startsWith('/admin') || to.path === '/report') {
     // 4.1) Roles declarados en meta
     if (to.meta?.roles && Array.isArray(to.meta.roles) && to.meta.roles.length) {
@@ -269,7 +254,7 @@ router.beforeEach(async (to, from, next) => {
       if (role === 'leader_unit') return next('/report')
       if (role === 'agent') return next('/agent')
 
-      return next('/login')
+      return next('/')
     }
 
     // /report es solo leader_unit
